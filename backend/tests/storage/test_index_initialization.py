@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sourcetrace.api.app import create_app
-from sourcetrace.core.config import Settings
+from sourcetrace.core.config import Settings, get_settings
 from sourcetrace.core.exceptions import StorageOperationError
 from sourcetrace.models.domain import CodeChunk
 from sourcetrace.storage.mongo_repositories import MongoCodeChunkRepository
@@ -24,9 +24,11 @@ from sourcetrace.storage.mongodb import (
 @pytest.fixture(autouse=True)
 def _reset_index_cache():
     """Ensure clean index initialization state before and after each test."""
+    get_settings.cache_clear()
     reset_storage_manager_state()
     yield
     reset_storage_manager_state()
+    get_settings.cache_clear()
 
 
 def test_01_module_import_creates_no_client():
@@ -406,16 +408,26 @@ def test_18_custom_settings_without_manager_or_db_creates_isolated_manager(monke
 
 def test_19_explicit_manager_takes_precedence_over_settings():
     """Explicit manager argument takes precedence over custom settings."""
+    mock_client = MagicMock()
+    mock_db = MagicMock()
+    mock_db.name = "mgr_db"
+    mock_db.client = mock_client
+    mock_client.__getitem__.return_value = mock_db
+
+    explicit_mgr = MongoStorageManager(
+        settings=Settings(mongodb_database_name="mgr_db"),
+        injected_client=mock_client,
+    )
     custom_settings = Settings(
         mongodb_uri="mongodb://localhost:27017",
         mongodb_database_name="custom_db_19",
     )
-    explicit_mgr = MongoStorageManager(settings=Settings(mongodb_database_name="mgr_db"))
 
     repo = MongoCodeChunkRepository(manager=explicit_mgr, settings=custom_settings)
     repo._ensure_indexes_lazily()
 
     assert repo._manager is explicit_mgr
+    assert mock_db["code_chunks"].create_index.called is True
 
 
 def test_20_explicit_db_takes_precedence_over_settings():
@@ -451,6 +463,9 @@ def test_21_explicit_collection_bypasses_manager():
 
 def test_22_genuine_default_target_classification(monkeypatch):
     """Default manager without injected client is classified as ('default', db_name)."""
+    monkeypatch.setenv("SOURCETRACE_MONGODB_URI", "mongodb://unit-test.invalid:27017")
+    get_settings.cache_clear()
+
     mock_client = MagicMock()
     mock_db = MagicMock()
     mock_db.name = "sourcetrace"

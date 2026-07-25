@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -20,6 +19,7 @@ from sourcetrace.models.domain import CodeChunk, RetrievalResult
 from sourcetrace.storage.mongo_repositories import (
     MongoCodeChunkRepository,
     build_vector_search_index_definition,
+    init_indexes,
 )
 
 _DEFAULT_CREATED_AT = object()
@@ -696,13 +696,16 @@ def test_unusual_numeric_objects_cannot_leak_raw_exceptions() -> None:
     assert "sk-numeric-key" not in str(exc_info.value)
 
 
-def test_database_contract_includes_unique_owner_repo_chunk_index() -> None:
-    repo_root = Path(__file__).resolve().parents[3]
-    contract_path = repo_root / "docs" / "database" / "0001-mongodb-resource-contracts.md"
-    with open(contract_path, encoding="utf-8") as f:
-        content = f.read()
-    assert "owner_session_id" in content
-    assert "repository_id" in content
-    assert "chunk_id" in content
-    assert "unique" in content
+def test_runtime_indexes_include_unique_owner_repo_chunk_index() -> None:
+    mock_db = MagicMock()
+    init_indexes(mock_db)
+    mock_db["code_chunks"].create_index.assert_any_call(
+        [
+            ("owner_session_id", 1),
+            ("repository_id", 1),
+            ("chunk_id", 1),
+        ],
+        unique=True,
+        name="code_chunks_owner_repo_chunk_idx",
+    )
 

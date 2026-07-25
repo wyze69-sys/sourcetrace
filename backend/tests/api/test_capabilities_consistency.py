@@ -1,5 +1,7 @@
 """Comprehensive capability and provider readiness consistency unit tests."""
 
+from unittest.mock import MagicMock
+
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
@@ -100,13 +102,33 @@ def test_caps_operator_disables_cloud_ai():
     assert caps.allowed_index_modes == ["static"]
 
 
-def test_route_dependency_override_and_agreement():
+def test_route_dependency_override_and_agreement(monkeypatch):
     """Capabilities route and POST /repositories agree exactly under dependency override."""
+    monkeypatch.setenv("SOURCETRACE_MONGODB_URI", "mongodb://unit-test.invalid:27017")
+    monkeypatch.setenv(
+        "SOURCETRACE_SESSION_SIGNING_SECRET",
+        "test-only-session-signing-secret-not-for-production",
+    )
+
+    mock_client = MagicMock()
+    mock_db = MagicMock()
+    mock_db.name = "sourcetrace_test"
+    mock_db.client = mock_client
+    mock_client.__getitem__.return_value = mock_db
+
+    import sourcetrace.storage.mongodb as mongodb_mod
+
+    monkeypatch.setattr(mongodb_mod, "MongoClient", lambda uri: mock_client)
+
     custom_settings = Settings(
         gemini_api_key=None,
         embedding_api_key=None,
         embedding_provider="gemini",
         allowed_index_modes=("static", "cloud_ai"),
+        mongodb_uri="mongodb://unit-test.invalid:27017",
+        session_signing_secret=SecretStr(
+            "test-only-session-signing-secret-not-for-production"
+        ),
     )
 
     app = create_app()
