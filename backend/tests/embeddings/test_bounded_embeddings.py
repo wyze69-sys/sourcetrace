@@ -7,7 +7,6 @@ import pytest
 from sourcetrace.core.config import Settings
 from sourcetrace.core.exceptions import EmbeddingError
 from sourcetrace.embeddings.provider import (
-    MAX_EMBEDDING_BATCH_CHARS,
     MAX_SINGLE_CHUNK_CHARS,
     GeminiEmbeddingAdapter,
     _classify_gemini_error,

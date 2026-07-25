@@ -180,7 +180,9 @@ def _extract_declarations_from_node(
     node_type = target_node.type
 
     if node_type in ("function_declaration", "generator_function_declaration"):
-        func_name = _find_child_text(target_node, {"identifier", "property_identifier"}, source_bytes)
+        func_name = _find_child_text(
+            target_node, {"identifier", "property_identifier"}, source_bytes
+        )
         if not func_name:
             func_name = "default" if node.type == "export_statement" else "anonymous"
 
@@ -299,10 +301,9 @@ def _make_module_chunk(
     source_lines_stripped: list[str] | None = None,
     parser_version: str = JS_TS_PARSER_VERSION,
 ) -> list[ParsedCodeChunk]:
-    """Create deterministic, bounded fallback module chunk(s) when AST parsing fails or returns no symbols.
-
-    Oversized source files (> MAX_FALLBACK_CHUNK_CHARS) are split into consecutive,
-    line-bounded chunks to ensure embedding inputs remain within provider limits.
+    """Create deterministic, bounded fallback module chunk(s) when AST parsing fails
+    or returns no symbols. Oversized source files (> MAX_FALLBACK_CHUNK_CHARS) are split into
+    consecutive, line-bounded chunks to ensure embedding inputs remain within provider limits.
     """
     if not source:
         return []

@@ -32,7 +32,11 @@ def register_error_handlers(app: FastAPI) -> None:
         request: Request, exc: StarletteHTTPException
     ) -> JSONResponse:
         error_code = CODE_MAPPING.get(exc.status_code, "INTERNAL_ERROR")
-        if exc.status_code == status.HTTP_400_BAD_REQUEST and isinstance(exc.detail, str) and exc.detail.strip():
+        if (
+            exc.status_code == status.HTTP_400_BAD_REQUEST
+            and isinstance(exc.detail, str)
+            and exc.detail.strip()
+        ):
             message = exc.detail.strip()
         else:
             message = MESSAGE_MAPPING.get(exc.status_code, "An internal server error occurred.")

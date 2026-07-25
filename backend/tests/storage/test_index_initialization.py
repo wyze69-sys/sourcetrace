@@ -80,7 +80,7 @@ def test_04_second_operation_same_repository_does_not_repeat():
 
 
 def test_05_default_path_two_repository_instances_share_default_manager_and_client():
-    """Two default MongoCodeChunkRepository() instances share default manager, client, and single initialization."""
+    """Two default MongoCodeChunkRepository() instances share default manager and client."""
     mock_client = MagicMock()
     mock_db = MagicMock()
     mock_db.name = "sourcetrace_test"
@@ -286,7 +286,7 @@ def test_14_no_credentials_or_uris_in_errors():
 
 
 def test_15_closing_or_resetting_default_manager_forces_reinitialization():
-    """Closing/resetting the default manager clears initialization state so next manager re-initializes."""
+    """Closing/resetting default manager clears initialization state for re-initialization."""
     mock_client = MagicMock()
     mock_db = MagicMock()
     mock_db.name = "sourcetrace_test_15"
@@ -321,7 +321,7 @@ def test_15_closing_or_resetting_default_manager_forces_reinitialization():
 
 
 def test_16_direct_manager_close_invalidates_target_and_forces_reinitialization(monkeypatch):
-    """Directly calling manager.close() invalidates its target from _INITIALIZED_TARGETS and forces reinitialization."""
+    """Directly calling manager.close() clears target key and forces reinitialization."""
     mock_client = MagicMock()
     mock_db = MagicMock()
     mock_db.name = "test_db_16"
@@ -359,7 +359,7 @@ def test_16_direct_manager_close_invalidates_target_and_forces_reinitialization(
 
 
 def test_17_injected_manager_close_invalidates_target_without_closing_external_client():
-    """Injected manager close clears target key and initialized flag without closing the external client."""
+    """Injected manager close clears target key without closing external client."""
     mock_client = MagicMock()
     mock_db = MagicMock()
     mock_db.name = "test_db_17"
@@ -382,7 +382,7 @@ def test_17_injected_manager_close_invalidates_target_without_closing_external_c
 
 
 def test_18_custom_settings_without_manager_or_db_creates_isolated_manager(monkeypatch):
-    """MongoCodeChunkRepository(settings=custom) creates an isolated manager with custom settings."""
+    """Repository with custom settings creates an isolated manager with custom settings."""
     mock_client = MagicMock()
     mock_db = MagicMock()
     mock_db.name = "custom_isolated_db"
@@ -450,7 +450,7 @@ def test_21_explicit_collection_bypasses_manager():
 
 
 def test_22_genuine_default_target_classification(monkeypatch):
-    """Genuine default manager (without client_factory or injected_client) is classified as ('default', db_name)."""
+    """Default manager without injected client is classified as ('default', db_name)."""
     mock_client = MagicMock()
     mock_db = MagicMock()
     mock_db.name = "sourcetrace"

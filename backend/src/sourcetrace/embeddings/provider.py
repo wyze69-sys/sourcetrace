@@ -527,7 +527,9 @@ class GeminiEmbeddingAdapter:
                         or math.isnan(val)
                         or math.isinf(val)
                     ):
-                        raise EmbeddingError("Embedding provider returned an invalid vector response.")
+                        raise EmbeddingError(
+                            "Embedding provider returned an invalid vector response."
+                        )
                     float_vec.append(float(val))
 
                 all_vectors.append(tuple(float_vec))

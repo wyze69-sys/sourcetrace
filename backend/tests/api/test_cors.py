@@ -1,6 +1,5 @@
 """Tests for API CORS middleware configuration."""
 
-import pytest
 from fastapi.testclient import TestClient
 
 from sourcetrace.api.app import create_app

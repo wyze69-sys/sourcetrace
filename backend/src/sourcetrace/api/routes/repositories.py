@@ -519,12 +519,17 @@ def create_github_repository(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> CreateRepositoryResponse:
     caps = evaluate_capabilities(settings)
-    requested_mode = request.index_mode if request.index_mode is not None else caps.default_index_mode
+    requested_mode = (
+        request.index_mode if request.index_mode is not None else caps.default_index_mode
+    )
 
     if requested_mode not in caps.allowed_index_modes:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=f"Requested index mode {requested_mode!r} is not allowed by server configuration.",
+            detail=(
+                f"Requested index mode {requested_mode!r} "
+                "is not allowed by server configuration."
+            ),
         )
 
     req_mode = requested_mode

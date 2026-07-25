@@ -30,16 +30,24 @@ class InMemoryCodeChunkRepository:
             if c.owner_session_id == owner_session_id and c.repository_id == repository_id
         ]
 
-    def search_vectors(self, owner_session_id: str, repository_id: str, query_vector: list[float], limit: int = 5):
+    def search_vectors(
+        self, owner_session_id: str, repository_id: str, query_vector: list[float], limit: int = 5
+    ):
         return []
 
-    def search_lexical(self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5):
+    def search_lexical(
+        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5
+    ):
         from sourcetrace.models.domain import RetrievalResult
         results = []
         term = query_text.lower()
         for c in self.chunks:
             if c.owner_session_id == owner_session_id and c.repository_id == repository_id:
-                if term in c.symbol_name.lower() or term in c.content.lower() or term in c.relative_path.lower():
+                if (
+                    term in c.symbol_name.lower()
+                    or term in c.content.lower()
+                    or term in c.relative_path.lower()
+                ):
                     results.append(RetrievalResult(chunk=c, score=1.0))
         return results[:limit]
 
@@ -71,7 +79,16 @@ class InMemoryRepositoryRepository:
         self.repos[(repository.owner_session_id, repository.repository_id)] = repository
         return repository
 
-    def transition_status(self, owner_session_id, repository_id, expected_status, new_status, updated_at, file_count=None, chunk_count=None):
+    def transition_status(
+        self,
+        owner_session_id,
+        repository_id,
+        expected_status,
+        new_status,
+        updated_at,
+        file_count=None,
+        chunk_count=None,
+    ):
         key = (owner_session_id, repository_id)
         repo = self.repos.get(key)
         if repo is None:
@@ -100,7 +117,10 @@ def test_static_mode_indexing_and_lexical_retrieval(tmp_path: Path):
     """Verify end-to-end repository indexing in static mode without AI keys."""
     source_file = tmp_path / "sample.py"
     source_file.write_text(
-        "def calculate_total(items):\n    return sum(items)\n\ndef main():\n    print(calculate_total([1, 2, 3]))\n",
+        "def calculate_total(items):\n"
+        "    return sum(items)\n\n"
+        "def main():\n"
+        "    print(calculate_total([1, 2, 3]))\n",
         encoding="utf-8",
     )
 

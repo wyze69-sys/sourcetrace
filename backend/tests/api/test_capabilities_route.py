@@ -1,6 +1,7 @@
 """Offline API route unit tests for GET /api/v1/capabilities."""
 
 from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 

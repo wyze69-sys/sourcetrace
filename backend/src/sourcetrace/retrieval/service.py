@@ -94,7 +94,7 @@ class SemanticRetrievalService:
         self._validate_identifiers(owner_session_id, repository_id)
 
         # 3. Repository Readiness Validation
-        repo = self._validate_repository_readiness(owner_session_id, repository_id)
+        self._validate_repository_readiness(owner_session_id, repository_id)
 
         # 4. Embed Query or Lexical Search
         is_static = (

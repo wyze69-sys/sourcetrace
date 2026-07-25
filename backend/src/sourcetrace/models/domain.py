@@ -92,7 +92,10 @@ class ParsedCodeChunk:
 
 @dataclass(frozen=True, slots=True)
 class CodeChunk:
-    """Parsed AST code symbol chunk with citation metadata, optional normalization, and optional vector embedding."""
+    """Parsed AST code symbol chunk with citation metadata,
+
+    optional normalization, and optional vector embedding.
+    """
 
     chunk_id: str
     repository_id: str

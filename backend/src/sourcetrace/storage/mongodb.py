@@ -37,7 +37,7 @@ def get_default_storage_manager() -> "MongoStorageManager":
 
 
 def reset_storage_manager_state() -> None:
-    """Reset default storage manager singleton and process index initialization cache (for tests)."""
+    """Reset default storage manager singleton and process index initialization cache."""
     global _DEFAULT_STORAGE_MANAGER
     with _DEFAULT_MANAGER_LOCK:
         if _DEFAULT_STORAGE_MANAGER is not None:
@@ -66,7 +66,9 @@ class MongoStorageManager:
         self._settings = settings or get_settings()
         self._client_factory = client_factory or MongoClient
         self._injected_client: MongoClient | None = injected_client
-        self._uses_injected_client: bool = (injected_client is not None) or (client_factory is not None)
+        self._uses_injected_client: bool = (injected_client is not None) or (
+            client_factory is not None
+        )
         self._client: MongoClient | None = injected_client
         self._owns_client: bool = injected_client is None
         self._indexes_initialized: bool = False
@@ -135,7 +137,7 @@ class MongoStorageManager:
             except (StorageConfigurationError, StorageOperationError):
                 self._indexes_initialized = False
                 raise
-            except Exception as exc:
+            except Exception:
                 self._indexes_initialized = False
                 raise StorageOperationError(
                     "Failed to initialize database indexes safely."

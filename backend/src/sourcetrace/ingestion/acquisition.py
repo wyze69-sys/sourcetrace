@@ -256,7 +256,11 @@ class AcquisitionRunner:
             safe_msg = (
                 str(exc)
                 if str(exc).strip()
-                else ("Indexing failed safely." if started_consumer else "Acquisition failed safely.")
+                else (
+                    "Indexing failed safely."
+                    if started_consumer
+                    else "Acquisition failed safely."
+                )
             )
             self._finalize_failed_state(
                 owner_session_id,
@@ -267,7 +271,11 @@ class AcquisitionRunner:
             )
             raise AcquisitionError("Acquisition failed safely.") from None
         except Exception:
-            safe_msg = "Indexing failed safely." if started_consumer else "Acquisition failed safely."
+            safe_msg = (
+                "Indexing failed safely."
+                if started_consumer
+                else "Acquisition failed safely."
+            )
             self._finalize_failed_state(
                 owner_session_id,
                 repository_id,

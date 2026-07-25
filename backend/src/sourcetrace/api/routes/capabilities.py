@@ -1,5 +1,7 @@
 """Capabilities reporting endpoint for SourceTrace feature availability."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
@@ -21,7 +23,7 @@ class CapabilitiesResponse(BaseModel):
 
 @router.get("", response_model=CapabilitiesResponse)
 def get_capabilities(
-    settings: Settings = Depends(get_settings),
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> CapabilitiesResponse:
     """Return server capabilities without exposing sensitive credentials or internal paths."""
     caps = evaluate_capabilities(settings)

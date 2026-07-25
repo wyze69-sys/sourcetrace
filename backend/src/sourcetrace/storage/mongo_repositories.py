@@ -582,7 +582,7 @@ _TOKEN_CLEAN_REGEX = re.compile(r"[^a-zA-Z0-9]+")
 
 
 def tokenize_identifier(text: str) -> list[str]:
-    """Deterministically tokenize code identifiers (split camelCase, PascalCase, snake_case, paths)."""
+    """Deterministically tokenize code identifiers (camelCase, PascalCase, etc.)."""
     if not text or not isinstance(text, str):
         return []
 
@@ -823,8 +823,12 @@ def _chunk_to_doc(chunk: CodeChunk) -> dict[str, Any]:
     derived = derive_chunk_search_metadata(
         chunk.symbol_name, chunk.relative_path, chunk.content
     )
-    doc["symbol_name_normalized"] = chunk.symbol_name_normalized or derived["symbol_name_normalized"]
-    doc["relative_path_normalized"] = chunk.relative_path_normalized or derived["relative_path_normalized"]
+    doc["symbol_name_normalized"] = (
+        chunk.symbol_name_normalized or derived["symbol_name_normalized"]
+    )
+    doc["relative_path_normalized"] = (
+        chunk.relative_path_normalized or derived["relative_path_normalized"]
+    )
     doc["search_terms"] = list(chunk.search_terms or derived["search_terms"])
     doc["search_text"] = chunk.search_text or derived["search_text"]
 
@@ -865,7 +869,7 @@ class MongoCodeChunkRepository:
             self._manager.ensure_indexes(db=self._injected_db)
         except (StorageConfigurationError, StorageOperationError):
             raise
-        except Exception as exc:
+        except Exception:
             raise StorageOperationError("Failed to initialize database indexes safely.") from None
 
     @property
@@ -1245,9 +1249,14 @@ class MongoCodeChunkRepository:
             doc_search_terms = set(doc.get("search_terms") or [])
 
             score = 0.45
-            if sym_norm and (sym_norm == query_clean or chunk.symbol_name.strip().lower() == raw_query.lower()):
+            if sym_norm and (
+                sym_norm == query_clean or chunk.symbol_name.strip().lower() == raw_query.lower()
+            ):
                 score = 1.0
-            elif path_norm and (path_norm == query_clean or chunk.relative_path.strip().lower() == raw_query.lower()):
+            elif path_norm and (
+                path_norm == query_clean
+                or chunk.relative_path.strip().lower() == raw_query.lower()
+            ):
                 score = 0.95
             elif query_token_set.issubset(sym_tokens):
                 score = 0.85

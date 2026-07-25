@@ -1,4 +1,4 @@
-"""Unit tests for search_lexical in MongoCodeChunkRepository and SemanticRetrievalService static search."""
+"""Unit tests for search_lexical in MongoCodeChunkRepository and retrieval service."""
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
@@ -7,12 +7,11 @@ from sourcetrace.models.domain import CodeChunk, RepositoryRecord
 from sourcetrace.retrieval.service import SemanticRetrievalService
 from sourcetrace.storage.mongo_repositories import (
     MongoCodeChunkRepository,
-    tokenize_identifier,
 )
 
 
 def test_mongo_code_chunk_repository_search_lexical_filter():
-    """Verify that MongoCodeChunkRepository.search_lexical builds an indexed $in query on search_terms."""
+    """Verify that search_lexical builds an indexed $in query on search_terms."""
     mock_collection = MagicMock()
     mock_collection.find.return_value.limit.return_value = [
         {
@@ -131,8 +130,7 @@ def test_semantic_retrieval_service_static_integration():
 
 
 def test_lexical_candidate_ranking_exact_symbol_first_with_many_generic_matches():
-    """Regression test: Many generic 'workout' matches returned by fallback query must not displace exact WorkoutCard symbol."""
-    from sourcetrace.core.exceptions import StorageDataError
+    """Regression test: Generic matches must not displace exact WorkoutCard symbol."""
 
     now = datetime.now(UTC)
     mock_collection = MagicMock()

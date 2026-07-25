@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock
+
 from fastapi.testclient import TestClient
 
 from sourcetrace.api.app import create_app

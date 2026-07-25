@@ -1,7 +1,7 @@
 """Comprehensive capability and provider readiness consistency unit tests."""
 
-from pydantic import SecretStr
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from sourcetrace.api.app import create_app
 from sourcetrace.core.capabilities import evaluate_capabilities

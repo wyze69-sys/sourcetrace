@@ -183,7 +183,10 @@ def test_missing_gemini_api_key_fails_on_embed() -> None:
     adapter = GeminiEmbeddingAdapter(settings=settings)
     with pytest.raises(EmbeddingError) as exc_info:
         adapter.embed(["test text"])
-    assert "configuration is invalid" in str(exc_info.value) or str(exc_info.value) == "Embedding failed safely."
+    assert (
+        "configuration is invalid" in str(exc_info.value)
+        or str(exc_info.value) == "Embedding failed safely."
+    )
 
 
 def test_no_gemini_key_in_exception_text(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -315,7 +318,10 @@ def test_exact_vector_count_enforced() -> None:
     )
     with pytest.raises(EmbeddingError) as exc_info:
         adapter.embed(["text1", "text2"])
-    assert "invalid vector response" in str(exc_info.value) or str(exc_info.value) == "Embedding failed safely."
+    assert (
+        "invalid vector response" in str(exc_info.value)
+        or str(exc_info.value) == "Embedding failed safely."
+    )
 
 
 def test_total_count_matches_input_count() -> None:
@@ -347,7 +353,10 @@ def test_wrong_vector_dimension_rejected() -> None:
     )
     with pytest.raises(EmbeddingError) as exc_info:
         adapter.embed(["text1"])
-    assert "invalid vector response" in str(exc_info.value) or str(exc_info.value) == "Embedding failed safely."
+    assert (
+        "invalid vector response" in str(exc_info.value)
+        or str(exc_info.value) == "Embedding failed safely."
+    )
 
 
 def test_empty_vector_rejected() -> None:
@@ -428,7 +437,11 @@ def test_provider_exception_masked_as_embedding_error() -> None:
     with pytest.raises(EmbeddingError) as exc_info:
         adapter.embed(["text1"])
     assert "Internal server error with secret details" not in str(exc_info.value)
-    assert str(exc_info.value) in ("Embedding failed safely.", "Embedding provider server error. Retry later.", "Embedding provider request failed.")
+    assert str(exc_info.value) in (
+        "Embedding failed safely.",
+        "Embedding provider server error. Retry later.",
+        "Embedding provider request failed.",
+    )
 
 
 def test_none_embeddings_response_raises_embedding_error() -> None:

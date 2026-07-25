@@ -1,5 +1,4 @@
 import inspect
-from dataclasses import fields
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,7 +8,6 @@ from pydantic import SecretStr
 from sourcetrace.core.config import Settings
 from sourcetrace.core.exceptions import StorageConfigurationError
 from sourcetrace.main import app
-from sourcetrace.models import domain
 from sourcetrace.storage import repositories
 from sourcetrace.storage.mongodb import CANONICAL_COLLECTIONS, MongoStorageManager
 
@@ -120,7 +118,9 @@ def test_init_indexes_creation() -> None:
     code_chunks_coll = mock_collections["code_chunks"]
     calls = [c[1] for c in code_chunks_coll.create_index.call_args_list]
 
-    search_terms_idx = next(c for c in calls if c.get("name") == "code_chunks_owner_repo_search_terms_idx")
+    search_terms_idx = next(
+        c for c in calls if c.get("name") == "code_chunks_owner_repo_search_terms_idx"
+    )
     assert search_terms_idx["name"] == "code_chunks_owner_repo_search_terms_idx"
 
     # Call init_indexes a second time to verify idempotency

@@ -706,7 +706,7 @@ def test_run_github_indexing_worker_setup_failure_malformed_result_prevents_repo
 
 
 def test_run_github_indexing_static_mode_bomb_factory(tmp_path: Any) -> None:
-    """Strict bomb-factory test: static repository + provider_factory that raises -> worker must complete without calling it."""
+    """Bomb-factory test: static mode worker completes without calling raising provider_factory."""
     now = datetime.now(UTC)
     owner_id = "sess_bomb"
     repo_id = "repo_bomb"
