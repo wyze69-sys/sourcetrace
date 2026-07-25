@@ -1,0 +1,23 @@
+schema_version: 1
+purpose: >-
+  Canonical registry for reproducible SourceTrace RAG evaluations. Evaluation
+  cases and scorecards are added during EVAL-001 after real retrieval/chat behavior exists.
+
+artifact_policy:
+  datasets: versioned synthetic or deliberately public evaluation questions
+  fixtures: synthetic or deliberately public repositories only
+  tests: deterministic evaluation runners and assertions
+  scorecards: reviewed baseline and comparison summaries
+  traces: generated locally; ignored by Git
+  results: generated locally; ignored by Git
+
+required_metric_families:
+  - expected_source_recall_at_k
+  - citation_validity
+  - groundedness
+  - insufficient_evidence_accuracy
+  - indexing_latency
+  - query_latency
+  - provider_cost_when_available
+
+evaluation_suites: []

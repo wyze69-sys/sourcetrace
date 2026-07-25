@@ -1,0 +1,27 @@
+schema_version: 1
+purpose: >-
+  Canonical registry for production RAG prompts. Prompt content is added only
+  during its owning implementation task. Do not place AI coding-agent rules here.
+
+rules:
+  - Every production prompt has one stable ID and one canonical file.
+  - Prompt files are versioned; changing behavior creates a new version.
+  - The active version is changed only with focused tests or evaluation evidence.
+  - Provider secrets, user source code, traces, and generated answers never belong here.
+  - Python modules load prompts from this catalog rather than duplicating long prompt strings.
+
+prompt_families:
+  answer:
+    directory: answer/
+    planned:
+      - grounded_answer
+      - insufficient_evidence
+  retrieval:
+    directory: retrieval/
+    planned:
+      - query_rewrite
+  shared:
+    directory: shared/
+    planned: []
+
+active_prompts: {}

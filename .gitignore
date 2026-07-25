@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Node / React
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local AI-agent and internal planning documents
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.clinerules/
+.cursor/
+frontend/AGENTS.md
+backend/AGENTS.md
+docs/
+
+# Local inspection helpers
+backend/verify_fitsync.py
+backend/tests/inspect_live_results.py
+backend/tests/verify_live_acceptance.py
+
+# Python build output
+build/
+dist/
+*.egg-info/
+
+# SourceTrace backend runtime data
+backend/data/runtime/*
+!backend/data/runtime/.gitkeep
+
+# Generated evaluation artifacts
+evals/traces/*
+!evals/traces/.gitkeep
+evals/results/*
+!evals/results/.gitkeep
+
+# Editors, logs, and operating systems
+.vscode/
+.idea/
+.vs/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
+logs/
+

@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sourcetrace"
+version = "0.1.0"
+description = "Evidence-grounded RAG intelligence for Python codebases"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "LINH RATH HENRY" }
+]
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "google-genai>=1.0,<2.0",
+  "openai>=1.75,<3.0",
+  "pydantic-settings>=2.8,<3.0",
+  "pymongo>=4.10,<5.0",
+  "python-multipart>=0.0.20,<1.0",
+  "tree-sitter>=0.26.0",
+  "tree-sitter-javascript>=0.25.0",
+  "tree-sitter-typescript>=0.23.2",
+  "uvicorn[standard]>=0.34,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.28,<1.0",
+  "pytest>=8.3,<9.0",
+  "pytest-cov>=6.1,<7.0",
+  "ruff>=0.11,<1.0",
+]
+
+[project.scripts]
+sourcetrace-api = "sourcetrace.cli:run_api"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sourcetrace"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["tests/fixtures/parser_fixtures/syntax_error.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/fixtures/parser_fixtures/*.py" = ["UP009"]

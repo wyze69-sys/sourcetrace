@@ -1,0 +1,34 @@
+# Render Blueprint Configuration for SourceTrace Backend
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: sourcetrace-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install uv && uv sync --frozen
+    startCommand: uv run uvicorn sourcetrace.api.app:create_app --factory --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: SOURCETRACE_ENV
+        value: production
+      - key: SOURCETRACE_LOG_LEVEL
+        value: INFO
+      - key: SOURCETRACE_LLM_PROVIDER
+        value: gemini
+      - key: SOURCETRACE_EMBEDDING_PROVIDER
+        value: gemini
+      - key: SOURCETRACE_GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: SOURCETRACE_GEMINI_EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: SOURCETRACE_EMBEDDING_DIMENSIONS
+        value: "1536"
+      - key: SOURCETRACE_GEMINI_API_KEY
+        sync: false
+      - key: SOURCETRACE_MONGODB_URI
+        sync: false
+      - key: SOURCETRACE_SESSION_SIGNING_SECRET
+        generateValue: true
+      - key: SOURCETRACE_CORS_ORIGINS
+        sync: false
