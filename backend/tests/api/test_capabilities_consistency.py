@@ -6,8 +6,10 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from sourcetrace.api.app import create_app
+from sourcetrace.api.dependencies import get_session_repository
 from sourcetrace.core.capabilities import evaluate_capabilities
 from sourcetrace.core.config import Settings, get_settings
+from sourcetrace.models.domain import AnonymousSession
 
 
 def test_caps_static_with_no_keys():
@@ -102,37 +104,25 @@ def test_caps_operator_disables_cloud_ai():
     assert caps.allowed_index_modes == ["static"]
 
 
-def test_route_dependency_override_and_agreement(monkeypatch):
+def test_route_dependency_override_and_agreement():
     """Capabilities route and POST /repositories agree exactly under dependency override."""
-    monkeypatch.setenv("SOURCETRACE_MONGODB_URI", "mongodb://unit-test.invalid:27017")
-    monkeypatch.setenv(
-        "SOURCETRACE_SESSION_SIGNING_SECRET",
-        "test-only-session-signing-secret-not-for-production",
-    )
-
-    mock_client = MagicMock()
-    mock_db = MagicMock()
-    mock_db.name = "sourcetrace_test"
-    mock_db.client = mock_client
-    mock_client.__getitem__.return_value = mock_db
-
-    import sourcetrace.storage.mongodb as mongodb_mod
-
-    monkeypatch.setattr(mongodb_mod, "MongoClient", lambda uri: mock_client)
-
     custom_settings = Settings(
         gemini_api_key=None,
         embedding_api_key=None,
         embedding_provider="gemini",
         allowed_index_modes=("static", "cloud_ai"),
-        mongodb_uri="mongodb://unit-test.invalid:27017",
         session_signing_secret=SecretStr(
             "test-only-session-signing-secret-not-for-production"
         ),
     )
 
+    session_repo = MagicMock()
+    session_repo.get_by_id.return_value = None
+    session_repo.save.side_effect = lambda session: session
+
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: custom_settings
+    app.dependency_overrides[get_session_repository] = lambda: session_repo
 
     test_client = TestClient(app)
 
@@ -153,6 +143,10 @@ def test_route_dependency_override_and_agreement(monkeypatch):
     )
     assert repo_resp.status_code == 422
     assert repo_resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    session_repo.save.assert_called_once()
+    saved_session = session_repo.save.call_args.args[0]
+    assert isinstance(saved_session, AnonymousSession)
 
 
 def test_no_secret_leakage():
