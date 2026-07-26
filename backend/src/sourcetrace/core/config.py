@@ -94,10 +94,16 @@ class Settings(BaseSettings):
     vector_search_max_limit: int = 50
 
     # -------------------------------------------------------------------------
-    # Session
+    # Session & JWT
     # -------------------------------------------------------------------------
     session_cookie_name: str = "sourcetrace_session"
     session_signing_secret: SecretStr | None = None
+
+    jwt_secret: SecretStr | None = None
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_ttl_seconds: int = 604800
+    jwt_issuer: str = "sourcetrace"
+    jwt_audience: str = "sourcetrace-api"
 
 
 @lru_cache

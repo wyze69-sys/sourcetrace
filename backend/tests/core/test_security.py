@@ -102,3 +102,299 @@ def test_exact_expiration_boundary_rejected() -> None:
         signer.verify_cookie_token(token, current_time=exp - timedelta(seconds=1))
         == "sess_exact_boundary"
     )
+
+
+# ---------------------------------------------------------------------------
+# JWT Security Unit Tests
+# ---------------------------------------------------------------------------
+
+
+def test_jwt_valid_token_round_trip_returns_original_owner_id() -> None:
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    token = signer.create_access_token("sess_jwt_valid_123")
+    assert isinstance(token, str)
+
+    restored_id = signer.verify_access_token(token)
+    assert restored_id == "sess_jwt_valid_123"
+
+
+def test_jwt_token_contains_all_required_claims() -> None:
+    import jwt
+
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    token = signer.create_access_token("sess_claims_test", current_time=now)
+
+    unverified = jwt.decode(token, options={"verify_signature": False})
+    assert unverified["sub"] == "sess_claims_test"
+    assert unverified["iss"] == "sourcetrace"
+    assert unverified["aud"] == "sourcetrace-api"
+    assert unverified["type"] == "anonymous_access"
+    assert unverified["jti"].startswith("jti_")
+    assert unverified["iat"] == int(now.timestamp())
+    assert unverified["exp"] == int(now.timestamp()) + 604800
+
+
+def test_jwt_exp_derived_from_configured_ttl() -> None:
+    import jwt
+
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    token = signer.create_access_token("sess_ttl_test", current_time=now, ttl_seconds=3600)
+
+    unverified = jwt.decode(token, options={"verify_signature": False})
+    assert unverified["exp"] == int(now.timestamp()) + 3600
+
+
+def test_jwt_two_issued_tokens_have_different_jti() -> None:
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    token1 = signer.create_access_token("sess_jti_test")
+    token2 = signer.create_access_token("sess_jti_test")
+
+    import jwt
+
+    u1 = jwt.decode(token1, options={"verify_signature": False})
+    u2 = jwt.decode(token2, options={"verify_signature": False})
+    assert u1["jti"] != u2["jti"]
+
+
+def test_jwt_missing_secret_rejected() -> None:
+    from sourcetrace.core.security import JWTSigner
+
+    with pytest.raises(SessionConfigurationError) as exc_info:
+        JWTSigner(secret="")
+    assert "JWT signing secret is not configured" in str(exc_info.value)
+
+
+def test_jwt_secret_shorter_than_32_bytes_rejected() -> None:
+    from sourcetrace.core.security import JWTSigner
+
+    short_secret = "short_key_under_32_bytes"
+    with pytest.raises(SessionConfigurationError) as exc_info:
+        JWTSigner(secret=short_secret)
+    assert short_secret not in str(exc_info.value)
+
+
+def test_jwt_invalid_subject_prefix_rejected() -> None:
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    with pytest.raises(ValueError):
+        signer.create_access_token("invalid_prefix_123")
+
+
+def test_jwt_malformed_token_rejected() -> None:
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token("not.a.valid.jwt")
+
+
+def test_jwt_tampered_token_rejected() -> None:
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    token = signer.create_access_token("sess_tamper_test")
+    tampered = token[:-4] + "ffff"
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(tampered)
+
+
+def test_jwt_token_signed_with_another_secret_rejected() -> None:
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer1 = JWTSigner(secret=VALID_SECRET)
+    signer2 = JWTSigner(secret="another_secret_key_that_is_32_bytes_long!!")
+
+    token = signer1.create_access_token("sess_secret_test")
+    with pytest.raises(SessionInvalidError):
+        signer2.verify_access_token(token)
+
+
+def test_jwt_expired_token_rejected() -> None:
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    past = now - timedelta(days=8)
+    token = signer.create_access_token("sess_expired_test", current_time=past, ttl_seconds=3600)
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(token, current_time=now)
+
+
+def test_jwt_missing_required_claims_rejected() -> None:
+    import jwt
+
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+
+    # Payload missing 'type' claim
+    incomplete_payload = {
+        "sub": "sess_incomplete",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_12345",
+        "iss": "sourcetrace",
+        "aud": "sourcetrace-api",
+    }
+    raw_token = jwt.encode(incomplete_payload, VALID_SECRET, algorithm="HS256")
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)
+
+
+def test_jwt_wrong_issuer_rejected() -> None:
+    import jwt
+
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    payload = {
+        "sub": "sess_wrong_iss",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_12345",
+        "type": "anonymous_access",
+        "iss": "wrong_issuer",
+        "aud": "sourcetrace-api",
+    }
+    raw_token = jwt.encode(payload, VALID_SECRET, algorithm="HS256")
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)
+
+
+def test_jwt_wrong_audience_rejected() -> None:
+    import jwt
+
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    payload = {
+        "sub": "sess_wrong_aud",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_12345",
+        "type": "anonymous_access",
+        "iss": "sourcetrace",
+        "aud": "wrong-api",
+    }
+    raw_token = jwt.encode(payload, VALID_SECRET, algorithm="HS256")
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)
+
+
+def test_jwt_wrong_token_type_rejected() -> None:
+    import jwt
+
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    payload = {
+        "sub": "sess_wrong_type",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_12345",
+        "type": "user_access",
+        "iss": "sourcetrace",
+        "aud": "sourcetrace-api",
+    }
+    raw_token = jwt.encode(payload, VALID_SECRET, algorithm="HS256")
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)
+
+
+def test_jwt_invalid_subject_type_rejected() -> None:
+    import jwt
+
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    payload = {
+        "sub": 12345,  # non-string subject
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_12345",
+        "type": "anonymous_access",
+        "iss": "sourcetrace",
+        "aud": "sourcetrace-api",
+    }
+    raw_token = jwt.encode(payload, VALID_SECRET, algorithm="HS256")
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)
+
+
+def test_jwt_empty_jti_rejected() -> None:
+    import jwt
+
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    payload = {
+        "sub": "sess_empty_jti",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "",  # empty string
+        "type": "anonymous_access",
+        "iss": "sourcetrace",
+        "aud": "sourcetrace-api",
+    }
+    raw_token = jwt.encode(payload, VALID_SECRET, algorithm="HS256")
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)
+
+
+def test_jwt_algorithm_confusion_or_unsupported_algorithm_rejected() -> None:
+    import jwt
+
+    from sourcetrace.core.exceptions import SessionInvalidError
+    from sourcetrace.core.security import JWTSigner
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    payload = {
+        "sub": "sess_algo_test",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_12345",
+        "type": "anonymous_access",
+        "iss": "sourcetrace",
+        "aud": "sourcetrace-api",
+    }
+    # Encode token with algorithm 'none'
+    raw_token = jwt.encode(payload, "", algorithm="none")
+
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)

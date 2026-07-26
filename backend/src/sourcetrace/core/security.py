@@ -5,15 +5,17 @@ import hmac
 import secrets
 from datetime import UTC, datetime
 
+import jwt
 from pydantic import SecretStr
 
-from sourcetrace.core.config import get_settings
-from sourcetrace.core.exceptions import SessionConfigurationError
+from sourcetrace.core.config import Settings, get_settings
+from sourcetrace.core.exceptions import SessionConfigurationError, SessionInvalidError
 
 COOKIE_VERSION = "v1"
 SESSION_INACTIVITY_DAYS = 7
 SESSION_MAX_AGE_SECONDS = SESSION_INACTIVITY_DAYS * 24 * 60 * 60  # 604,800 seconds
 MIN_SECRET_LENGTH = 32
+
 
 
 def generate_owner_session_id() -> str:
@@ -104,3 +106,123 @@ class SessionSigner:
             return None
 
         return owner_session_id
+
+
+class JWTSigner:
+    """Creates and verifies stateless JWT Bearer tokens for anonymous browser sessions."""
+
+    def __init__(
+        self,
+        secret: str | SecretStr | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        raw_secret: str | None = None
+        active_settings = settings or get_settings()
+
+        if isinstance(secret, SecretStr):
+            raw_secret = secret.get_secret_value()
+        elif isinstance(secret, str):
+            raw_secret = secret
+        elif secret is None:
+            if active_settings.jwt_secret is not None:
+                raw_secret = active_settings.jwt_secret.get_secret_value()
+            elif active_settings.session_signing_secret is not None:
+                raw_secret = active_settings.session_signing_secret.get_secret_value()
+
+        if not raw_secret or len(raw_secret) < MIN_SECRET_LENGTH:
+            raise SessionConfigurationError(
+                "JWT signing secret is not configured or is too short."
+            )
+
+        self._secret_bytes = raw_secret.encode("utf-8")
+        self._algorithm = "HS256"
+        self._issuer = active_settings.jwt_issuer
+        self._audience = active_settings.jwt_audience
+        self._default_ttl_seconds = active_settings.jwt_access_token_ttl_seconds
+
+    def create_access_token(
+        self,
+        owner_session_id: str,
+        current_time: datetime | None = None,
+        ttl_seconds: int | None = None,
+    ) -> str:
+        """Encode and sign an anonymous access JWT."""
+        if (
+            not isinstance(owner_session_id, str)
+            or not owner_session_id
+            or not owner_session_id.startswith("sess_")
+        ):
+            raise ValueError("Invalid owner_session_id format.")
+
+        now = current_time or datetime.now(UTC)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+
+        iat = int(now.timestamp())
+        ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl_seconds
+        exp = iat + ttl
+        jti = f"jti_{secrets.token_urlsafe(16)}"
+
+        payload = {
+            "sub": owner_session_id,
+            "iat": iat,
+            "exp": exp,
+            "jti": jti,
+            "type": "anonymous_access",
+            "iss": self._issuer,
+            "aud": self._audience,
+        }
+
+        return jwt.encode(payload, self._secret_bytes, algorithm=self._algorithm)
+
+    def verify_access_token(
+        self,
+        token: str,
+        current_time: datetime | None = None,
+    ) -> str:
+        """Verify JWT signature, claims, and lifetime. Return owner_session_id if valid."""
+        if not token or not isinstance(token, str):
+            raise SessionInvalidError("Token must be a non-empty string.")
+
+        try:
+            payload = jwt.decode(
+                token,
+                self._secret_bytes,
+                algorithms=["HS256"],
+                issuer=self._issuer,
+                audience=self._audience,
+                options={
+                    "require": ["sub", "iat", "exp", "jti", "type", "iss", "aud"],
+                    "verify_signature": True,
+                    "verify_exp": True,
+                    "verify_iat": True,
+                    "verify_iss": True,
+                    "verify_aud": True,
+                },
+            )
+        except jwt.PyJWTError as exc:
+            raise SessionInvalidError("Invalid or expired JWT token.") from exc
+
+        sub = payload.get("sub")
+        if not isinstance(sub, str) or not sub.startswith("sess_"):
+            raise SessionInvalidError("Invalid subject in token.")
+
+        token_type = payload.get("type")
+        if token_type != "anonymous_access":
+            raise SessionInvalidError("Invalid token type.")
+
+        jti = payload.get("jti")
+        if not isinstance(jti, str) or not jti:
+            raise SessionInvalidError("Invalid JTI in token.")
+
+        if current_time is not None:
+            now = (
+                current_time
+                if current_time.tzinfo is not None
+                else current_time.replace(tzinfo=UTC)
+            )
+            now_ts = int(now.timestamp())
+            if now_ts >= payload.get("exp", 0) or now_ts < payload.get("iat", 0):
+                raise SessionInvalidError("Token expired or not yet valid.")
+
+        return sub
