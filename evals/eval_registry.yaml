@@ -19,5 +19,22 @@ required_metric_families:
   - indexing_latency
   - query_latency
   - provider_cost_when_available
+  - trace_step_edge_gap_accuracy
+  - impact_upstream_downstream_accuracy
+  - risk_factor_accuracy
+  - determinism_verification
 
-evaluation_suites: []
+evaluation_suites:
+  - id: rag-v1
+    dataset: dataset.v1.json
+    runner: run_eval.py
+    tests: tests/test_eval_runner.py
+    covers: retrieval, grounded chat, citations, insufficient evidence
+  - id: trace-impact-v1
+    dataset: trace_impact.dataset.v1.json
+    runner: run_trace_impact_eval.py
+    tests: tests/test_trace_impact_eval.py
+    covers: >-
+      static flow trace (steps, edges, confidence, gaps), change impact preview
+      (upstream/downstream, risk factors), citation validity against fixture
+      lines, storage-order determinism

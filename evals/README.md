@@ -77,3 +77,36 @@ uv run python evals/run_eval.py
 The runner exits with code `0` when dataset validation and metric invariants pass, and `1` on failure.
 
 Results are saved to `evals/results/eval_result.v1.json`.
+
+---
+
+## Flow Trace & Impact Evaluation Suite (EVAL-002)
+
+A second suite, `trace_impact.dataset.v1.json` + `run_trace_impact_eval.py`, evaluates the
+zero-token static analysis services against the same checked-in fixture repository:
+
+- **Trace cases** assert the exact step sequence, edge set (with kind, confidence, and
+  evidence line), and gap kinds produced by `FlowTraceService` — including honest
+  behavior cases (builtin references skipped, unresolvable entries reported as
+  `entry_unresolved`).
+- **Impact cases** assert the exact upstream-dependent and downstream-dependency sets
+  (with distance and confidence), risk factor kinds, and risk level produced by
+  `ChangeImpactService`.
+- **Citation validity** re-verifies every produced citation against the fixture source:
+  the cited lines must lie inside the cited chunk and the evidence label must appear on
+  the exact cited line. Required to be 100%.
+- **Determinism** runs every case twice with reversed storage return order; results must
+  be identical.
+
+Dataset expectations are validated against the real `python-ast-v2` parse of the fixture
+at load time — an expected symbol that is not an indexed chunk fails validation, so the
+dataset cannot silently drift from the fixtures.
+
+Run from the repository root:
+
+```bash
+uv run python evals/run_trace_impact_eval.py
+```
+
+Results are saved to `evals/results/eval_result.trace_impact.v1.json`. Regression tests
+live in `evals/tests/test_trace_impact_eval.py`.

@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "description": "Versioned offline evaluation cases for the static flow trace and change impact preview services (EVAL-002). Expected values were verified against the python-ast-v2 parse of evals/fixtures/sample_repo.",
+  "repository_fixture": "evals/fixtures/sample_repo",
+  "trace_cases": [
+    {
+      "id": "ti-trace-001",
+      "description": "Cross-file flow: process_repository calls import-bound auth and errors symbols",
+      "entry": "process_repository",
+      "expected_steps": [
+        {"relative_path": "services.py", "symbol_name": "RepositoryService.process_repository"},
+        {"relative_path": "auth.py", "symbol_name": "validate_owner_permissions"},
+        {"relative_path": "errors.py", "symbol_name": "AccessDeniedError"}
+      ],
+      "expected_edges": [
+        {
+          "from_symbol": "RepositoryService.process_repository",
+          "to_symbol": "validate_owner_permissions",
+          "kind": "call",
+          "confidence": "high",
+          "evidence_line": 16
+        },
+        {
+          "from_symbol": "RepositoryService.process_repository",
+          "to_symbol": "AccessDeniedError",
+          "kind": "call",
+          "confidence": "high",
+          "evidence_line": 17
+        }
+      ],
+      "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-trace-002",
+      "description": "Leaf symbol: builtin references are silently skipped, no fabricated edges",
+      "entry": "generate_session_token",
+      "expected_steps": [
+        {"relative_path": "auth.py", "symbol_name": "generate_session_token"}
+      ],
+      "expected_edges": [],
+      "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-trace-003",
+      "description": "Nonexistent entry symbol resolves honestly to entry_unresolved",
+      "entry": "quantum_encryption_pipeline",
+      "expected_steps": [],
+      "expected_edges": [],
+      "expected_gap_kinds": ["entry_unresolved"]
+    }
+  ],
+  "impact_cases": [
+    {
+      "id": "ti-impact-001",
+      "description": "Upstream dependent discovery for a security-critical function",
+      "symbol": "validate_owner_permissions",
+      "expected_upstream": [
+        {
+          "relative_path": "services.py",
+          "symbol_name": "RepositoryService.process_repository",
+          "distance": 1,
+          "confidence": "high"
+        }
+      ],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": ["no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-impact-002",
+      "description": "Upstream dependent discovery for an exception class",
+      "symbol": "AccessDeniedError",
+      "expected_upstream": [
+        {
+          "relative_path": "services.py",
+          "symbol_name": "RepositoryService.process_repository",
+          "distance": 1,
+          "confidence": "high"
+        }
+      ],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": ["no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-impact-003",
+      "description": "Downstream dependency discovery from an orchestrating method",
+      "symbol": "process_repository",
+      "expected_upstream": [],
+      "expected_downstream": [
+        {
+          "relative_path": "auth.py",
+          "symbol_name": "validate_owner_permissions",
+          "distance": 1,
+          "confidence": "high"
+        },
+        {
+          "relative_path": "errors.py",
+          "symbol_name": "AccessDeniedError",
+          "distance": 1,
+          "confidence": "high"
+        }
+      ],
+      "expected_risk_factor_kinds": ["no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": []
+    }
+  ]
+}
