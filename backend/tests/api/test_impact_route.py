@@ -162,6 +162,84 @@ def test_impact_unresolved_symbol_returns_200_with_unknown_risk() -> None:
     assert [g["kind"] for g in data["gaps"]] == ["entry_unresolved"]
 
 
+_VALID_DIFF = (
+    "--- a/src/app.py\n"
+    "+++ b/src/app.py\n"
+    "@@ -2,1 +2,1 @@\n"
+    "-old\n"
+    "+new\n"
+)
+
+
+def test_diff_impact_requires_bearer_authentication() -> None:
+    app, _ = _app(authed=False)
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF}
+    )
+    assert response.status_code == 401
+    assert response.headers.get("WWW-Authenticate") == "Bearer"
+
+
+def test_diff_impact_missing_or_cross_owner_repository_returns_uniform_404() -> None:
+    app, _ = _app(repo_record=None)
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/repositories/repo_of_someone_else/impact/diff",
+        json={"diff": _VALID_DIFF},
+    )
+    assert response.status_code == 404
+
+
+def test_diff_impact_not_ready_repository_returns_400() -> None:
+    app, _ = _app(repo_record=_repo_record(status="processing"))
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF}
+    )
+    assert response.status_code == 400
+
+
+def test_diff_impact_rejects_non_diff_input_with_422() -> None:
+    app, _ = _app(repo_record=_repo_record(), chunks=[_chunk("c_x", "main")])
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact/diff",
+        json={"diff": "this is not a unified diff"},
+    )
+    # DiffParseError maps to the platform's standard 422 validation envelope
+    # (details are masked by the global error handler by design).
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_diff_impact_success_returns_targets_and_aggregated_impact() -> None:
+    target = _chunk("c_target", "compute")
+    caller = _chunk(
+        "c_caller", "handler", references=[ReferenceEvidence("compute", "call", 4, 4)]
+    )
+    app, mock_chunk_repo = _app(repo_record=_repo_record(), chunks=[target, caller])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["repository_id"] == "repo_i1"
+    assert [t["node_id"] for t in data["targets"]] == ["c_target", "c_caller"]
+    assert all("changed_lines" in t for t in data["targets"])
+    # Both chunks in src/app.py span line 2, so both are targets and the
+    # caller's reference to compute is a seed-to-seed edge (excluded).
+    assert data["upstream"] == []
+    assert data["risk_level"] in ("low", "medium", "high", "unknown")
+    # Zero-token: the diff preview needs only the chunk listing.
+    called = {c[0] for c in mock_chunk_repo.method_calls}
+    assert called == {"list_by_repository"}
+    assert not mock_chunk_repo.search_vectors.called
+
+
 def test_impact_makes_no_llm_or_provider_calls() -> None:
     target = _chunk("c_target", "compute")
     app, mock_chunk_repo = _app(

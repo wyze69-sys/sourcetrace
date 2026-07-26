@@ -2,11 +2,14 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiError, type ApiClient } from '../services/apiClient'
-import type { ChangeImpactResponse } from '../services/types'
+import type { ChangeImpactResponse, DiffImpactResponse } from '../services/types'
 import { ImpactPanel } from './ImpactPanel'
 
-function makeClient(previewImpact: ReturnType<typeof vi.fn>): ApiClient {
-  return { previewImpact } as unknown as ApiClient
+function makeClient(
+  previewImpact: ReturnType<typeof vi.fn>,
+  previewDiffImpact?: ReturnType<typeof vi.fn>,
+): ApiClient {
+  return { previewImpact, previewDiffImpact } as unknown as ApiClient
 }
 
 const FULL_IMPACT: ChangeImpactResponse = {
@@ -128,10 +131,101 @@ const NO_IMPACT: ChangeImpactResponse = {
   gaps: [],
 }
 
+const FULL_DIFF_IMPACT: DiffImpactResponse = {
+  repository_id: 'repo_1',
+  targets: [
+    {
+      node_id: 'c_calc',
+      relative_path: 'src/calc.py',
+      symbol_name: 'compute',
+      symbol_type: 'function',
+      start_line: 10,
+      end_line: 20,
+      changed_lines: [13, 14],
+    },
+    {
+      node_id: 'c_store',
+      relative_path: 'src/store.py',
+      symbol_name: 'save',
+      symbol_type: 'function',
+      start_line: 1,
+      end_line: 8,
+      changed_lines: [3],
+    },
+  ],
+  upstream: [
+    {
+      node_id: 'c_handler',
+      relative_path: 'src/api.py',
+      symbol_name: 'handler',
+      symbol_type: 'function',
+      start_line: 5,
+      end_line: 25,
+      distance: 1,
+      confidence: 'high',
+      edge_kind: 'call',
+      via_node_id: 'c_calc',
+      evidence_node_id: 'c_handler',
+      evidence_label: 'compute',
+      evidence_line_start: 9,
+      evidence_line_end: 9,
+    },
+  ],
+  downstream: [],
+  affected_endpoints: [],
+  affected_components: [],
+  affected_tests: [],
+  risk_level: 'medium',
+  risk_factors: [
+    {
+      kind: 'no_test_coverage',
+      severity: 'medium',
+      detail: 'No indexed test file references this symbol.',
+    },
+  ],
+  gaps: [
+    {
+      kind: 'diff_stale',
+      detail: 'The diff base and the indexed revision differ at src/calc.py:12.',
+      node_id: null,
+    },
+  ],
+}
+
+const EMPTY_DIFF_IMPACT: DiffImpactResponse = {
+  repository_id: 'repo_1',
+  targets: [],
+  upstream: [],
+  downstream: [],
+  affected_endpoints: [],
+  affected_components: [],
+  affected_tests: [],
+  risk_level: 'unknown',
+  risk_factors: [],
+  gaps: [
+    {
+      kind: 'diff_file_unmatched',
+      detail: "'src/unknown.py' does not match any indexed file path.",
+      node_id: null,
+    },
+  ],
+}
+
+const SAMPLE_DIFF = '--- a/src/calc.py\n+++ b/src/calc.py\n@@ -13,1 +13,1 @@\n-x\n+y\n'
+
 async function submitSymbol(text: string) {
   const user = userEvent.setup()
   await user.type(screen.getByLabelText('Impact target symbol'), text)
   await user.click(screen.getByRole('button', { name: /preview impact/i }))
+  return user
+}
+
+async function submitDiff(text: string) {
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: 'Unified diff' }))
+  await user.click(screen.getByLabelText('Unified diff input'))
+  await user.paste(text)
+  await user.click(screen.getByRole('button', { name: /preview diff impact/i }))
   return user
 }
 
@@ -299,6 +393,81 @@ describe('ImpactPanel', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /preview impact/i })).toBeEnabled(),
     )
+  })
+
+  it('submits a pasted diff to the diff impact API for the selected repository', async () => {
+    const previewDiffImpact = vi.fn().mockResolvedValue(EMPTY_DIFF_IMPACT)
+    render(
+      <ImpactPanel
+        client={makeClient(vi.fn(), previewDiffImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+      />,
+    )
+
+    await submitDiff(SAMPLE_DIFF)
+
+    await waitFor(() => expect(previewDiffImpact).toHaveBeenCalledTimes(1))
+    expect(previewDiffImpact).toHaveBeenCalledWith('repo_1', SAMPLE_DIFF)
+  })
+
+  it('renders changed symbols, aggregated impact, and diff gaps for a diff preview', async () => {
+    const previewDiffImpact = vi.fn().mockResolvedValue(FULL_DIFF_IMPACT)
+    render(
+      <ImpactPanel
+        client={makeClient(vi.fn(), previewDiffImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+      />,
+    )
+
+    await submitDiff(SAMPLE_DIFF)
+
+    expect(await screen.findByText(/Changed symbols \(2\)/)).toBeInTheDocument()
+    expect(screen.getByText('compute')).toBeInTheDocument()
+    expect(screen.getByText('save')).toBeInTheDocument()
+    expect(screen.getByText(/touches lines 13, 14/)).toBeInTheDocument()
+    expect(screen.getByText(/Upstream dependents \(1\)/)).toBeInTheDocument()
+    expect(screen.getByText('handler')).toBeInTheDocument()
+    expect(screen.getByText('medium')).toBeInTheDocument()
+    expect(screen.getByText('diff_stale')).toBeInTheDocument()
+  })
+
+  it('reports honestly when no diff line maps to an indexed symbol', async () => {
+    const previewDiffImpact = vi.fn().mockResolvedValue(EMPTY_DIFF_IMPACT)
+    render(
+      <ImpactPanel
+        client={makeClient(vi.fn(), previewDiffImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+      />,
+    )
+
+    await submitDiff(SAMPLE_DIFF)
+
+    expect(
+      await screen.findByText(/No changed line in this diff mapped to an indexed symbol/),
+    ).toBeInTheDocument()
+    expect(screen.getByText('diff_file_unmatched')).toBeInTheDocument()
+    expect(screen.queryByText(/Change risk/)).not.toBeInTheDocument()
+  })
+
+  it('clears the previous result when switching input modes', async () => {
+    const previewImpact = vi.fn().mockResolvedValue(FULL_IMPACT)
+    render(
+      <ImpactPanel
+        client={makeClient(previewImpact, vi.fn())}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+      />,
+    )
+    const user = await submitSymbol('load_stats')
+    expect(await screen.findByText(/Upstream dependents \(2\)/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Unified diff' }))
+
+    expect(screen.queryByText(/Upstream dependents/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Unified diff input')).toBeInTheDocument()
   })
 
   it('clears a stale result when the selected repository changes', async () => {

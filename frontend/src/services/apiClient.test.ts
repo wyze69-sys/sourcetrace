@@ -303,6 +303,40 @@ describe('ApiClient', () => {
     expect(res).toEqual(impactBody)
   })
 
+  it('previewDiffImpact() posts the diff to the diff impact endpoint with Bearer auth', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_impact_token')
+
+    const diffBody = {
+      repository_id: 'repo_1',
+      targets: [],
+      upstream: [],
+      downstream: [],
+      affected_endpoints: [],
+      affected_components: [],
+      affected_tests: [],
+      risk_level: 'unknown',
+      risk_factors: [],
+      gaps: [],
+    }
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => diffBody,
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const diffText = '--- a/x.py\n+++ b/x.py\n@@ -1,1 +1,1 @@\n-a\n+b\n'
+    const res = await client.previewDiffImpact('repo_1', diffText)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [reqUrl, reqInit] = mockFetch.mock.calls[0]
+    expect(reqUrl).toBe('/api/v1/repositories/repo_1/impact/diff')
+    expect(reqInit.method).toBe('POST')
+    expect(JSON.parse(reqInit.body as string)).toEqual({ diff: diffText })
+    const reqHeaders = reqInit.headers as Headers
+    expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_impact_token')
+    expect(res).toEqual(diffBody)
+  })
+
   it('previewImpact() omits max_depth when not supplied', async () => {
     sessionStorage.setItem('sourcetrace.access_token', 'jwt_impact_token')
     const mockFetch = vi.fn().mockResolvedValue({

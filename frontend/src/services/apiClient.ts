@@ -5,6 +5,7 @@ import type {
   CreateConversationResponse,
   CreateRepositoryResponse,
   DeleteRepositoryResponse,
+  DiffImpactResponse,
   ErrorEnvelope,
   EvidenceSearchResponse,
   FlowTraceResponse,
@@ -284,6 +285,25 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           symbol,
+          ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
+        }),
+      },
+      'protected',
+    )
+  }
+
+  async previewDiffImpact(
+    repositoryId: string,
+    diff: string,
+    maxDepth?: number,
+  ): Promise<DiffImpactResponse> {
+    return this.request<DiffImpactResponse>(
+      `/repositories/${encodeURIComponent(repositoryId)}/impact/diff`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          diff,
           ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
         }),
       },

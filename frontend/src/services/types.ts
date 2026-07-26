@@ -280,3 +280,26 @@ export interface ChangeImpactResponse {
   risk_factors: RiskFactor[]
   gaps: ImpactGap[]
 }
+
+export interface DiffTarget {
+  node_id: string
+  relative_path: string
+  symbol_name: string
+  symbol_type: string
+  start_line: number
+  end_line: number
+  changed_lines: number[]
+}
+
+export interface DiffImpactResponse {
+  repository_id: string
+  targets: DiffTarget[]
+  upstream: ImpactItem[]
+  downstream: ImpactItem[]
+  affected_endpoints: AffectedEndpoint[]
+  affected_components: string[]
+  affected_tests: string[]
+  risk_level: RiskLevel
+  risk_factors: RiskFactor[]
+  gaps: ImpactGap[]
+}

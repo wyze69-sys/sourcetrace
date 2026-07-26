@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ApiError, type ApiClient } from '../services/apiClient'
 import type {
   ChangeImpactResponse,
+  DiffImpactResponse,
   ImpactItem,
   RiskLevel,
   RiskSeverity,
@@ -168,46 +169,54 @@ function ImpactItemList({
   )
 }
 
+type ImpactView =
+  | { kind: 'symbol'; data: ChangeImpactResponse }
+  | { kind: 'diff'; data: DiffImpactResponse }
+
 export function ImpactPanel({ client, repositoryId, repositoryName }: ImpactPanelProps) {
+  const [mode, setMode] = useState<'symbol' | 'diff'>('symbol')
   const [symbol, setSymbol] = useState('')
+  const [diffText, setDiffText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<ChangeImpactResponse | null>(null)
+  const [view, setView] = useState<ImpactView | null>(null)
   const [openCitations, setOpenCitations] = useState<Record<string, boolean>>({})
 
   // A different repository means any previous preview is stale evidence.
   useEffect(() => {
-    setResult(null)
+    setView(null)
     setError(null)
     setOpenCitations({})
   }, [repositoryId])
 
   // Symbol lookup for via/evidence node ids: items in either direction plus
-  // the resolved target itself (labeled with the query text).
+  // the seed(s) of the traversal (resolved target or diff targets).
   const symbolByNodeId = useMemo(() => {
     const map = new Map<string, string>()
-    if (!result) return map
-    for (const item of [...result.upstream, ...result.downstream]) {
+    if (!view) return map
+    for (const item of [...view.data.upstream, ...view.data.downstream]) {
       map.set(item.node_id, item.symbol_name)
     }
-    if (result.target.resolved_node_id) {
-      map.set(result.target.resolved_node_id, `${result.target.query} (target)`)
+    if (view.kind === 'symbol') {
+      if (view.data.target.resolved_node_id) {
+        map.set(view.data.target.resolved_node_id, `${view.data.target.query} (target)`)
+      }
+    } else {
+      for (const target of view.data.targets) {
+        map.set(target.node_id, `${target.symbol_name} (changed)`)
+      }
     }
     return map
-  }, [result])
+  }, [view])
 
-  const handlePreview = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!symbol.trim()) return
-
+  const runPreview = async (request: () => Promise<ImpactView>) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await client.previewImpact(repositoryId, symbol.trim())
-      setResult(res)
+      setView(await request())
       setOpenCitations({})
     } catch (err) {
-      setResult(null)
+      setView(null)
       if (err instanceof ApiError) {
         setError(err.message)
       } else {
@@ -218,44 +227,132 @@ export function ImpactPanel({ client, repositoryId, repositoryName }: ImpactPane
     }
   }
 
+  const handlePreview = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!symbol.trim()) return
+    await runPreview(async () => ({
+      kind: 'symbol',
+      data: await client.previewImpact(repositoryId, symbol.trim()),
+    }))
+  }
+
+  const handleDiffPreview = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!diffText.trim()) return
+    await runPreview(async () => ({
+      kind: 'diff',
+      data: await client.previewDiffImpact(repositoryId, diffText),
+    }))
+  }
+
   const toggleCitation = (key: string) => {
     setOpenCitations((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const resolved = result !== null && result.target.resolved_node_id !== null
+  const switchMode = (next: 'symbol' | 'diff') => {
+    if (next === mode) return
+    setMode(next)
+    setView(null)
+    setError(null)
+    setOpenCitations({})
+  }
+
+  const result = view?.data ?? null
+  const resolved =
+    result !== null &&
+    view !== null &&
+    (view.kind === 'symbol'
+      ? view.data.target.resolved_node_id !== null
+      : view.data.targets.length > 0)
   const hasImpact =
     resolved && (result.upstream.length > 0 || result.downstream.length > 0)
   const riskColors = result ? RISK_COLORS[result.risk_level] : null
+
+  const modeButtonStyle = (active: boolean): React.CSSProperties => ({
+    background: active ? '#1e293b' : 'transparent',
+    color: active ? '#e2e8f0' : '#64748b',
+    border: '1px solid #334155',
+    borderRadius: '6px',
+    padding: '4px 12px',
+    cursor: 'pointer',
+    fontSize: '0.8rem',
+  })
 
   return (
     <section className="card-panel impact-panel">
       <h2 className="panel-header">
         Change Impact Preview: <span className="mono">{repositoryName}</span>
       </h2>
-      <p className="panel-text" style={{ marginBottom: '16px' }}>
-        Preview what may break before changing a symbol: upstream dependents, downstream
-        dependencies, affected endpoints and tests. Every item is cited from indexed
-        source; unknowns are reported as gaps, never guessed.
+      <p className="panel-text" style={{ marginBottom: '12px' }}>
+        Preview what may break before changing code: upstream dependents, downstream
+        dependencies, affected endpoints and tests. Analyze a single symbol or paste a
+        unified diff. Every item is cited from indexed source; unknowns are reported as
+        gaps, never guessed.
       </p>
 
-      <form
-        onSubmit={handlePreview}
-        className="impact-form"
-        style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}
-      >
-        <input
-          type="text"
-          className="input-text chat-input"
-          placeholder="Symbol to analyze (e.g. validate_owner_permissions)..."
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          disabled={loading}
-          aria-label="Impact target symbol"
-        />
-        <button type="submit" disabled={loading || !symbol.trim()} className="btn-action">
-          {loading ? 'Previewing...' : 'Preview Impact'}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }} role="group" aria-label="Impact input mode">
+        <button
+          type="button"
+          style={modeButtonStyle(mode === 'symbol')}
+          aria-pressed={mode === 'symbol'}
+          onClick={() => switchMode('symbol')}
+        >
+          Symbol
         </button>
-      </form>
+        <button
+          type="button"
+          style={modeButtonStyle(mode === 'diff')}
+          aria-pressed={mode === 'diff'}
+          onClick={() => switchMode('diff')}
+        >
+          Unified diff
+        </button>
+      </div>
+
+      {mode === 'symbol' && (
+        <form
+          onSubmit={handlePreview}
+          className="impact-form"
+          style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}
+        >
+          <input
+            type="text"
+            className="input-text chat-input"
+            placeholder="Symbol to analyze (e.g. validate_owner_permissions)..."
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+            disabled={loading}
+            aria-label="Impact target symbol"
+          />
+          <button type="submit" disabled={loading || !symbol.trim()} className="btn-action">
+            {loading ? 'Previewing...' : 'Preview Impact'}
+          </button>
+        </form>
+      )}
+
+      {mode === 'diff' && (
+        <form
+          onSubmit={handleDiffPreview}
+          className="impact-diff-form"
+          style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}
+        >
+          <textarea
+            className="input-text chat-input mono"
+            placeholder={'Paste a unified diff against the indexed revision...\n--- a/src/module.py\n+++ b/src/module.py\n@@ -10,3 +10,3 @@'}
+            value={diffText}
+            onChange={(e) => setDiffText(e.target.value)}
+            disabled={loading}
+            rows={8}
+            aria-label="Unified diff input"
+            style={{ resize: 'vertical', fontSize: '0.8rem' }}
+          />
+          <div>
+            <button type="submit" disabled={loading || !diffText.trim()} className="btn-action">
+              {loading ? 'Previewing...' : 'Preview Diff Impact'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {error && (
         <div className="form-error" style={{ marginBottom: '16px' }}>
@@ -263,10 +360,39 @@ export function ImpactPanel({ client, repositoryId, repositoryName }: ImpactPane
         </div>
       )}
 
-      {result !== null && !resolved && (
+      {view !== null && view.kind === 'symbol' && view.data.target.resolved_node_id === null && (
         <p className="panel-text" style={{ fontStyle: 'italic' }}>
-          No indexed symbol matched "{result.target.query}". Nothing was analyzed.
+          No indexed symbol matched "{view.data.target.query}". Nothing was analyzed.
         </p>
+      )}
+
+      {view !== null && view.kind === 'diff' && view.data.targets.length === 0 && (
+        <p className="panel-text" style={{ fontStyle: 'italic' }}>
+          No changed line in this diff mapped to an indexed symbol. Nothing was analyzed —
+          see gaps below for why.
+        </p>
+      )}
+
+      {view !== null && view.kind === 'diff' && view.data.targets.length > 0 && (
+        <div style={{ marginBottom: '16px' }}>
+          <h3 style={{ fontSize: '0.9rem', color: '#9ca3af', marginBottom: '8px' }}>
+            Changed symbols ({view.data.targets.length}):
+          </h3>
+          <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: '#d6d3d1' }}>
+            {view.data.targets.map((target) => (
+              <li key={target.node_id} style={{ marginBottom: '4px' }}>
+                <strong>{target.symbol_name}</strong>{' '}
+                <span className="mono" style={{ color: '#38bdf8' }}>
+                  {target.relative_path}:{target.start_line}-{target.end_line}
+                </span>{' '}
+                <span style={{ color: '#64748b' }}>
+                  (touches line{target.changed_lines.length === 1 ? '' : 's'}{' '}
+                  {target.changed_lines.join(', ')})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {resolved && riskColors && (
