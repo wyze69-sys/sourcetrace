@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from sourcetrace import __version__
 from sourcetrace.api.errors import register_error_handlers
+from sourcetrace.api.routes.auth import router as auth_router
 from sourcetrace.api.routes.capabilities import router as capabilities_router
 from sourcetrace.api.routes.conversations import router as conversations_router
 from sourcetrace.api.routes.health import router as health_router
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
 
     register_error_handlers(app)
     app.include_router(health_router, prefix="/api/v1")
+    app.include_router(auth_router)
     app.include_router(capabilities_router)
     app.include_router(repositories_router, prefix="/api/v1")
     app.include_router(search_router)

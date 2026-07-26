@@ -61,6 +61,7 @@ def test_runtime_openapi_operation_ids_match_frozen_ids_and_are_unique() -> None
             "/api/v1/repositories/{repository_id}/conversations/{conversation_id}/messages",
             "post",
         ): "sendMessage",
+        ("/api/v1/auth/session", "post"): "createAnonymousAccessToken",
     }
 
     paths = spec.get("paths", {})
@@ -94,6 +95,25 @@ def test_indexing_job_progress_percentage_has_min_0_and_max_100() -> None:
     assert progress_prop.get("maximum") == 100, (
         f"Expected progress_percentage maximum=100, got {progress_prop.get('maximum')}"
     )
+
+
+def test_token_response_schema_structure_in_runtime_openapi() -> None:
+    app = create_app()
+    spec = app.openapi()
+
+    schemas = spec.get("components", {}).get("schemas", {})
+    assert "TokenResponse" in schemas, "TokenResponse schema missing from runtime OpenAPI"
+
+    token_schema = schemas["TokenResponse"]
+    props = token_schema.get("properties", {})
+    assert "access_token" in props
+    assert "token_type" in props
+    assert "expires_in" in props
+
+    token_type_prop = props.get("token_type", {})
+    assert token_type_prop.get("enum") == ["Bearer"] or token_type_prop.get("default") == "Bearer"
+
+
 
 
 def test_runtime_openapi_declared_responses_reference_error_envelope() -> None:

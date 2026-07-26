@@ -3,11 +3,14 @@
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Annotated, Protocol
 
-from fastapi import BackgroundTasks, Depends, Request, Response
+from fastapi import BackgroundTasks, Depends, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from sourcetrace.core.config import Settings, get_settings
+from sourcetrace.core.exceptions import SessionInvalidError
 from sourcetrace.core.security import (
     SESSION_MAX_AGE_SECONDS,
+    JWTSigner,
     SessionSigner,
     generate_owner_session_id,
 )
@@ -155,6 +158,49 @@ def get_session_signer(
 ) -> SessionSigner:
     """Dependency provider for SessionSigner."""
     return SessionSigner(secret=settings.session_signing_secret)
+
+
+http_bearer = HTTPBearer(auto_error=False)
+
+
+def get_jwt_signer(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> JWTSigner:
+    """Dependency provider for JWTSigner."""
+    return JWTSigner(settings=settings)
+
+
+def get_current_owner_id(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(http_bearer)],
+    jwt_signer: Annotated[JWTSigner, Depends(get_jwt_signer)],
+) -> str:
+    """FastAPI dependency verifying stateless JWT Bearer token and returning owner_session_id."""
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials are missing or invalid.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials are missing or invalid.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        return jwt_signer.verify_access_token(credentials.credentials)
+    except SessionInvalidError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication credentials are missing or invalid.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+
+CurrentOwnerId = Annotated[str, Depends(get_current_owner_id)]
+
 
 
 def get_current_session(

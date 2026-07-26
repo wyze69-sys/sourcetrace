@@ -30,11 +30,36 @@ def create_test_error_app() -> FastAPI:
             detail="Too many requests",
         )
 
+    @test_app.get("/test-401")
+    def dummy_401_route() -> None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Custom internal error detail that should be sanitized",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     @test_app.get("/test-500")
     def dummy_500_route() -> None:
         raise RuntimeError("Simulated internal error")
 
     return test_app
+
+
+def test_unauthorized_returns_standard_401_envelope_and_headers() -> None:
+    client = TestClient(create_test_error_app())
+
+    response = client.get("/test-401")
+
+    assert response.status_code == 401
+    assert response.headers.get("www-authenticate") == "Bearer"
+    assert response.json() == {
+        "error": {
+            "code": "UNAUTHORIZED",
+            "message": "Authentication credentials are missing or invalid.",
+            "request_id": None,
+        }
+    }
+
 
 
 def test_validation_error_returns_standard_422_envelope() -> None:

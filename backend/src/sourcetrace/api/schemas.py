@@ -29,6 +29,15 @@ class ErrorEnvelope(BaseModel):
     error: ErrorDetail
 
 
+class TokenResponse(BaseModel):
+    """Response payload returned when a session token is provisioned."""
+
+    access_token: str = Field(min_length=1, description="Stateless JWT access token")
+    token_type: Literal["Bearer"] = Field(default="Bearer", description="Token type")
+    expires_in: int = Field(gt=0, description="Token lifetime in seconds")
+
+
+
 class Repository(BaseModel):
     """Public repository response schema."""
 
