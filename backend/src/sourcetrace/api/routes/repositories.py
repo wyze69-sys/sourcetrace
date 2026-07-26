@@ -16,9 +16,9 @@ from fastapi import (
 )
 
 from sourcetrace.api.dependencies import (
+    CurrentOwnerId,
     GitHubIndexingScheduler,
     ZipIndexingScheduler,
-    get_current_session,
     get_github_indexing_scheduler,
     get_indexing_job_repository,
     get_ingestion_service,
@@ -40,13 +40,15 @@ from sourcetrace.core.config import Settings, get_settings
 from sourcetrace.core.exceptions import (
     RepositoryQuotaExceededError,
     RepositoryValidationError,
-    UploadPayloadTooLargeError,
-    UploadValidationError,
 )
 from sourcetrace.ingestion.service import IngestionService, RepositoryCreationResult
-from sourcetrace.ingestion.upload_staging import StagedUpload, UploadStagingStore
+from sourcetrace.ingestion.upload_staging import (
+    StagedUpload,
+    UploadPayloadTooLargeError,
+    UploadStagingStore,
+    UploadValidationError,
+)
 from sourcetrace.models.domain import (
-    AnonymousSession,
     IndexingJobRecord,
     RepositoryRecord,
 )
@@ -196,6 +198,10 @@ def _compensate_creation_failure(
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="uploadZipRepository",
     responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
         status.HTTP_413_CONTENT_TOO_LARGE: {
             "model": ErrorEnvelope,
             "description": "Upload archive exceeds maximum limit (25 MB)",
@@ -217,7 +223,7 @@ def _compensate_creation_failure(
 async def upload_zip_repository(
     request: Request,
     background_tasks: BackgroundTasks,
-    current_session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     ingestion_service: Annotated[IngestionService, Depends(get_ingestion_service)],
     zip_scheduler: Annotated[ZipIndexingScheduler, Depends(get_zip_indexing_scheduler)],
     staging_store: Annotated[UploadStagingStore, Depends(get_upload_staging_store)],
@@ -344,14 +350,14 @@ async def upload_zip_repository(
     result: RepositoryCreationResult | None = None
     try:
         raw_result = ingestion_service.create_pending_repository(
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             source_type="zip",
             name=display_name,
             github_url=None,
         )
         result = _validate_canonical_creation_result(
             raw_result,
-            expected_owner_session_id=current_session.owner_session_id,
+            expected_owner_session_id=owner_session_id,
             expected_source_type="zip",
             expected_github_url=None,
         )
@@ -383,7 +389,7 @@ async def upload_zip_repository(
     except Exception:
         _delete_staging_quietly(staging_store, staging_token)
         _compensate_creation_failure(
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             repository_id=result.repository.repository_id,
             job_id=result.indexing_job.job_id,
             job_repo=job_repo,
@@ -398,7 +404,7 @@ async def upload_zip_repository(
     try:
         zip_scheduler.schedule(
             background_tasks=background_tasks,
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             repository_id=result.repository.repository_id,
             job_id=result.indexing_job.job_id,
             staging_token=staging_token,
@@ -406,7 +412,7 @@ async def upload_zip_repository(
     except Exception:
         _delete_staging_quietly(staging_store, staging_token)
         _compensate_creation_failure(
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             repository_id=result.repository.repository_id,
             job_id=result.indexing_job.job_id,
             job_repo=job_repo,
@@ -425,6 +431,10 @@ async def upload_zip_repository(
     response_model=RepositoryListResponse,
     operation_id="listRepositories",
     responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "model": ErrorEnvelope,
             "description": "Unexpected internal server error",
@@ -432,12 +442,12 @@ async def upload_zip_repository(
     },
 )
 def list_repositories(
-    current_session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
 ) -> RepositoryListResponse:
     """List all repositories owned by the caller's session."""
     try:
-        records = repository_repo.list_by_owner(current_session.owner_session_id)
+        records = repository_repo.list_by_owner(owner_session_id)
         repos = [repository_record_to_schema(r) for r in records]
         return RepositoryListResponse(repositories=repos)
     except Exception as exc:
@@ -452,6 +462,10 @@ def list_repositories(
     response_model=Repository,
     operation_id="getRepository",
     responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Repository not found",
@@ -464,13 +478,13 @@ def list_repositories(
 )
 def get_repository(
     repository_id: str,
-    current_session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
 ) -> Repository:
     """Fetch details of a single repository owned by caller's session."""
     try:
         record = repository_repo.get_by_id(
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             repository_id=repository_id,
         )
     except Exception as exc:
@@ -494,6 +508,10 @@ def get_repository(
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="createGitHubRepository",
     responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": ErrorEnvelope,
             "description": "Validation error or invalid GitHub URL",
@@ -511,7 +529,7 @@ def get_repository(
 def create_github_repository(
     request: CreateGitHubRepositoryRequest,
     background_tasks: BackgroundTasks,
-    current_session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     ingestion_service: Annotated[IngestionService, Depends(get_ingestion_service)],
     scheduler: Annotated[GitHubIndexingScheduler, Depends(get_github_indexing_scheduler)],
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
@@ -537,14 +555,14 @@ def create_github_repository(
     result: RepositoryCreationResult | None = None
     try:
         raw_result = ingestion_service.create_pending_repository(
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             source_type="github",
             github_url=request.github_url,
             index_mode=req_mode,
         )
         result = _validate_canonical_creation_result(
             raw_result,
-            expected_owner_session_id=current_session.owner_session_id,
+            expected_owner_session_id=owner_session_id,
             expected_source_type="github",
             expected_github_url=request.github_url,
         )
@@ -572,7 +590,7 @@ def create_github_repository(
         )
     except Exception:
         _compensate_creation_failure(
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             repository_id=result.repository.repository_id,
             job_id=result.indexing_job.job_id,
             job_repo=job_repo,
@@ -587,13 +605,13 @@ def create_github_repository(
     try:
         scheduler.schedule(
             background_tasks=background_tasks,
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             repository_id=result.repository.repository_id,
             job_id=result.indexing_job.job_id,
         )
     except Exception:
         _compensate_creation_failure(
-            owner_session_id=current_session.owner_session_id,
+            owner_session_id=owner_session_id,
             repository_id=result.repository.repository_id,
             job_id=result.indexing_job.job_id,
             job_repo=job_repo,

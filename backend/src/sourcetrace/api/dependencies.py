@@ -172,7 +172,7 @@ def get_jwt_signer(
 
 def get_current_owner_id(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(http_bearer)],
-    jwt_signer: Annotated[JWTSigner, Depends(get_jwt_signer)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> str:
     """FastAPI dependency verifying stateless JWT Bearer token and returning owner_session_id."""
     if credentials is None or not credentials.credentials:
@@ -189,6 +189,7 @@ def get_current_owner_id(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    jwt_signer = get_jwt_signer(settings)
     try:
         return jwt_signer.verify_access_token(credentials.credentials)
     except SessionInvalidError as exc:

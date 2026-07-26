@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sourcetrace.api.app import create_app
 from sourcetrace.api.dependencies import (
     get_code_chunk_repository,
-    get_current_session,
+    get_current_owner_id,
     get_repository_repository,
 )
 from sourcetrace.core.exceptions import StorageOperationError
@@ -72,7 +72,7 @@ def test_evidence_search_successful_static_repository():
     ]
 
     app = create_app()
-    app.dependency_overrides[get_current_session] = lambda: session
+    app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id
     app.dependency_overrides[get_repository_repository] = lambda: mock_repo_repo
     app.dependency_overrides[get_code_chunk_repository] = lambda: mock_chunk_repo
 
@@ -98,7 +98,7 @@ def test_evidence_search_missing_repository_returns_404():
     mock_repo_repo.get_by_id.return_value = None
 
     app = create_app()
-    app.dependency_overrides[get_current_session] = lambda: session
+    app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id
     app.dependency_overrides[get_repository_repository] = lambda: mock_repo_repo
 
     client = TestClient(app)
@@ -130,7 +130,7 @@ def test_evidence_search_not_ready_repository_returns_400():
     mock_repo_repo.get_by_id.return_value = repo_record
 
     app = create_app()
-    app.dependency_overrides[get_current_session] = lambda: session
+    app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id
     app.dependency_overrides[get_repository_repository] = lambda: mock_repo_repo
 
     client = TestClient(app)
@@ -162,7 +162,7 @@ def test_evidence_search_cloud_repository_rejected():
     mock_repo_repo.get_by_id.return_value = repo_record
 
     app = create_app()
-    app.dependency_overrides[get_current_session] = lambda: session
+    app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id
     app.dependency_overrides[get_repository_repository] = lambda: mock_repo_repo
 
     client = TestClient(app)
@@ -198,7 +198,7 @@ def test_evidence_search_storage_failure_returns_500():
     mock_chunk_repo.search_lexical.side_effect = StorageOperationError("DB error")
 
     app = create_app()
-    app.dependency_overrides[get_current_session] = lambda: session
+    app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id
     app.dependency_overrides[get_repository_repository] = lambda: mock_repo_repo
     app.dependency_overrides[get_code_chunk_repository] = lambda: mock_chunk_repo
 

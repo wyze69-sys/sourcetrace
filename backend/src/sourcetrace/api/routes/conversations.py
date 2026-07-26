@@ -8,9 +8,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from sourcetrace.api.dependencies import (
+    CurrentOwnerId,
     get_conversation_exchange_repository,
     get_conversation_repository,
-    get_current_session,
     get_grounded_answer_service,
     get_message_repository,
     get_repository_repository,
@@ -20,6 +20,7 @@ from sourcetrace.api.schemas import (
     ConversationDetailResponse,
     CreateConversationRequest,
     CreateConversationResponse,
+    ErrorEnvelope,
     RequestMetadata,
     SendMessageRequest,
     SendMessageResponse,
@@ -85,16 +86,55 @@ def build_generation_history(
     return list(reversed(candidates))
 
 
+def _refresh_session_activity_quietly(
+    owner_session_id: str,
+    session_repo: AnonymousSessionRepository,
+) -> None:
+    """Best-effort session activity update after exchange persistence."""
+    try:
+        existing_session = session_repo.get_by_id(owner_session_id)
+        if (
+            existing_session is not None
+            and existing_session.owner_session_id == owner_session_id
+        ):
+            now_session = datetime.now(UTC)
+            updated_session = AnonymousSession(
+                owner_session_id=owner_session_id,
+                last_active_at=now_session,
+                expires_at=now_session + timedelta(seconds=SESSION_MAX_AGE_SECONDS),
+                created_at=existing_session.created_at,
+                updated_at=now_session,
+                active_repository_count=existing_session.active_repository_count,
+            )
+            session_repo.save(updated_session)
+    except Exception:
+        pass
+
+
 @router.post(
     "/repositories/{repository_id}/conversations",
     response_model=CreateConversationResponse,
     status_code=status.HTTP_201_CREATED,
     operation_id="createConversation",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Repository missing or not ready",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
 )
 def create_conversation(
     repository_id: str,
     body: CreateConversationRequest,
-    session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[
         RepositoryRepository, Depends(get_repository_repository)
     ],
@@ -110,7 +150,7 @@ def create_conversation(
 ) -> CreateConversationResponse:
     """Create a new conversation and generate a grounded answer."""
     repo = repository_repo.get_by_id(
-        owner_session_id=session.owner_session_id, repository_id=repository_id
+        owner_session_id=owner_session_id, repository_id=repository_id
     )
     if repo is None or repo.status != "ready":
         raise HTTPException(
@@ -128,7 +168,7 @@ def create_conversation(
 
     start_time = time.monotonic()
     result = answer_service.generate_answer(
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         repository_id=repository_id,
         question=validated_question,
     )
@@ -144,7 +184,7 @@ def create_conversation(
     conv_record = ConversationRecord(
         conversation_id=conv_id,
         repository_id=repository_id,
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         title=title,
         created_at=now,
         updated_at=now,
@@ -154,7 +194,7 @@ def create_conversation(
         message_id=user_msg_id,
         conversation_id=conv_id,
         repository_id=repository_id,
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         role="user",
         content=validated_question,
         created_at=now,
@@ -167,7 +207,7 @@ def create_conversation(
         message_id=assistant_msg_id,
         conversation_id=conv_id,
         repository_id=repository_id,
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         role="assistant",
         content=result.answer,
         created_at=now + timedelta(microseconds=1),
@@ -184,19 +224,7 @@ def create_conversation(
     )
 
     # Best-effort session activity update after exchange persistence
-    try:
-        now_session = datetime.now(UTC)
-        updated_session = AnonymousSession(
-            owner_session_id=session.owner_session_id,
-            last_active_at=now_session,
-            expires_at=now_session + timedelta(seconds=SESSION_MAX_AGE_SECONDS),
-            created_at=session.created_at,
-            updated_at=now_session,
-            active_repository_count=session.active_repository_count,
-        )
-        session_repo.save(updated_session)
-    except Exception:
-        pass
+    _refresh_session_activity_quietly(owner_session_id, session_repo)
 
     return CreateConversationResponse(
         conversation_id=conv_id,
@@ -215,11 +243,25 @@ def create_conversation(
     response_model=ConversationDetailResponse,
     status_code=status.HTTP_200_OK,
     operation_id="getConversation",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Conversation missing or owned by another session",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
 )
 def get_conversation(
     repository_id: str,
     conversation_id: str,
-    session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[
         RepositoryRepository, Depends(get_repository_repository)
     ],
@@ -230,7 +272,7 @@ def get_conversation(
 ) -> ConversationDetailResponse:
     """Returns conversation details and full message history. Excluded from session activity."""
     repo = repository_repo.get_by_id(
-        owner_session_id=session.owner_session_id, repository_id=repository_id
+        owner_session_id=owner_session_id, repository_id=repository_id
     )
     if repo is None or repo.status != "ready":
         raise HTTPException(
@@ -239,7 +281,7 @@ def get_conversation(
         )
 
     conv = conversation_repo.get_by_id(
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         repository_id=repository_id,
         conversation_id=conversation_id,
     )
@@ -250,7 +292,7 @@ def get_conversation(
         )
 
     messages = message_repo.list_by_conversation(
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         repository_id=repository_id,
         conversation_id=conversation_id,
     )
@@ -263,12 +305,26 @@ def get_conversation(
     response_model=SendMessageResponse,
     status_code=status.HTTP_200_OK,
     operation_id="sendMessage",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Conversation missing or owned by another session",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
 )
 def send_message(
     repository_id: str,
     conversation_id: str,
     body: SendMessageRequest,
-    session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[
         RepositoryRepository, Depends(get_repository_repository)
     ],
@@ -288,7 +344,7 @@ def send_message(
 ) -> SendMessageResponse:
     """Send message in existing conversation and generate a grounded answer."""
     repo = repository_repo.get_by_id(
-        owner_session_id=session.owner_session_id, repository_id=repository_id
+        owner_session_id=owner_session_id, repository_id=repository_id
     )
     if repo is None or repo.status != "ready":
         raise HTTPException(
@@ -297,7 +353,7 @@ def send_message(
         )
 
     conv = conversation_repo.get_by_id(
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         repository_id=repository_id,
         conversation_id=conversation_id,
     )
@@ -316,7 +372,7 @@ def send_message(
         ) from exc
 
     prior_messages = message_repo.list_by_conversation(
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         repository_id=repository_id,
         conversation_id=conversation_id,
     )
@@ -324,7 +380,7 @@ def send_message(
 
     start_time = time.monotonic()
     result = answer_service.generate_answer(
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         repository_id=repository_id,
         question=validated_question,
         conversation_context=history,
@@ -339,7 +395,7 @@ def send_message(
         message_id=user_msg_id,
         conversation_id=conversation_id,
         repository_id=repository_id,
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         role="user",
         content=validated_question,
         created_at=now,
@@ -352,7 +408,7 @@ def send_message(
         message_id=assistant_msg_id,
         conversation_id=conversation_id,
         repository_id=repository_id,
-        owner_session_id=session.owner_session_id,
+        owner_session_id=owner_session_id,
         role="assistant",
         content=result.answer,
         created_at=now + timedelta(microseconds=1),
@@ -378,19 +434,7 @@ def send_message(
     )
 
     # Best-effort session activity update after exchange persistence
-    try:
-        now_session = datetime.now(UTC)
-        updated_session = AnonymousSession(
-            owner_session_id=session.owner_session_id,
-            last_active_at=now_session,
-            expires_at=now_session + timedelta(seconds=SESSION_MAX_AGE_SECONDS),
-            created_at=session.created_at,
-            updated_at=now_session,
-            active_repository_count=session.active_repository_count,
-        )
-        session_repo.save(updated_session)
-    except Exception:
-        pass
+    _refresh_session_activity_quietly(owner_session_id, session_repo)
 
     return SendMessageResponse(
         conversation_id=conversation_id,

@@ -10,6 +10,7 @@ from sourcetrace.api.app import create_app
 from sourcetrace.api.dependencies import (
     get_conversation_exchange_repository,
     get_conversation_repository,
+    get_current_owner_id,
     get_grounded_answer_service,
     get_message_repository,
     get_repository_repository,
@@ -366,6 +367,7 @@ def _setup_app_and_client(
     )
 
     app.dependency_overrides[get_settings] = lambda: settings_obj
+    app.dependency_overrides[get_current_owner_id] = lambda: owner_id
     app.dependency_overrides[get_session_signer] = lambda: SessionSigner(TEST_SECRET)
     app.dependency_overrides[get_session_repository] = lambda: session_repo
     app.dependency_overrides[get_repository_repository] = lambda: repository_repo

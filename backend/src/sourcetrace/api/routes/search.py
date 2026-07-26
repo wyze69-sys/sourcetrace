@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from sourcetrace.api.dependencies import (
+    CurrentOwnerId,
     get_code_chunk_repository,
-    get_current_session,
     get_repository_repository,
 )
+from sourcetrace.api.schemas import ErrorEnvelope
 from sourcetrace.core.exceptions import StorageDataError, StorageOperationError
-from sourcetrace.models.domain import AnonymousSession
 from sourcetrace.storage.repositories import (
     CodeChunkRepository,
     RepositoryRepository,
@@ -48,16 +48,32 @@ class EvidenceSearchResponse(BaseModel):
     items: list[EvidenceSearchItem]
 
 
-@router.post("/{repository_id}/search", response_model=EvidenceSearchResponse)
+@router.post(
+    "/{repository_id}/search",
+    response_model=EvidenceSearchResponse,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Repository not found",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
+)
 def search_repository_evidence(
     repository_id: str,
     body: EvidenceSearchRequest,
-    session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
     code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
 ) -> EvidenceSearchResponse:
     """Execute token-free lexical evidence search over ready static repository code chunks."""
-    owner_session_id = session.owner_session_id
     clean_repo_id = repository_id.strip()
 
     if not clean_repo_id:

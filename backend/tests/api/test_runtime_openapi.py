@@ -8,6 +8,7 @@ from pydantic import SecretStr
 
 from sourcetrace.api.app import create_app
 from sourcetrace.api.dependencies import (
+    get_current_owner_id,
     get_indexing_job_repository,
     get_session_repository,
     get_session_signer,
@@ -114,6 +115,60 @@ def test_token_response_schema_structure_in_runtime_openapi() -> None:
     assert token_type_prop.get("enum") == ["Bearer"] or token_type_prop.get("default") == "Bearer"
 
 
+def test_protected_routes_declare_bearer_security_and_401_error_envelope() -> None:
+    app = create_app()
+    spec = app.openapi()
+    paths = spec.get("paths", {})
+
+    sec_schemes = spec.get("components", {}).get("securitySchemes", {})
+    assert "HTTPBearer" in sec_schemes, "HTTPBearer security scheme missing from components"
+    bearer_scheme = sec_schemes["HTTPBearer"]
+    assert bearer_scheme.get("type") == "http"
+    assert bearer_scheme.get("scheme") == "bearer"
+
+    protected_operations = [
+        ("/api/v1/repositories/upload", "post"),
+        ("/api/v1/repositories", "get"),
+        ("/api/v1/repositories/{repository_id}", "get"),
+        ("/api/v1/repositories", "post"),
+        ("/api/v1/indexing-jobs/{job_id}", "get"),
+        ("/api/v1/repositories/{repository_id}/search", "post"),
+        ("/api/v1/repositories/{repository_id}/conversations", "post"),
+        ("/api/v1/repositories/{repository_id}/conversations/{conversation_id}", "get"),
+        ("/api/v1/repositories/{repository_id}/conversations/{conversation_id}/messages", "post"),
+    ]
+
+    for path, method in protected_operations:
+        assert path in paths, f"Path {path} missing"
+        op = paths[path][method]
+
+        sec = op.get("security", [])
+        has_bearer = any("HTTPBearer" in s for s in sec)
+        assert has_bearer, f"{method.upper()} {path} missing HTTPBearer security requirement"
+
+        responses = op.get("responses", {})
+        assert "401" in responses, f"{method.upper()} {path} missing 401 response declaration"
+        ref_401 = (
+            responses["401"]
+            .get("content", {})
+            .get("application/json", {})
+            .get("schema", {})
+            .get("$ref")
+        )
+        assert ref_401 == "#/components/schemas/ErrorEnvelope"
+
+    public_operations = [
+        ("/api/v1/health", "get"),
+        ("/api/v1/capabilities", "get"),
+        ("/api/v1/auth/session", "post"),
+    ]
+
+    for path, method in public_operations:
+        assert path in paths, f"Public path {path} missing"
+        op = paths[path][method]
+        sec = op.get("security", [])
+        no_bearer = not sec or all("HTTPBearer" not in s for s in sec)
+        assert no_bearer, f"Public route {method.upper()} {path} should not require HTTPBearer"
 
 
 def test_runtime_openapi_declared_responses_reference_error_envelope() -> None:
@@ -122,9 +177,9 @@ def test_runtime_openapi_declared_responses_reference_error_envelope() -> None:
     paths = spec.get("paths", {})
 
     target_routes = [
-        ("/api/v1/repositories", "get", ["500"]),
-        ("/api/v1/repositories/{repository_id}", "get", ["404", "500"]),
-        ("/api/v1/indexing-jobs/{job_id}", "get", ["404", "500"]),
+        ("/api/v1/repositories", "get", ["401", "500"]),
+        ("/api/v1/repositories/{repository_id}", "get", ["401", "404", "500"]),
+        ("/api/v1/indexing-jobs/{job_id}", "get", ["401", "404", "500"]),
     ]
 
     for path, method, status_codes in target_routes:
@@ -192,14 +247,12 @@ def test_out_of_range_persisted_progress_returns_500_internal_error() -> None:
         mock_job_repo: IndexingJobRepository = InMemoryIndexingJobRepoForValidation(bad_job)
 
         app.dependency_overrides[get_settings] = lambda s=settings_obj: s
+        app.dependency_overrides[get_current_owner_id] = lambda: owner_id
         app.dependency_overrides[get_session_signer] = lambda: SessionSigner(secret=TEST_SECRET)
         app.dependency_overrides[get_session_repository] = lambda sr=mock_session_repo: sr
         app.dependency_overrides[get_indexing_job_repository] = lambda jr=mock_job_repo: jr
 
         client = TestClient(app, raise_server_exceptions=False)
-        token = SessionSigner(TEST_SECRET).create_cookie_token(owner_id, exp)
-        client.cookies.set("sourcetrace_session", token)
-
         res = client.get(f"/api/v1/indexing-jobs/{bad_job.job_id}")
         assert res.status_code == 500
         assert res.json() == {

@@ -5,11 +5,13 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from sourcetrace.api.app import create_app
 from sourcetrace.api.dependencies import (
+    get_current_owner_id,
     get_github_indexing_scheduler,
     get_indexing_job_repository,
     get_ingestion_service,
@@ -266,7 +268,8 @@ def setup_write_test_app(
     repo_repo: InMemoryRepositoryRepository,
     job_repo: InMemoryIndexingJobRepository,
     scheduler: RecordingGitHubIndexingScheduler | None = None,
-):
+    active_owner_id: str | None = None,
+) -> tuple[FastAPI, RecordingGitHubIndexingScheduler]:
     app = create_app()
     settings = Settings(
         env="development", session_signing_secret=SecretStr(TEST_SECRET)
@@ -278,6 +281,11 @@ def setup_write_test_app(
         job_repo=job_repo,
     )
 
+    owner_id = active_owner_id or (
+        list(session_repo.sessions.keys())[0] if session_repo.sessions else "sess_owner123"
+    )
+
+    app.dependency_overrides[get_current_owner_id] = lambda: owner_id
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_session_signer] = lambda: SessionSigner(secret=TEST_SECRET)
     app.dependency_overrides[get_session_repository] = lambda: session_repo
@@ -306,7 +314,9 @@ def test_post_github_repository_success_returns_202() -> None:
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
-    app, scheduler = setup_write_test_app(session_repo, repo_repo, job_repo)
+    app, scheduler = setup_write_test_app(
+        session_repo, repo_repo, job_repo, active_owner_id=owner_id
+    )
     client = TestClient(app)
 
     token = SessionSigner(TEST_SECRET).create_cookie_token(owner_id, exp)
@@ -352,23 +362,22 @@ def test_post_github_repository_success_returns_202() -> None:
     assert "sourcetrace_session" in client.cookies
 
 
-def test_post_github_repository_missing_cookie_provisions_session() -> None:
+def test_post_github_repository_unauthenticated_returns_401() -> None:
     session_repo = InMemoryAnonymousSessionRepository()
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
     app, scheduler = setup_write_test_app(session_repo, repo_repo, job_repo)
+    del app.dependency_overrides[get_current_owner_id]
     client = TestClient(app)
 
     payload = {"github_url": "https://github.com/octocat/Hello-World"}
     res = client.post("/api/v1/repositories", json=payload)
 
-    assert res.status_code == 202
-    assert "set-cookie" in res.headers
-
-    assert len(scheduler.scheduled_calls) == 1
-    sched_owner, _, _ = scheduler.scheduled_calls[0]
-    assert sched_owner.startswith("sess_")
+    assert res.status_code == 401
+    assert res.headers.get("www-authenticate") == "Bearer"
+    assert res.json()["error"]["code"] == "UNAUTHORIZED"
+    assert len(scheduler.scheduled_calls) == 0
 
 
 @pytest.mark.parametrize(
@@ -845,6 +854,7 @@ def test_create_github_repository_invalid_index_mode_returns_422() -> None:
     app = create_app()
     app.dependency_overrides[get_session_repository] = lambda: session_repo
     app.dependency_overrides[get_session_signer] = lambda: signer
+    app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id
 
     client = TestClient(app)
     client.cookies.set("sourcetrace_session", cookie_val)

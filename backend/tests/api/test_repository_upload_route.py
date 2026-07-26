@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from sourcetrace.api.app import create_app
 from sourcetrace.api.dependencies import (
+    get_current_owner_id,
     get_indexing_job_repository,
     get_ingestion_service,
     get_repository_repository,
@@ -266,11 +267,17 @@ def setup_upload_test_app(
     job_repo: InMemoryIndexingJobRepository,
     staging_root: Path,
     scheduler: RecordingZipIndexingScheduler | None = None,
+    active_owner_id: str | None = None,
 ) -> tuple[FastAPI, RecordingZipIndexingScheduler]:
     app = create_app()
     sched = scheduler or RecordingZipIndexingScheduler()
     staging_store = FileSystemUploadStagingStore(staging_root=staging_root)
 
+    owner_id = active_owner_id or (
+        list(session_repo.sessions.keys())[0] if session_repo.sessions else "sess_upload_user"
+    )
+
+    app.dependency_overrides[get_current_owner_id] = lambda: owner_id
     app.dependency_overrides[get_session_signer] = lambda: SessionSigner(secret=TEST_SECRET)
     app.dependency_overrides[get_session_repository] = lambda: session_repo
     app.dependency_overrides[get_repository_repository] = lambda: repo_repo

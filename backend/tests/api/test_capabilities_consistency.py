@@ -6,10 +6,9 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from sourcetrace.api.app import create_app
-from sourcetrace.api.dependencies import get_session_repository
+from sourcetrace.api.dependencies import get_current_owner_id, get_session_repository
 from sourcetrace.core.capabilities import evaluate_capabilities
 from sourcetrace.core.config import Settings, get_settings
-from sourcetrace.models.domain import AnonymousSession
 
 
 def test_caps_static_with_no_keys():
@@ -123,6 +122,7 @@ def test_route_dependency_override_and_agreement():
     app = create_app()
     app.dependency_overrides[get_settings] = lambda: custom_settings
     app.dependency_overrides[get_session_repository] = lambda: session_repo
+    app.dependency_overrides[get_current_owner_id] = lambda: "sess_caps_test_owner"
 
     test_client = TestClient(app)
 
@@ -144,9 +144,6 @@ def test_route_dependency_override_and_agreement():
     assert repo_resp.status_code == 422
     assert repo_resp.json()["error"]["code"] == "VALIDATION_ERROR"
 
-    session_repo.save.assert_called_once()
-    saved_session = session_repo.save.call_args.args[0]
-    assert isinstance(saved_session, AnonymousSession)
 
 
 def test_no_secret_leakage():

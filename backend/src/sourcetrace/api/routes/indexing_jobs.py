@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from sourcetrace.api.dependencies import (
-    get_current_session,
+    CurrentOwnerId,
     get_indexing_job_repository,
 )
 from sourcetrace.api.schemas import (
@@ -13,7 +13,6 @@ from sourcetrace.api.schemas import (
     IndexingJob,
     job_record_to_schema,
 )
-from sourcetrace.models.domain import AnonymousSession
 from sourcetrace.storage.repositories import IndexingJobRepository
 
 router = APIRouter(tags=["indexing-jobs"])
@@ -24,6 +23,10 @@ router = APIRouter(tags=["indexing-jobs"])
     response_model=IndexingJob,
     operation_id="getIndexingJobStatus",
     responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "model": ErrorEnvelope,
+            "description": "Authentication credentials are missing or invalid",
+        },
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Resource missing or owned by another session",
@@ -36,11 +39,11 @@ router = APIRouter(tags=["indexing-jobs"])
 )
 def get_indexing_job_status(
     job_id: str,
-    current_session: Annotated[AnonymousSession, Depends(get_current_session)],
+    owner_session_id: CurrentOwnerId,
     job_repo: Annotated[IndexingJobRepository, Depends(get_indexing_job_repository)],
 ) -> IndexingJob:
     """Get details for a specific indexing job owned by the current anonymous session."""
-    record = job_repo.get_by_id(current_session.owner_session_id, job_id)
+    record = job_repo.get_by_id(owner_session_id, job_id)
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

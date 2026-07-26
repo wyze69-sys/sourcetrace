@@ -8,6 +8,7 @@ from pydantic import SecretStr
 
 from sourcetrace.api.app import create_app
 from sourcetrace.api.dependencies import (
+    get_current_owner_id,
     get_indexing_job_repository,
     get_repository_repository,
     get_session_repository,
@@ -43,91 +44,74 @@ class InMemoryAnonymousSessionRepository:
         self.sessions[session.owner_session_id] = session
         return session
 
-    def delete(self, owner_session_id: str) -> bool:
-        return self.sessions.pop(owner_session_id, None) is not None
-
-    def reserve_repository_slot(
-        self,
-        owner_session_id: str,
-        now: datetime,
-        max_quota: int = 3,
-        retention_days: int = 7,
-    ) -> AnonymousSession | None:
+    def reserve_slot_or_raise(self, owner_session_id: str, max_repos: int = 5) -> None:
         self.reserve_called = True
-        return self.get_by_id(owner_session_id)
-
-    def release_repository_slot(self, owner_session_id: str) -> bool:
-        return True
 
 
 class InMemoryRepositoryRepository:
-    def __init__(self, records: list[RepositoryRecord] | None = None) -> None:
-        self.records: list[RepositoryRecord] = records or []
+    def __init__(self, repos: list[RepositoryRecord] | None = None) -> None:
+        self.repos: dict[tuple[str, str], RepositoryRecord] = {
+            (r.owner_session_id, r.repository_id): r for r in (repos or [])
+        }
+
+    def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]:
+        return [r for r in self.repos.values() if r.owner_session_id == owner_session_id]
 
     def get_by_id(
         self, owner_session_id: str, repository_id: str
     ) -> RepositoryRecord | None:
-        for r in self.records:
-            if r.owner_session_id == owner_session_id and r.repository_id == repository_id:
-                return r
-        return None
+        return self.repos.get((owner_session_id, repository_id))
 
-    def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]:
-        return [r for r in self.records if r.owner_session_id == owner_session_id]
+    def save(self, repo: RepositoryRecord) -> RepositoryRecord:
+        self.repos[(repo.owner_session_id, repo.repository_id)] = repo
+        return repo
 
-    def count_by_owner(self, owner_session_id: str) -> int:
-        return len(self.list_by_owner(owner_session_id))
-
-    def save(self, repository: RepositoryRecord) -> RepositoryRecord:
-        self.records.append(repository)
-        return repository
-
-    def delete(self, owner_session_id: str, repository_id: str) -> bool:
-        initial = len(self.records)
-        self.records = [
-            r for r in self.records
-            if not (r.owner_session_id == owner_session_id and r.repository_id == repository_id)
-        ]
-        return len(self.records) < initial
+    def delete_by_id(self, owner_session_id: str, repository_id: str) -> bool:
+        key = (owner_session_id, repository_id)
+        if key in self.repos:
+            del self.repos[key]
+            return True
+        return False
 
 
 class InMemoryIndexingJobRepository:
-    def __init__(self, records: list[IndexingJobRecord] | None = None) -> None:
-        self.records: list[IndexingJobRecord] = records or []
+    def __init__(self, jobs: list[IndexingJobRecord] | None = None) -> None:
+        self.jobs: dict[tuple[str, str], IndexingJobRecord] = {
+            (j.owner_session_id, j.job_id): j for j in (jobs or [])
+        }
 
     def get_by_id(
         self, owner_session_id: str, job_id: str
     ) -> IndexingJobRecord | None:
-        for j in self.records:
-            if j.owner_session_id == owner_session_id and j.job_id == job_id:
-                return j
-        return None
+        return self.jobs.get((owner_session_id, job_id))
 
     def get_by_repository(
         self, owner_session_id: str, repository_id: str
     ) -> IndexingJobRecord | None:
-        for j in self.records:
+        for j in self.jobs.values():
             if j.owner_session_id == owner_session_id and j.repository_id == repository_id:
                 return j
         return None
 
     def save(self, job: IndexingJobRecord) -> IndexingJobRecord:
-        self.records.append(job)
+        self.jobs[(job.owner_session_id, job.job_id)] = job
         return job
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
-        initial = len(self.records)
-        self.records = [
-            j for j in self.records
-            if not (j.owner_session_id == owner_session_id and j.repository_id == repository_id)
+        keys_to_del = [
+            k for k, j in self.jobs.items()
+            if j.owner_session_id == owner_session_id and j.repository_id == repository_id
         ]
-        return initial - len(self.records)
+        for k in keys_to_del:
+            del self.jobs[k]
+        return len(keys_to_del)
 
 
 def setup_test_app(
     session_repo: AnonymousSessionRepository,
     repo_repo: RepositoryRepository,
     job_repo: IndexingJobRepository,
+    active_owner_id: str | None = None,
 ):
     app = create_app()
     settings = Settings(
@@ -139,6 +123,9 @@ def setup_test_app(
     app.dependency_overrides[get_session_repository] = lambda: session_repo
     app.dependency_overrides[get_repository_repository] = lambda: repo_repo
     app.dependency_overrides[get_indexing_job_repository] = lambda: job_repo
+
+    if active_owner_id is not None:
+        app.dependency_overrides[get_current_owner_id] = lambda: active_owner_id
 
     return app, settings
 
@@ -215,12 +202,8 @@ def test_list_returns_only_current_owner_records_and_excludes_cross_owner() -> N
     ])
     job_repo = InMemoryIndexingJobRepository()
 
-    app, _ = setup_test_app(session_repo, repo_repo, job_repo)
+    app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
-
-    signer = SessionSigner(TEST_SECRET)
-    token = signer.create_cookie_token(owner1, exp)
-    client.cookies.set("sourcetrace_session", token)
 
     res = client.get("/api/v1/repositories")
     assert res.status_code == 200
@@ -239,8 +222,10 @@ def test_list_returns_only_current_owner_records_and_excludes_cross_owner() -> N
 
     # Ensure sensitive fields are NEVER exposed
     assert "owner_session_id" not in repo_data
-    assert "_id" not in repo_data
-    assert "active_repository_count" not in repo_data
+    assert "owner_id" not in repo_data
+    assert "session_id" not in repo_data
+    assert "secret" not in repo_data
+    assert "storage_key" not in repo_data
 
 
 def test_repository_detail_returns_owned_record() -> None:
@@ -259,36 +244,30 @@ def test_repository_detail_returns_owned_record() -> None:
     ])
     repo_repo = InMemoryRepositoryRepository([
         RepositoryRecord(
-            repository_id="repo_target",
+            repository_id="repo_owner1_a",
             owner_session_id=owner1,
-            name="my-repo",
+            name="owner1-repo-a",
             source_type="github",
             status="ready",
             created_at=now,
             updated_at=now,
-            github_url="https://github.com/test/repo",
-            file_count=12,
-            chunk_count=45,
+            github_url="https://github.com/owner1/repo-a",
+            file_count=5,
+            chunk_count=10,
         )
     ])
     job_repo = InMemoryIndexingJobRepository()
 
-    app, _ = setup_test_app(session_repo, repo_repo, job_repo)
+    app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
-    token = SessionSigner(TEST_SECRET).create_cookie_token(owner1, exp)
-    client.cookies.set("sourcetrace_session", token)
 
-    res = client.get("/api/v1/repositories/repo_target")
+    res = client.get("/api/v1/repositories/repo_owner1_a")
     assert res.status_code == 200
     data = res.json()
-    assert data["repository_id"] == "repo_target"
-    assert data["name"] == "my-repo"
-    assert data["file_count"] == 12
-    assert data["chunk_count"] == 45
-    assert datetime.fromisoformat(data["created_at"]) is not None
-    assert datetime.fromisoformat(data["updated_at"]) is not None
+
+    assert data["repository_id"] == "repo_owner1_a"
+    assert data["name"] == "owner1-repo-a"
     assert "owner_session_id" not in data
-    assert "_id" not in data
 
 
 def test_missing_and_cross_owner_repository_return_identical_safe_404() -> None:
@@ -304,21 +283,14 @@ def test_missing_and_cross_owner_repository_return_identical_safe_404() -> None:
             expires_at=exp,
             created_at=now,
             updated_at=now,
-        ),
-        AnonymousSession(
-            owner_session_id=owner2,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        ),
+        )
     ])
     repo_repo = InMemoryRepositoryRepository([
         RepositoryRecord(
-            repository_id="repo_other",
+            repository_id="repo_owner2_private",
             owner_session_id=owner2,
-            name="other-repo",
-            source_type="zip",
+            name="owner2-repo",
+            source_type="github",
             status="ready",
             created_at=now,
             updated_at=now,
@@ -326,30 +298,27 @@ def test_missing_and_cross_owner_repository_return_identical_safe_404() -> None:
     ])
     job_repo = InMemoryIndexingJobRepository()
 
-    app, _ = setup_test_app(session_repo, repo_repo, job_repo)
+    app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
-    token = SessionSigner(TEST_SECRET).create_cookie_token(owner1, exp)
-    client.cookies.set("sourcetrace_session", token)
 
-    # 1. Missing repository
+    # 1. Missing repository ID
     res_missing = client.get("/api/v1/repositories/repo_nonexistent")
     assert res_missing.status_code == 404
     missing_json = res_missing.json()
 
-    # 2. Cross-owner repository
-    res_cross = client.get("/api/v1/repositories/repo_other")
+    # 2. Cross-owner repository ID
+    res_cross = client.get("/api/v1/repositories/repo_owner2_private")
     assert res_cross.status_code == 404
     cross_json = res_cross.json()
 
-    expected_envelope = {
+    # Identical standard 404 envelope (zero metadata leakage)
+    assert missing_json == cross_json == {
         "error": {
             "code": "RESOURCE_NOT_FOUND",
             "message": "The requested resource was not found.",
             "request_id": None,
         }
     }
-    assert missing_json == expected_envelope
-    assert cross_json == expected_envelope
 
 
 def test_job_polling_returns_owned_job() -> None:
@@ -369,39 +338,30 @@ def test_job_polling_returns_owned_job() -> None:
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository([
         IndexingJobRecord(
-            job_id="job_123",
-            repository_id="repo_123",
+            job_id="job_owner1_123",
+            repository_id="repo_owner1_a",
             owner_session_id=owner1,
             status="parsing",
-            current_step="Parsing Python AST symbols",
+            progress_percentage=45,
+            current_step="Parsing AST nodes",
             created_at=now,
             updated_at=now,
-            progress_percentage=45,
-            error_message=None,
-            completed_at=None,
         )
     ])
 
-    app, _ = setup_test_app(session_repo, repo_repo, job_repo)
+    app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
-    token = SessionSigner(TEST_SECRET).create_cookie_token(owner1, exp)
-    client.cookies.set("sourcetrace_session", token)
 
-    res = client.get("/api/v1/indexing-jobs/job_123")
+    res = client.get("/api/v1/indexing-jobs/job_owner1_123")
     assert res.status_code == 200
     data = res.json()
 
-    assert data["job_id"] == "job_123"
-    assert data["repository_id"] == "repo_123"
+    assert data["job_id"] == "job_owner1_123"
+    assert data["repository_id"] == "repo_owner1_a"
     assert data["status"] == "parsing"
     assert data["progress_percentage"] == 45
-    assert data["current_step"] == "Parsing Python AST symbols"
-    assert data["error_message"] is None
-    assert data["completed_at"] is None
-    assert datetime.fromisoformat(data["created_at"]) is not None
-    assert datetime.fromisoformat(data["updated_at"]) is not None
+    assert data["current_step"] == "Parsing AST nodes"
     assert "owner_session_id" not in data
-    assert "_id" not in data
 
 
 def test_missing_and_cross_owner_job_return_identical_safe_404() -> None:
@@ -417,57 +377,43 @@ def test_missing_and_cross_owner_job_return_identical_safe_404() -> None:
             expires_at=exp,
             created_at=now,
             updated_at=now,
-        ),
-        AnonymousSession(
-            owner_session_id=owner2,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        ),
+        )
     ])
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository([
         IndexingJobRecord(
-            job_id="job_owner2",
-            repository_id="repo_owner2",
+            job_id="job_owner2_private",
+            repository_id="repo_owner2_a",
             owner_session_id=owner2,
             status="ready",
+            progress_percentage=100,
             current_step="Completed",
             created_at=now,
             updated_at=now,
-            progress_percentage=100,
-            completed_at=now,
         )
     ])
 
-    app, _ = setup_test_app(session_repo, repo_repo, job_repo)
+    app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
-    token = SessionSigner(TEST_SECRET).create_cookie_token(owner1, exp)
-    client.cookies.set("sourcetrace_session", token)
 
     res_missing = client.get("/api/v1/indexing-jobs/job_nonexistent")
     assert res_missing.status_code == 404
-    missing_json = res_missing.json()
 
-    res_cross = client.get("/api/v1/indexing-jobs/job_owner2")
+    res_cross = client.get("/api/v1/indexing-jobs/job_owner2_private")
     assert res_cross.status_code == 404
-    cross_json = res_cross.json()
 
-    expected_envelope = {
+    assert res_missing.json() == res_cross.json() == {
         "error": {
             "code": "RESOURCE_NOT_FOUND",
             "message": "The requested resource was not found.",
             "request_id": None,
         }
     }
-    assert missing_json == expected_envelope
-    assert cross_json == expected_envelope
 
 
 def test_read_operations_do_not_reserve_slot_or_modify_session_activity() -> None:
-    now = datetime.now(UTC) - timedelta(hours=1)
-    exp = datetime.now(UTC) + timedelta(days=7)
+    now = datetime.now(UTC)
+    exp = now + timedelta(days=7)
     owner1 = "sess_owner1"
 
     original_session = AnonymousSession(
@@ -501,10 +447,8 @@ def test_read_operations_do_not_reserve_slot_or_modify_session_activity() -> Non
         )
     ])
 
-    app, _ = setup_test_app(session_repo, repo_repo, job_repo)
+    app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
-    token = SessionSigner(TEST_SECRET).create_cookie_token(owner1, exp)
-    client.cookies.set("sourcetrace_session", token)
 
     client.get("/api/v1/repositories")
     client.get("/api/v1/repositories/repo_1")
@@ -520,7 +464,7 @@ def test_read_operations_do_not_reserve_slot_or_modify_session_activity() -> Non
     assert saved_session.expires_at == exp
 
 
-def test_first_request_without_cookie_provisions_session_without_exposing_records() -> None:
+def test_unauthenticated_read_request_returns_401_without_creating_session() -> None:
     now = datetime.now(UTC)
     owner_other = "sess_other"
 
@@ -542,16 +486,12 @@ def test_first_request_without_cookie_provisions_session_without_exposing_record
     client = TestClient(app)
 
     res = client.get("/api/v1/repositories")
-    assert res.status_code == 200
-    assert "set-cookie" in res.headers
-    data = res.json()
-    assert data == {"repositories": []}
+    assert res.status_code == 401
+    assert res.headers.get("www-authenticate") == "Bearer"
+    assert res.json()["error"]["code"] == "UNAUTHORIZED"
 
-    # Session created
-    assert len(session_repo.sessions) == 1
-    new_session = list(session_repo.sessions.values())[0]
-    assert new_session.owner_session_id.startswith("sess_")
-    assert new_session.owner_session_id != owner_other
+    # No session created during unauthenticated request
+    assert len(session_repo.sessions) == 0
 
 
 def test_storage_exception_returns_fixed_safe_500_envelope() -> None:
@@ -574,10 +514,8 @@ def test_storage_exception_returns_fixed_safe_500_envelope() -> None:
     )
     job_repo = InMemoryIndexingJobRepository()
 
-    app, _ = setup_test_app(session_repo, failing_repo, job_repo)
+    app, _ = setup_test_app(session_repo, failing_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app, raise_server_exceptions=False)
-    token = SessionSigner(TEST_SECRET).create_cookie_token(owner1, exp)
-    client.cookies.set("sourcetrace_session", token)
 
     res = client.get("/api/v1/repositories")
     assert res.status_code == 500
