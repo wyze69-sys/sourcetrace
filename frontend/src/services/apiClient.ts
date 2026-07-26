@@ -99,11 +99,7 @@ export class ApiClient {
       }
     }
 
-    if (options.baseUrl !== undefined) {
-      this.baseUrl = options.baseUrl
-    } else {
-      this.baseUrl = '/api/v1'
-    }
+    this.baseUrl = options.baseUrl ?? '/api/v1'
   }
 
   clearAccessToken(): void {
@@ -201,12 +197,9 @@ export class ApiClient {
 
     if (!response.ok) {
       if (mode === 'protected' && response.status === 401 && !retried) {
-        if (this.accessToken === tokenForRequest) {
-          this.clearToken(tokenForRequest ?? undefined)
-          await this.provisionAccessToken()
-        } else if (!this.accessToken) {
-          await this.provisionAccessToken()
-        }
+        // No-ops if a concurrent request already swapped in a fresh token; the
+        // retry then re-provisions only when no token is left.
+        this.clearToken(tokenForRequest ?? undefined)
         return this.request<T>(path, init, 'protected', true)
       }
 

@@ -9,6 +9,7 @@ from sourcetrace.api.dependencies import (
     get_indexing_job_repository,
 )
 from sourcetrace.api.schemas import (
+    UNAUTHORIZED_RESPONSE,
     ErrorEnvelope,
     IndexingJob,
     job_record_to_schema,
@@ -23,10 +24,7 @@ router = APIRouter(tags=["indexing-jobs"])
     response_model=IndexingJob,
     operation_id="getIndexingJobStatus",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Resource missing or owned by another session",

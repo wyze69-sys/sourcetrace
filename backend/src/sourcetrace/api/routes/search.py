@@ -10,7 +10,7 @@ from sourcetrace.api.dependencies import (
     get_code_chunk_repository,
     get_repository_repository,
 )
-from sourcetrace.api.schemas import ErrorEnvelope
+from sourcetrace.api.schemas import UNAUTHORIZED_RESPONSE, ErrorEnvelope
 from sourcetrace.core.exceptions import StorageDataError, StorageOperationError
 from sourcetrace.storage.repositories import (
     CodeChunkRepository,
@@ -52,10 +52,7 @@ class EvidenceSearchResponse(BaseModel):
     "/{repository_id}/search",
     response_model=EvidenceSearchResponse,
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Repository not found",

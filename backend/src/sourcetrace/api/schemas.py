@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
+from fastapi import status
 from pydantic import BaseModel, Field
 
 from sourcetrace.models.domain import (
@@ -36,6 +37,13 @@ class TokenResponse(BaseModel):
     token_type: Literal["Bearer"] = Field(default="Bearer", description="Token type")
     expires_in: int = Field(gt=0, description="Token lifetime in seconds")
 
+
+UNAUTHORIZED_RESPONSE: dict[int | str, dict[str, Any]] = {
+    status.HTTP_401_UNAUTHORIZED: {
+        "model": ErrorEnvelope,
+        "description": "Authentication credentials are missing or invalid",
+    },
+}
 
 
 class Repository(BaseModel):

@@ -17,6 +17,7 @@ from sourcetrace.api.dependencies import (
     get_session_repository,
 )
 from sourcetrace.api.schemas import (
+    UNAUTHORIZED_RESPONSE,
     ConversationDetailResponse,
     CreateConversationRequest,
     CreateConversationResponse,
@@ -117,10 +118,7 @@ def _refresh_session_activity_quietly(
     status_code=status.HTTP_201_CREATED,
     operation_id="createConversation",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Repository missing or not ready",
@@ -244,10 +242,7 @@ def create_conversation(
     status_code=status.HTTP_200_OK,
     operation_id="getConversation",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Conversation missing or owned by another session",
@@ -306,10 +301,7 @@ def get_conversation(
     status_code=status.HTTP_200_OK,
     operation_id="sendMessage",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Conversation missing or owned by another session",

@@ -170,38 +170,37 @@ def get_jwt_signer(
     return JWTSigner(settings=settings)
 
 
+def _unauthorized() -> HTTPException:
+    """Build the single opaque 401 response used for every Bearer rejection."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication credentials are missing or invalid.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 def get_current_owner_id(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(http_bearer)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> str:
     """FastAPI dependency verifying stateless JWT Bearer token and returning owner_session_id."""
-    if credentials is None or not credentials.credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication credentials are missing or invalid.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if (
+        credentials is None
+        or not credentials.credentials
+        or credentials.scheme.lower() != "bearer"
+    ):
+        raise _unauthorized()
 
-    if credentials.scheme.lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication credentials are missing or invalid.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
+    # Built here rather than via Depends so a missing/!bearer header still yields
+    # 401 instead of a 500 when the JWT secret is unconfigured.
     jwt_signer = get_jwt_signer(settings)
     try:
         return jwt_signer.verify_access_token(credentials.credentials)
     except SessionInvalidError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication credentials are missing or invalid.",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise _unauthorized() from exc
 
 
 CurrentOwnerId = Annotated[str, Depends(get_current_owner_id)]
-
 
 
 AUTH_SESSION_COOKIE_PATH = "/api/v1/auth/session"

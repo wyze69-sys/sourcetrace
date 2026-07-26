@@ -27,6 +27,7 @@ from sourcetrace.api.dependencies import (
     get_zip_indexing_scheduler,
 )
 from sourcetrace.api.schemas import (
+    UNAUTHORIZED_RESPONSE,
     CreateGitHubRepositoryRequest,
     CreateRepositoryResponse,
     ErrorEnvelope,
@@ -198,10 +199,7 @@ def _compensate_creation_failure(
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="uploadZipRepository",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_413_CONTENT_TOO_LARGE: {
             "model": ErrorEnvelope,
             "description": "Upload archive exceeds maximum limit (25 MB)",
@@ -431,10 +429,7 @@ async def upload_zip_repository(
     response_model=RepositoryListResponse,
     operation_id="listRepositories",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "model": ErrorEnvelope,
             "description": "Unexpected internal server error",
@@ -462,10 +457,7 @@ def list_repositories(
     response_model=Repository,
     operation_id="getRepository",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Repository not found",
@@ -508,10 +500,7 @@ def get_repository(
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="createGitHubRepository",
     responses={
-        status.HTTP_401_UNAUTHORIZED: {
-            "model": ErrorEnvelope,
-            "description": "Authentication credentials are missing or invalid",
-        },
+        **UNAUTHORIZED_RESPONSE,
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": ErrorEnvelope,
             "description": "Validation error or invalid GitHub URL",

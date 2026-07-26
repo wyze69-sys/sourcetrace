@@ -114,7 +114,7 @@ class Settings(BaseSettings):
     @field_validator("jwt_issuer", "jwt_audience")
     @classmethod
     def _validate_jwt_string_field(cls, v: str) -> str:
-        if not v or not isinstance(v, str) or not v.strip():
+        if not v.strip():
             raise ValueError("JWT configuration string cannot be empty or whitespace-only.")
         return v.strip()
 

@@ -17,6 +17,18 @@ SESSION_MAX_AGE_SECONDS = SESSION_INACTIVITY_DAYS * 24 * 60 * 60  # 604,800 seco
 MIN_SECRET_LENGTH = 32
 
 
+def _coerce_secret(
+    secret: str | SecretStr | None, fallback: SecretStr | None
+) -> str | None:
+    """Resolve a signing secret from an explicit value or a configured fallback."""
+    if isinstance(secret, SecretStr):
+        return secret.get_secret_value()
+    if isinstance(secret, str):
+        return secret
+    if secret is None and fallback is not None:
+        return fallback.get_secret_value()
+    return None
+
 
 def generate_owner_session_id() -> str:
     """Generate a cryptographically random opaque session ID."""
@@ -38,15 +50,8 @@ class SessionSigner:
     """Creates and validates HMAC-SHA256 signed session cookie tokens."""
 
     def __init__(self, secret: str | SecretStr | None = None) -> None:
-        raw_secret: str | None = None
-        if isinstance(secret, SecretStr):
-            raw_secret = secret.get_secret_value()
-        elif isinstance(secret, str):
-            raw_secret = secret
-        elif secret is None:
-            settings = get_settings()
-            if settings.session_signing_secret is not None:
-                raw_secret = settings.session_signing_secret.get_secret_value()
+        fallback = get_settings().session_signing_secret if secret is None else None
+        raw_secret = _coerce_secret(secret, fallback)
 
         if not raw_secret or len(raw_secret) < MIN_SECRET_LENGTH:
             raise SessionConfigurationError(
@@ -116,29 +121,17 @@ class JWTSigner:
         secret: str | SecretStr | None = None,
         settings: Settings | None = None,
     ) -> None:
-        raw_secret: str | None = None
         active_settings = settings or get_settings()
+        raw_secret = _coerce_secret(secret, active_settings.jwt_secret)
 
-        if isinstance(secret, SecretStr):
-            raw_secret = secret.get_secret_value()
-        elif isinstance(secret, str):
-            raw_secret = secret
-        elif secret is None and active_settings.jwt_secret is not None:
-            raw_secret = active_settings.jwt_secret.get_secret_value()
-
-        if not raw_secret:
-            raise SessionConfigurationError(
-                "JWT signing secret is not configured or is too short."
-            )
-
-        secret_bytes = raw_secret.encode("utf-8")
+        secret_bytes = (raw_secret or "").encode("utf-8")
         if len(secret_bytes) < MIN_SECRET_LENGTH:
             raise SessionConfigurationError(
                 "JWT signing secret is not configured or is too short."
             )
 
         self._secret_bytes = secret_bytes
-        self._algorithm = "HS256"
+        self._algorithm = active_settings.jwt_algorithm
         self._issuer = active_settings.jwt_issuer
         self._audience = active_settings.jwt_audience
         self._default_ttl_seconds = active_settings.jwt_access_token_ttl_seconds
@@ -194,7 +187,7 @@ class JWTSigner:
             payload = jwt.decode(
                 token,
                 self._secret_bytes,
-                algorithms=["HS256"],
+                algorithms=[self._algorithm],
                 issuer=self._issuer,
                 audience=self._audience,
                 options={
@@ -221,10 +214,8 @@ class JWTSigner:
         if not isinstance(jti, str) or not jti:
             raise SessionInvalidError("Invalid JTI in token.")
 
-        iss = payload.get("iss")
-        if not isinstance(iss, str) or iss != self._issuer:
-            raise SessionInvalidError("Invalid issuer in token.")
-
+        # "iss" needs no re-check: jwt.decode already required and matched it.
+        # "aud" is re-checked because PyJWT also accepts list-valued audiences.
         aud = payload.get("aud")
         if not isinstance(aud, str) or aud != self._audience:
             raise SessionInvalidError("Invalid audience in token.")
