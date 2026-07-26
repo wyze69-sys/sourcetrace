@@ -62,6 +62,48 @@ def test_validation_rejects_unsafe_fixture_path(tmp_path: Path) -> None:
     assert any("safe relative path" in e for e in errors)
 
 
+def test_case_fixture_override_must_be_a_real_safe_directory(tmp_path: Path) -> None:
+    data = _load_dataset()
+    js_case = next(
+        c for c in data["trace_cases"] if c.get("repository_fixture", "").endswith("js_sample_repo")
+    )
+    js_case["repository_fixture"] = "evals/fixtures/does_not_exist"
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(data), encoding="utf-8")
+
+    _, _, _, _, errors = validate_dataset(tampered, ROOT_DIR)
+
+    assert any("does_not_exist" in e for e in errors)
+
+
+def test_js_fixture_cases_are_grounded_against_the_js_parse(tmp_path: Path) -> None:
+    data = _load_dataset()
+    js_case = next(
+        c for c in data["trace_cases"] if c.get("repository_fixture", "").endswith("js_sample_repo")
+    )
+    js_case["expected_steps"][0]["symbol_name"] = "notARealJsSymbol"
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(data), encoding="utf-8")
+
+    _, _, _, _, errors = validate_dataset(tampered, ROOT_DIR)
+
+    assert any("notARealJsSymbol" in e for e in errors)
+
+
+def test_wrong_js_confidence_expectation_fails_the_evaluation(tmp_path: Path) -> None:
+    data = _load_dataset()
+    ambiguous_case = next(c for c in data["trace_cases"] if c["id"] == "ti-trace-008")
+    ambiguous_case["expected_edges"][0]["confidence"] = "high"
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(data), encoding="utf-8")
+
+    report, success = run_evaluation(dataset_path=tampered, results_dir=tmp_path)
+
+    assert success is False
+    assert report.trace_edge_accuracy < 1.0
+    assert any("ti-trace-008" in f for f in report.failures)
+
+
 def test_validation_requires_diff_gap_kind_coverage(tmp_path: Path) -> None:
     data = _load_dataset()
     # Drop the diff_stale case: the coverage rule must reject the dataset.

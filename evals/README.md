@@ -104,7 +104,16 @@ zero-token static analysis services against the same checked-in fixture reposito
 - **Determinism** runs every case twice with reversed storage return order; results must
   be identical.
 
-Dataset expectations are validated against the real `python-ast-v2` parse of the fixture
+- **JS/TS cases** (EVAL-004) run against a dedicated `fixtures/js_sample_repo/` fixture
+  (selected per case via `repository_fixture`) covering ES default/named/aliased imports,
+  JSX component chains, axios and fetch (with method option) client variants, mounted
+  Express routers with named and inline handlers (synthetic `route_handler` chunks),
+  ambiguous unimported names (low-confidence resolution), and deliberate gap cases —
+  an orphan endpoint call (`endpoint_unmatched`) and an aliased relative import
+  (`unresolved_references`, the documented alias limitation). These live in a separate
+  fixture so their intentional gaps don't leak into the Python cases' expectations.
+
+Dataset expectations are validated against the real parser output of each case's fixture
 at load time — an expected symbol that is not an indexed chunk fails validation, so the
 dataset cannot silently drift from the fixtures.
 

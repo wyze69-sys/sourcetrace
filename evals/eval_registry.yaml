@@ -38,5 +38,9 @@ evaluation_suites:
       static flow trace (steps, edges, confidence, gaps), change impact preview
       (upstream/downstream, risk factors), git-diff impact previews
       (changed-symbol mapping, multi-seed aggregation,
-      diff_file_unmatched/diff_lines_uncovered/diff_stale gaps), citation
-      validity against fixture lines, storage-order determinism
+      diff_file_unmatched/diff_lines_uncovered/diff_stale gaps), JS/TS flow
+      coverage over a dedicated js_sample_repo fixture (ES imports and aliases,
+      JSX component chains, axios/fetch variants, mounted Express routers and
+      synthetic route handlers, ambiguous names, explicit unmatched/unresolved
+      gap cases), citation validity against fixture lines, storage-order
+      determinism

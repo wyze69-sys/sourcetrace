@@ -88,11 +88,25 @@ class StaticChunkRepository:
         return [RetrievalResult(chunk=c, score=1.0) for c in matches[:limit]]
 
 
+# Fixture sources are immutable for the lifetime of a process, and JS/TS
+# parsing pays a subprocess round-trip per file — cache parses so repeated
+# run_evaluation() calls (the regression tests) don't re-parse everything.
+_FIXTURE_CACHE: dict[tuple[Path, bool], list[CodeChunk]] = {}
+
+
 def load_fixture_chunks(fixture_dir: Path, *, reverse: bool = False) -> list[CodeChunk]:
     """Parse fixture files with the real parsers into static-mode chunks."""
+    cache_key = (fixture_dir.resolve(), reverse)
+    cached = _FIXTURE_CACHE.get(cache_key)
+    if cached is not None:
+        return list(cached)
     chunks: list[CodeChunk] = []
     files = sorted(
-        [*fixture_dir.glob("*.py"), *fixture_dir.glob("*.js")],
+        [
+            *fixture_dir.glob("*.py"),
+            *fixture_dir.glob("*.js"),
+            *fixture_dir.glob("*.jsx"),
+        ],
         key=lambda p: p.name,
         reverse=reverse,
     )
@@ -130,7 +144,8 @@ def load_fixture_chunks(fixture_dir: Path, *, reverse: bool = False) -> list[Cod
                     extraction_truncated=parsed.extraction_truncated,
                 )
             )
-    return chunks
+    _FIXTURE_CACHE[cache_key] = chunks
+    return list(chunks)
 
 
 @dataclass
@@ -140,6 +155,7 @@ class TraceCase:
     expected_steps: list[tuple[str, str]]
     expected_edges: list[tuple[str, str, str, str, int]]
     expected_gap_kinds: set[str]
+    fixture_dir: Path
 
 
 @dataclass
@@ -151,6 +167,7 @@ class ImpactCase:
     expected_risk_factor_kinds: set[str]
     expected_risk_level: str
     expected_gap_kinds: set[str]
+    fixture_dir: Path
 
 
 @dataclass
@@ -163,6 +180,7 @@ class DiffCase:
     expected_risk_factor_kinds: set[str]
     expected_risk_level: str
     expected_gap_kinds: set[str]
+    fixture_dir: Path
 
 
 @dataclass
@@ -211,34 +229,52 @@ def validate_dataset(
             f"Invalid schema_version: expected 1, got {data.get('schema_version')}"
         )
 
-    fixture_rel = data.get("repository_fixture", "")
-    if (
-        not isinstance(fixture_rel, str)
-        or not fixture_rel.strip()
-        or Path(fixture_rel).is_absolute()
-        or ".." in fixture_rel.replace("\\", "/").split("/")
-    ):
-        errors.append("'repository_fixture' must be a safe relative path")
-        return [], [], [], None, errors
-    fixture_dir = root_dir / fixture_rel
-    if not fixture_dir.is_dir():
-        errors.append(f"Fixture directory does not exist: {fixture_rel}")
+    def resolve_fixture(raw: object, owner: str) -> Path | None:
+        if (
+            not isinstance(raw, str)
+            or not raw.strip()
+            or Path(raw).is_absolute()
+            or ".." in raw.replace("\\", "/").split("/")
+        ):
+            errors.append(f"{owner}: 'repository_fixture' must be a safe relative path")
+            return None
+        fixture = root_dir / raw
+        if not fixture.is_dir():
+            errors.append(f"{owner}: fixture directory does not exist: {raw}")
+            return None
+        return fixture
+
+    default_fixture = resolve_fixture(data.get("repository_fixture", ""), "dataset")
+    if default_fixture is None:
         return [], [], [], None, errors
 
-    # Ground expectations against the real parse: every expected (path, symbol)
-    # must exist as an indexed chunk, so the dataset cannot drift from fixtures.
-    known_symbols = {
-        (c.relative_path, c.symbol_name) for c in load_fixture_chunks(fixture_dir)
-    }
+    # Ground expectations against the real parse of each case's fixture: an
+    # expected (path, symbol) that is not an indexed chunk fails validation,
+    # so the dataset cannot drift from the fixtures.
+    symbol_cache: dict[Path, set[tuple[str, str]]] = {}
 
-    def check_symbol(case_id: str, path: str, symbol: str) -> bool:
-        if (path, symbol) not in known_symbols:
+    def symbols_for(fixture: Path) -> set[tuple[str, str]]:
+        if fixture not in symbol_cache:
+            symbol_cache[fixture] = {
+                (c.relative_path, c.symbol_name)
+                for c in load_fixture_chunks(fixture)
+            }
+        return symbol_cache[fixture]
+
+    def check_symbol(case_id: str, path: str, symbol: str, fixture: Path) -> bool:
+        if (path, symbol) not in symbols_for(fixture):
             errors.append(
                 f"Case {case_id}: expected symbol ({path}, {symbol}) is not an "
-                "indexed chunk of the fixture repository"
+                "indexed chunk of the case's fixture repository"
             )
             return False
         return True
+
+    def case_fixture(raw_case: dict, case_id: str) -> Path | None:
+        override = raw_case.get("repository_fixture")
+        if override is None:
+            return default_fixture
+        return resolve_fixture(override, f"Case {case_id}")
 
     seen_ids: set[str] = set()
 
@@ -260,10 +296,13 @@ def validate_dataset(
         if not isinstance(entry, str) or not entry.strip():
             errors.append(f"Case {case_id}: 'entry' must be a non-empty string")
             continue
+        fixture = case_fixture(raw, case_id)
+        if fixture is None:
+            continue
         steps: list[tuple[str, str]] = []
         for step in raw.get("expected_steps", []):
             path, symbol = step.get("relative_path", ""), step.get("symbol_name", "")
-            if check_symbol(case_id, path, symbol):
+            if check_symbol(case_id, path, symbol, fixture):
                 steps.append((path, symbol))
         edges: list[tuple[str, str, str, str, int]] = []
         for edge in raw.get("expected_edges", []):
@@ -287,6 +326,7 @@ def validate_dataset(
                 expected_steps=steps,
                 expected_edges=edges,
                 expected_gap_kinds=set(raw.get("expected_gap_kinds", [])),
+                fixture_dir=fixture,
             )
         )
 
@@ -299,9 +339,12 @@ def validate_dataset(
         if not isinstance(symbol, str) or not symbol.strip():
             errors.append(f"Case {case_id}: 'symbol' must be a non-empty string")
             continue
+        fixture = case_fixture(raw, case_id)
+        if fixture is None:
+            continue
 
         def parse_items(
-            key: str, raw: dict = raw, case_id: str = case_id
+            key: str, raw: dict = raw, case_id: str = case_id, fixture: Path = fixture
         ) -> list[tuple[str, str, int, str]]:
             items: list[tuple[str, str, int, str]] = []
             for item in raw.get(key, []):
@@ -313,7 +356,7 @@ def validate_dataset(
                         f"Case {case_id}: invalid item confidence {confidence!r}"
                     )
                     continue
-                if check_symbol(case_id, path, sym):
+                if check_symbol(case_id, path, sym, fixture):
                     items.append((path, sym, int(item.get("distance", 0)), confidence))
             return items
 
@@ -332,6 +375,7 @@ def validate_dataset(
                 ),
                 expected_risk_level=risk_level,
                 expected_gap_kinds=set(raw.get("expected_gap_kinds", [])),
+                fixture_dir=fixture,
             )
         )
 
@@ -344,18 +388,21 @@ def validate_dataset(
         if not isinstance(diff_text, str) or not diff_text.strip():
             errors.append(f"Case {case_id}: 'diff' must be a non-empty string")
             continue
+        fixture = case_fixture(raw, case_id)
+        if fixture is None:
+            continue
 
         targets: list[tuple[str, str, tuple[int, ...]]] = []
         for target in raw.get("expected_targets", []):
             path = target.get("relative_path", "")
             symbol = target.get("symbol_name", "")
-            if check_symbol(case_id, path, symbol):
+            if check_symbol(case_id, path, symbol, fixture):
                 targets.append(
                     (path, symbol, tuple(int(n) for n in target.get("changed_lines", [])))
                 )
 
         def parse_diff_items(
-            key: str, raw: dict = raw, case_id: str = case_id
+            key: str, raw: dict = raw, case_id: str = case_id, fixture: Path = fixture
         ) -> list[tuple[str, str, int, str]]:
             items: list[tuple[str, str, int, str]] = []
             for item in raw.get(key, []):
@@ -367,7 +414,7 @@ def validate_dataset(
                         f"Case {case_id}: invalid item confidence {confidence!r}"
                     )
                     continue
-                if check_symbol(case_id, path, sym):
+                if check_symbol(case_id, path, sym, fixture):
                     items.append((path, sym, int(item.get("distance", 0)), confidence))
             return items
 
@@ -387,6 +434,7 @@ def validate_dataset(
                 ),
                 expected_risk_level=risk_level,
                 expected_gap_kinds=set(raw.get("expected_gap_kinds", [])),
+                fixture_dir=fixture,
             )
         )
 
@@ -423,7 +471,7 @@ def validate_dataset(
     ):
         errors.append("Cases are not in deterministic sorted id order")
 
-    return trace_cases, impact_cases, diff_cases, fixture_dir, errors
+    return trace_cases, impact_cases, diff_cases, default_fixture, errors
 
 
 def _check_citation(
@@ -504,12 +552,23 @@ def run_evaluation(
         return report, False
 
     assert fixture_dir is not None
-    forward_chunks = load_fixture_chunks(fixture_dir)
-    reversed_chunks = load_fixture_chunks(fixture_dir, reverse=True)
-    by_id = {c.chunk_id: c for c in forward_chunks}
 
-    forward_repo = StaticChunkRepository(forward_chunks)
-    reversed_repo = StaticChunkRepository(reversed_chunks)
+    resources: dict[
+        Path, tuple[StaticChunkRepository, StaticChunkRepository, dict[str, CodeChunk]]
+    ] = {}
+
+    def fixture_resources(
+        fixture: Path,
+    ) -> tuple[StaticChunkRepository, StaticChunkRepository, dict[str, CodeChunk]]:
+        if fixture not in resources:
+            forward_chunks = load_fixture_chunks(fixture)
+            reversed_chunks = load_fixture_chunks(fixture, reverse=True)
+            resources[fixture] = (
+                StaticChunkRepository(forward_chunks),
+                StaticChunkRepository(reversed_chunks),
+                {c.chunk_id: c for c in forward_chunks},
+            )
+        return resources[fixture]
 
     failures: list[str] = []
     latencies: list[float] = []
@@ -520,6 +579,7 @@ def run_evaluation(
 
     step_hits = edge_hits = gap_hits = 0
     for case in trace_cases:
+        forward_repo, reversed_repo, by_id = fixture_resources(case.fixture_dir)
         service = FlowTraceService(forward_repo)
         started = time.monotonic()
         result = service.trace(_OWNER, _REPOSITORY, case.entry)
@@ -570,7 +630,7 @@ def run_evaluation(
         for e in result.edges:
             citations_checked += 1
             if not _check_citation(
-                fixture_dir,
+                case.fixture_dir,
                 by_id,
                 e.from_node_id,
                 e.evidence_label,
@@ -583,6 +643,7 @@ def run_evaluation(
 
     diff_target_hits = diff_impact_hits = diff_risk_hits = diff_gap_hits = 0
     for case in diff_cases:
+        forward_repo, reversed_repo, by_id = fixture_resources(case.fixture_dir)
         service = ChangeImpactService(forward_repo)
         started = time.monotonic()
         result = service.preview_diff(_OWNER, _REPOSITORY, case.diff)
@@ -648,7 +709,7 @@ def run_evaluation(
         for item in list(result.upstream) + list(result.downstream):
             citations_checked += 1
             if not _check_citation(
-                fixture_dir,
+                case.fixture_dir,
                 by_id,
                 item.evidence_node_id,
                 item.evidence_label,
@@ -661,6 +722,7 @@ def run_evaluation(
 
     upstream_hits = downstream_hits = factor_hits = level_hits = impact_gap_hits = 0
     for case in impact_cases:
+        forward_repo, reversed_repo, by_id = fixture_resources(case.fixture_dir)
         service = ChangeImpactService(forward_repo)
         started = time.monotonic()
         result = service.preview(_OWNER, _REPOSITORY, case.symbol)
@@ -721,7 +783,7 @@ def run_evaluation(
         for item in list(result.upstream) + list(result.downstream):
             citations_checked += 1
             if not _check_citation(
-                fixture_dir,
+                case.fixture_dir,
                 by_id,
                 item.evidence_node_id,
                 item.evidence_label,

@@ -66,6 +66,93 @@
         }
       ],
       "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-trace-005",
+      "description": "JSX component chain: component -> imported client -> HTTP edge -> Express handler -> sibling component; aliased import stays an honest gap",
+      "repository_fixture": "evals/fixtures/js_sample_repo",
+      "entry": "DashboardView",
+      "expected_steps": [
+        {"relative_path": "dashboard_view.jsx", "symbol_name": "DashboardView"},
+        {"relative_path": "api_client.js", "symbol_name": "loadDashboardTotals"},
+        {"relative_path": "metrics_routes.js", "symbol_name": "readTotals"},
+        {"relative_path": "dashboard_view.jsx", "symbol_name": "TotalsBadge"}
+      ],
+      "expected_edges": [
+        {
+          "from_symbol": "DashboardView",
+          "to_symbol": "loadDashboardTotals",
+          "kind": "call",
+          "confidence": "high",
+          "evidence_line": 8
+        },
+        {
+          "from_symbol": "loadDashboardTotals",
+          "to_symbol": "readTotals",
+          "kind": "http",
+          "confidence": "high",
+          "evidence_line": 5
+        },
+        {
+          "from_symbol": "DashboardView",
+          "to_symbol": "TotalsBadge",
+          "kind": "call",
+          "confidence": "medium",
+          "evidence_line": 11
+        }
+      ],
+      "expected_gap_kinds": ["unresolved_references"]
+    },
+    {
+      "id": "ti-trace-006",
+      "description": "fetch with a literal method option resolves to a synthetic top-level Express route_handler chunk",
+      "repository_fixture": "evals/fixtures/js_sample_repo",
+      "entry": "submitFeedback",
+      "expected_steps": [
+        {"relative_path": "api_client.js", "symbol_name": "submitFeedback"},
+        {"relative_path": "metrics_routes.js", "symbol_name": "POST /api/v1/feedback"}
+      ],
+      "expected_edges": [
+        {
+          "from_symbol": "submitFeedback",
+          "to_symbol": "POST /api/v1/feedback",
+          "kind": "http",
+          "confidence": "high",
+          "evidence_line": 10
+        }
+      ],
+      "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-trace-007",
+      "description": "Client call to an endpoint no handler declares reports endpoint_unmatched honestly",
+      "repository_fixture": "evals/fixtures/js_sample_repo",
+      "entry": "pollOrphanStatus",
+      "expected_steps": [
+        {"relative_path": "api_client.js", "symbol_name": "pollOrphanStatus"}
+      ],
+      "expected_edges": [],
+      "expected_gap_kinds": ["endpoint_unmatched"]
+    },
+    {
+      "id": "ti-trace-008",
+      "description": "Ambiguous unimported symbol name yields a low-confidence edge to the deterministic first candidate",
+      "repository_fixture": "evals/fixtures/js_sample_repo",
+      "entry": "syncAll",
+      "expected_steps": [
+        {"relative_path": "sync_tool.js", "symbol_name": "syncAll"},
+        {"relative_path": "stores_a.js", "symbol_name": "persistRecord"}
+      ],
+      "expected_edges": [
+        {
+          "from_symbol": "syncAll",
+          "to_symbol": "persistRecord",
+          "kind": "call",
+          "confidence": "low",
+          "evidence_line": 2
+        }
+      ],
+      "expected_gap_kinds": []
     }
   ],
   "impact_cases": [
@@ -142,6 +229,48 @@
       "expected_risk_factor_kinds": ["no_test_coverage"],
       "expected_risk_level": "medium",
       "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-impact-005",
+      "description": "Express handler's upstream crosses the HTTP boundary into the axios client and its JSX component; fixture-wide alias and orphan-endpoint gaps are reported",
+      "repository_fixture": "evals/fixtures/js_sample_repo",
+      "symbol": "readTotals",
+      "expected_upstream": [
+        {
+          "relative_path": "api_client.js",
+          "symbol_name": "loadDashboardTotals",
+          "distance": 1,
+          "confidence": "high"
+        },
+        {
+          "relative_path": "dashboard_view.jsx",
+          "symbol_name": "DashboardView",
+          "distance": 2,
+          "confidence": "high"
+        }
+      ],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": ["endpoint_exposure", "no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": ["endpoint_unmatched", "unresolved_references"]
+    },
+    {
+      "id": "ti-impact-006",
+      "description": "Ambiguously named symbol keeps its caller as a low-confidence upstream dependent, surfacing the ambiguous_resolution factor",
+      "repository_fixture": "evals/fixtures/js_sample_repo",
+      "symbol": "persistRecord",
+      "expected_upstream": [
+        {
+          "relative_path": "sync_tool.js",
+          "symbol_name": "syncAll",
+          "distance": 1,
+          "confidence": "low"
+        }
+      ],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": ["ambiguous_resolution", "no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": ["endpoint_unmatched", "unresolved_references"]
     }
   ],
   "diff_cases": [
