@@ -107,5 +107,66 @@
       "expected_risk_level": "medium",
       "expected_gap_kinds": []
     }
+  ],
+  "diff_cases": [
+    {
+      "id": "ti-diff-001",
+      "description": "Two-file diff maps to two changed symbols; their shared dependent appears once (multi-seed dedup)",
+      "diff": "--- a/auth.py\n+++ b/auth.py\n@@ -13,1 +13,1 @@\n-    if not owner_id or not resource_id:\n+    if not owner_id or not resource_id or not resource_id.strip():\n--- a/errors.py\n+++ b/errors.py\n@@ -11,1 +11,1 @@\n-    \"\"\"Raised when repository access is denied.\"\"\"\n+    \"\"\"Raised when repository access is denied by ownership rules.\"\"\"\n",
+      "expected_targets": [
+        {"relative_path": "auth.py", "symbol_name": "validate_owner_permissions", "changed_lines": [13]},
+        {"relative_path": "errors.py", "symbol_name": "AccessDeniedError", "changed_lines": [11]}
+      ],
+      "expected_upstream": [
+        {
+          "relative_path": "services.py",
+          "symbol_name": "RepositoryService.process_repository",
+          "distance": 1,
+          "confidence": "high"
+        }
+      ],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": ["no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-diff-002",
+      "description": "Diff against a file the index does not contain reports diff_file_unmatched honestly",
+      "diff": "--- a/unknown/module.py\n+++ b/unknown/module.py\n@@ -1,1 +1,1 @@\n-old line\n+new line\n",
+      "expected_targets": [],
+      "expected_upstream": [],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": [],
+      "expected_risk_level": "unknown",
+      "expected_gap_kinds": ["diff_file_unmatched"]
+    },
+    {
+      "id": "ti-diff-003",
+      "description": "Module-level docstring change is reported uncovered while the symbol-level change still maps",
+      "diff": "--- a/config.py\n+++ b/config.py\n@@ -1,1 +1,1 @@\n-\"\"\"Configuration settings for sample repository.\"\"\"\n+\"\"\"Configuration settings for the sample repository.\"\"\"\n@@ -13,1 +13,1 @@\n-        \"\"\"Check if environment is set to production.\"\"\"\n+        \"\"\"Return True when environment is production.\"\"\"\n",
+      "expected_targets": [
+        {"relative_path": "config.py", "symbol_name": "AppConfig", "changed_lines": [13]},
+        {"relative_path": "config.py", "symbol_name": "AppConfig.is_production", "changed_lines": [13]}
+      ],
+      "expected_upstream": [],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": ["no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": ["diff_lines_uncovered"]
+    },
+    {
+      "id": "ti-diff-004",
+      "description": "Deleted-line text that disagrees with indexed content flags diff_stale without aborting",
+      "diff": "--- a/indexer.py\n+++ b/indexer.py\n@@ -7,1 +7,1 @@\n-        raise RuntimeError(\"root_dir required\")\n+        raise ValueError(\"root_dir directory required\")\n",
+      "expected_targets": [
+        {"relative_path": "indexer.py", "symbol_name": "scan_repository_files", "changed_lines": [7]}
+      ],
+      "expected_upstream": [],
+      "expected_downstream": [],
+      "expected_risk_factor_kinds": ["no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": ["diff_stale"]
+    }
   ]
 }

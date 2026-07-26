@@ -36,5 +36,7 @@ evaluation_suites:
     tests: tests/test_trace_impact_eval.py
     covers: >-
       static flow trace (steps, edges, confidence, gaps), change impact preview
-      (upstream/downstream, risk factors), citation validity against fixture
-      lines, storage-order determinism
+      (upstream/downstream, risk factors), git-diff impact previews
+      (changed-symbol mapping, multi-seed aggregation,
+      diff_file_unmatched/diff_lines_uncovered/diff_stale gaps), citation
+      validity against fixture lines, storage-order determinism

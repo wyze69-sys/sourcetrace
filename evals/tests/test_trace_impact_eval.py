@@ -30,12 +30,13 @@ def _load_dataset() -> dict:
 
 
 def test_canonical_dataset_validates_cleanly() -> None:
-    trace_cases, impact_cases, fixture_dir, errors = validate_dataset(
+    trace_cases, impact_cases, diff_cases, fixture_dir, errors = validate_dataset(
         DEFAULT_DATASET_PATH, ROOT_DIR
     )
     assert errors == []
     assert len(trace_cases) >= 3
     assert len(impact_cases) >= 3
+    assert len(diff_cases) >= 3
     assert fixture_dir is not None and fixture_dir.is_dir()
 
 
@@ -45,7 +46,7 @@ def test_validation_rejects_symbol_not_in_fixture(tmp_path: Path) -> None:
     tampered = tmp_path / "tampered.json"
     tampered.write_text(json.dumps(data), encoding="utf-8")
 
-    _, _, _, errors = validate_dataset(tampered, ROOT_DIR)
+    _, _, _, _, errors = validate_dataset(tampered, ROOT_DIR)
 
     assert any("does_not_exist_xyz" in e for e in errors)
 
@@ -56,9 +57,23 @@ def test_validation_rejects_unsafe_fixture_path(tmp_path: Path) -> None:
     tampered = tmp_path / "tampered.json"
     tampered.write_text(json.dumps(data), encoding="utf-8")
 
-    _, _, _, errors = validate_dataset(tampered, ROOT_DIR)
+    _, _, _, _, errors = validate_dataset(tampered, ROOT_DIR)
 
     assert any("safe relative path" in e for e in errors)
+
+
+def test_validation_requires_diff_gap_kind_coverage(tmp_path: Path) -> None:
+    data = _load_dataset()
+    # Drop the diff_stale case: the coverage rule must reject the dataset.
+    data["diff_cases"] = [
+        c for c in data["diff_cases"] if "diff_stale" not in c["expected_gap_kinds"]
+    ]
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(data), encoding="utf-8")
+
+    _, _, _, _, errors = validate_dataset(tampered, ROOT_DIR)
+
+    assert any("diff_stale" in e for e in errors)
 
 
 def test_full_evaluation_passes_with_perfect_metrics(tmp_path: Path) -> None:
@@ -73,6 +88,11 @@ def test_full_evaluation_passes_with_perfect_metrics(tmp_path: Path) -> None:
     assert report.impact_downstream_accuracy == 1.0
     assert report.risk_factor_accuracy == 1.0
     assert report.risk_level_accuracy == 1.0
+    assert report.total_diff_cases >= 3
+    assert report.diff_target_accuracy == 1.0
+    assert report.diff_impact_accuracy == 1.0
+    assert report.diff_risk_accuracy == 1.0
+    assert report.diff_gap_accuracy == 1.0
     assert report.citation_validity_rate == 1.0
     assert report.citations_checked > 0
     assert report.determinism_verified is True
@@ -88,6 +108,8 @@ def test_result_file_is_written_with_expected_shape(tmp_path: Path) -> None:
     for key in (
         "trace_step_accuracy",
         "impact_upstream_accuracy",
+        "diff_target_accuracy",
+        "diff_gap_accuracy",
         "citation_validity_rate",
         "determinism_verified",
         "failures",
@@ -115,6 +137,42 @@ def test_wrong_expectation_fails_the_evaluation(tmp_path: Path) -> None:
     assert success is False
     assert report.impact_upstream_accuracy < 1.0
     assert any("ti-impact-001" in f for f in report.failures)
+
+
+def test_wrong_diff_target_expectation_fails_the_evaluation(tmp_path: Path) -> None:
+    data = _load_dataset()
+    # Claim the multi-seed diff case also changed generate_session_token.
+    data["diff_cases"][0]["expected_targets"].append(
+        {
+            "relative_path": "auth.py",
+            "symbol_name": "generate_session_token",
+            "changed_lines": [5],
+        }
+    )
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(data), encoding="utf-8")
+
+    report, success = run_evaluation(dataset_path=tampered, results_dir=tmp_path)
+
+    assert success is False
+    assert report.diff_target_accuracy < 1.0
+    assert any("ti-diff-001" in f for f in report.failures)
+
+
+def test_wrong_diff_gap_expectation_fails_the_evaluation(tmp_path: Path) -> None:
+    data = _load_dataset()
+    # The stale case must NOT pass if we pretend it produces no gaps...
+    stale_case = next(
+        c for c in data["diff_cases"] if "diff_stale" in c["expected_gap_kinds"]
+    )
+    stale_case["expected_gap_kinds"] = ["diff_stale", "diff_lines_uncovered"]
+    tampered = tmp_path / "tampered.json"
+    tampered.write_text(json.dumps(data), encoding="utf-8")
+
+    report, success = run_evaluation(dataset_path=tampered, results_dir=tmp_path)
+
+    assert success is False
+    assert report.diff_gap_accuracy < 1.0
 
 
 def test_wrong_confidence_expectation_fails_the_evaluation(tmp_path: Path) -> None:

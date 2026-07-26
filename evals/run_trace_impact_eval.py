@@ -144,9 +144,26 @@ class ImpactCase:
 
 
 @dataclass
+class DiffCase:
+    id: str
+    diff: str
+    expected_targets: list[tuple[str, str, tuple[int, ...]]]
+    expected_upstream: list[tuple[str, str, int, str]]
+    expected_downstream: list[tuple[str, str, int, str]]
+    expected_risk_factor_kinds: set[str]
+    expected_risk_level: str
+    expected_gap_kinds: set[str]
+
+
+@dataclass
 class TraceImpactMetricReport:
     total_trace_cases: int
     total_impact_cases: int
+    total_diff_cases: int
+    diff_target_accuracy: float
+    diff_impact_accuracy: float
+    diff_risk_accuracy: float
+    diff_gap_accuracy: float
     trace_step_accuracy: float
     trace_edge_accuracy: float
     trace_gap_accuracy: float
@@ -168,16 +185,16 @@ class TraceImpactMetricReport:
 
 def validate_dataset(
     dataset_path: Path, root_dir: Path
-) -> tuple[list[TraceCase], list[ImpactCase], Path | None, list[str]]:
+) -> tuple[list[TraceCase], list[ImpactCase], list[DiffCase], Path | None, list[str]]:
     errors: list[str] = []
 
     if not dataset_path.exists():
-        return [], [], None, [f"Dataset file does not exist: {dataset_path}"]
+        return [], [], [], None, [f"Dataset file does not exist: {dataset_path}"]
     try:
         with open(dataset_path, encoding="utf-8") as f:
             data = json.load(f)
     except Exception as e:  # noqa: BLE001 - report any parse failure verbatim
-        return [], [], None, [f"Dataset file is invalid JSON: {e}"]
+        return [], [], [], None, [f"Dataset file is invalid JSON: {e}"]
 
     if data.get("schema_version") != 1:
         errors.append(
@@ -192,11 +209,11 @@ def validate_dataset(
         or ".." in fixture_rel.replace("\\", "/").split("/")
     ):
         errors.append("'repository_fixture' must be a safe relative path")
-        return [], [], None, errors
+        return [], [], [], None, errors
     fixture_dir = root_dir / fixture_rel
     if not fixture_dir.is_dir():
         errors.append(f"Fixture directory does not exist: {fixture_rel}")
-        return [], [], None, errors
+        return [], [], [], None, errors
 
     # Ground expectations against the real parse: every expected (path, symbol)
     # must exist as an indexed chunk, so the dataset cannot drift from fixtures.
@@ -308,16 +325,95 @@ def validate_dataset(
             )
         )
 
+    diff_cases: list[DiffCase] = []
+    for raw in data.get("diff_cases", []):
+        case_id = check_id(raw.get("id"))
+        if case_id is None:
+            continue
+        diff_text = raw.get("diff", "")
+        if not isinstance(diff_text, str) or not diff_text.strip():
+            errors.append(f"Case {case_id}: 'diff' must be a non-empty string")
+            continue
+
+        targets: list[tuple[str, str, tuple[int, ...]]] = []
+        for target in raw.get("expected_targets", []):
+            path = target.get("relative_path", "")
+            symbol = target.get("symbol_name", "")
+            if check_symbol(case_id, path, symbol):
+                targets.append(
+                    (path, symbol, tuple(int(n) for n in target.get("changed_lines", [])))
+                )
+
+        def parse_diff_items(
+            key: str, raw: dict = raw, case_id: str = case_id
+        ) -> list[tuple[str, str, int, str]]:
+            items: list[tuple[str, str, int, str]] = []
+            for item in raw.get(key, []):
+                path = item.get("relative_path", "")
+                sym = item.get("symbol_name", "")
+                confidence = item.get("confidence", "")
+                if confidence not in _VALID_CONFIDENCES:
+                    errors.append(
+                        f"Case {case_id}: invalid item confidence {confidence!r}"
+                    )
+                    continue
+                if check_symbol(case_id, path, sym):
+                    items.append((path, sym, int(item.get("distance", 0)), confidence))
+            return items
+
+        risk_level = raw.get("expected_risk_level", "")
+        if risk_level not in _VALID_RISK_LEVELS:
+            errors.append(f"Case {case_id}: invalid expected_risk_level {risk_level!r}")
+            continue
+        diff_cases.append(
+            DiffCase(
+                id=case_id,
+                diff=diff_text,
+                expected_targets=targets,
+                expected_upstream=parse_diff_items("expected_upstream"),
+                expected_downstream=parse_diff_items("expected_downstream"),
+                expected_risk_factor_kinds=set(
+                    raw.get("expected_risk_factor_kinds", [])
+                ),
+                expected_risk_level=risk_level,
+                expected_gap_kinds=set(raw.get("expected_gap_kinds", [])),
+            )
+        )
+
     if len(trace_cases) < 3:
         errors.append(f"Dataset needs at least 3 trace cases, got {len(trace_cases)}")
     if len(impact_cases) < 3:
         errors.append(f"Dataset needs at least 3 impact cases, got {len(impact_cases)}")
+    if len(diff_cases) < 3:
+        errors.append(f"Dataset needs at least 3 diff cases, got {len(diff_cases)}")
+    covered_diff_gaps: set[str] = set()
+    for case in diff_cases:
+        covered_diff_gaps |= case.expected_gap_kinds
+    required_diff_gaps = {"diff_file_unmatched", "diff_lines_uncovered", "diff_stale"}
+    missing = required_diff_gaps - covered_diff_gaps
+    if missing:
+        errors.append(
+            f"Diff cases must collectively cover gap kinds {sorted(required_diff_gaps)}; "
+            f"missing: {sorted(missing)}"
+        )
+    if diff_cases and not any(
+        c.expected_targets and not c.expected_gap_kinds for c in diff_cases
+    ):
+        errors.append(
+            "Diff cases must include at least one clean changed-symbol mapping "
+            "(non-empty expected_targets with no expected gaps)"
+        )
     trace_ids = [c.id for c in trace_cases]
     impact_ids = [c.id for c in impact_cases]
-    if trace_ids != sorted(trace_ids) or impact_ids != sorted(impact_ids):
+    diff_ids = [c.id for c in diff_cases]
+    if (
+        trace_ids != sorted(trace_ids)
+        or impact_ids != sorted(impact_ids)
+        or diff_ids != sorted(diff_ids)
+    ):
         errors.append("Cases are not in deterministic sorted id order")
 
-    return trace_cases, impact_cases, fixture_dir, errors
+    return trace_cases, impact_cases, diff_cases, fixture_dir, errors
 
 
 def _check_citation(
@@ -365,13 +461,18 @@ def run_evaluation(
     results_dir: Path = DEFAULT_RESULTS_DIR,
     root_dir: Path = ROOT_DIR,
 ) -> tuple[TraceImpactMetricReport, bool]:
-    trace_cases, impact_cases, fixture_dir, validation_errors = validate_dataset(
-        dataset_path, root_dir
+    trace_cases, impact_cases, diff_cases, fixture_dir, validation_errors = (
+        validate_dataset(dataset_path, root_dir)
     )
     if validation_errors:
         report = TraceImpactMetricReport(
             total_trace_cases=0,
             total_impact_cases=0,
+            total_diff_cases=0,
+            diff_target_accuracy=0.0,
+            diff_impact_accuracy=0.0,
+            diff_risk_accuracy=0.0,
+            diff_gap_accuracy=0.0,
             trace_step_accuracy=0.0,
             trace_edge_accuracy=0.0,
             trace_gap_accuracy=0.0,
@@ -470,6 +571,84 @@ def run_evaluation(
             ):
                 invalid_citations += 1
 
+    diff_target_hits = diff_impact_hits = diff_risk_hits = diff_gap_hits = 0
+    for case in diff_cases:
+        service = ChangeImpactService(forward_repo)
+        started = time.monotonic()
+        result = service.preview_diff(_OWNER, _REPOSITORY, case.diff)
+        latencies.append((time.monotonic() - started) * 1000.0)
+
+        if (
+            ChangeImpactService(reversed_repo).preview_diff(_OWNER, _REPOSITORY, case.diff)
+            != result
+        ):
+            determinism_ok = False
+            failures.append(f"{case.id}: result depends on storage return order")
+
+        actual_targets = [
+            (t.relative_path, t.symbol_name, t.changed_lines) for t in result.targets
+        ]
+        if actual_targets == case.expected_targets:
+            diff_target_hits += 1
+        else:
+            failures.append(
+                f"{case.id}: targets {actual_targets} != expected {case.expected_targets}"
+            )
+
+        def diff_to_tuples(items) -> list[tuple[str, str, int, str]]:
+            return [
+                (i.relative_path, i.symbol_name, i.distance, i.confidence)
+                for i in items
+            ]
+
+        if (
+            diff_to_tuples(result.upstream) == case.expected_upstream
+            and diff_to_tuples(result.downstream) == case.expected_downstream
+        ):
+            diff_impact_hits += 1
+        else:
+            failures.append(
+                f"{case.id}: impact upstream {diff_to_tuples(result.upstream)} / "
+                f"downstream {diff_to_tuples(result.downstream)} != expected "
+                f"{case.expected_upstream} / {case.expected_downstream}"
+            )
+
+        actual_factor_kinds = {f.kind for f in result.risk_factors}
+        if (
+            actual_factor_kinds == case.expected_risk_factor_kinds
+            and result.risk_level == case.expected_risk_level
+        ):
+            diff_risk_hits += 1
+        else:
+            failures.append(
+                f"{case.id}: risk {result.risk_level}/{sorted(actual_factor_kinds)} != "
+                f"expected {case.expected_risk_level}/"
+                f"{sorted(case.expected_risk_factor_kinds)}"
+            )
+
+        actual_gaps = {g.kind for g in result.gaps}
+        if actual_gaps == case.expected_gap_kinds:
+            diff_gap_hits += 1
+        else:
+            failures.append(
+                f"{case.id}: gap kinds {sorted(actual_gaps)} != expected "
+                f"{sorted(case.expected_gap_kinds)}"
+            )
+
+        for item in list(result.upstream) + list(result.downstream):
+            citations_checked += 1
+            if not _check_citation(
+                fixture_dir,
+                by_id,
+                item.evidence_node_id,
+                item.evidence_label,
+                item.evidence_line_start,
+                item.evidence_line_end,
+                failures,
+                f"{case.id} item {item.symbol_name}",
+            ):
+                invalid_citations += 1
+
     upstream_hits = downstream_hits = factor_hits = level_hits = impact_gap_hits = 0
     for case in impact_cases:
         service = ChangeImpactService(forward_repo)
@@ -545,6 +724,7 @@ def run_evaluation(
 
     n_trace = len(trace_cases)
     n_impact = len(impact_cases)
+    n_diff = len(diff_cases)
     citation_validity = (
         (citations_checked - invalid_citations) / citations_checked
         if citations_checked
@@ -556,6 +736,11 @@ def run_evaluation(
     report = TraceImpactMetricReport(
         total_trace_cases=n_trace,
         total_impact_cases=n_impact,
+        total_diff_cases=n_diff,
+        diff_target_accuracy=round(diff_target_hits / n_diff, 4) if n_diff else 0.0,
+        diff_impact_accuracy=round(diff_impact_hits / n_diff, 4) if n_diff else 0.0,
+        diff_risk_accuracy=round(diff_risk_hits / n_diff, 4) if n_diff else 0.0,
+        diff_gap_accuracy=round(diff_gap_hits / n_diff, 4) if n_diff else 0.0,
         trace_step_accuracy=round(step_hits / n_trace, 4),
         trace_edge_accuracy=round(edge_hits / n_trace, 4),
         trace_gap_accuracy=round((trace_gap_accuracy + impact_gap_accuracy) / 2, 4),
@@ -583,6 +768,10 @@ def run_evaluation(
         and report.impact_downstream_accuracy == 1.0
         and report.risk_factor_accuracy == 1.0
         and report.risk_level_accuracy == 1.0
+        and report.diff_target_accuracy == 1.0
+        and report.diff_impact_accuracy == 1.0
+        and report.diff_risk_accuracy == 1.0
+        and report.diff_gap_accuracy == 1.0
         and report.citation_validity_rate == 1.0
         and report.citations_checked > 0
         and report.determinism_verified
@@ -608,6 +797,7 @@ def print_report(report: TraceImpactMetricReport, success: bool) -> None:
     print(f"Evaluation Mode:  {report.evaluation_label}")
     print(f"Trace Cases:      {report.total_trace_cases}")
     print(f"Impact Cases:     {report.total_impact_cases}")
+    print(f"Diff Cases:       {report.total_diff_cases}")
     print(f"Overall Status:   {'PASSED' if success else 'FAILED'}\n")
     print("--- Trace Metrics ---")
     print(f"  Step Accuracy:             {report.trace_step_accuracy:.2%}")
@@ -618,6 +808,11 @@ def print_report(report: TraceImpactMetricReport, success: bool) -> None:
     print(f"  Downstream Accuracy:       {report.impact_downstream_accuracy:.2%}")
     print(f"  Risk Factor Accuracy:      {report.risk_factor_accuracy:.2%}")
     print(f"  Risk Level Accuracy:       {report.risk_level_accuracy:.2%}")
+    print("\n--- Diff Impact Metrics ---")
+    print(f"  Target Mapping Accuracy:   {report.diff_target_accuracy:.2%}")
+    print(f"  Impact Set Accuracy:       {report.diff_impact_accuracy:.2%}")
+    print(f"  Risk Accuracy:             {report.diff_risk_accuracy:.2%}")
+    print(f"  Gap Accuracy:              {report.diff_gap_accuracy:.2%}")
     print("\n--- Citation & Determinism ---")
     print(f"  Citation Validity:         {report.citation_validity_rate:.2%}")
     print(f"  Citations Checked:         {report.citations_checked}")

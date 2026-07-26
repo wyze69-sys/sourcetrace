@@ -92,6 +92,12 @@ zero-token static analysis services against the same checked-in fixture reposito
 - **Impact cases** assert the exact upstream-dependent and downstream-dependency sets
   (with distance and confidence), risk factor kinds, and risk level produced by
   `ChangeImpactService`.
+- **Diff cases** (EVAL-003) assert `preview_diff()` behavior end to end: exact
+  changed-symbol mapping from unified-diff hunks (old-file coordinates, verified
+  against real fixture line text), deterministic multi-seed impact aggregation with
+  dependent dedup, and each integrity gap in isolation — `diff_file_unmatched`,
+  `diff_lines_uncovered`, and `diff_stale`. Dataset validation enforces that all
+  three gap kinds and at least one clean mapping case are always covered.
 - **Citation validity** re-verifies every produced citation against the fixture source:
   the cited lines must lie inside the cited chunk and the evidence label must appear on
   the exact cited line. Required to be 100%.
