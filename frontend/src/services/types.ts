@@ -1,3 +1,9 @@
+export interface TokenResponse {
+  access_token: string
+  token_type: 'Bearer'
+  expires_in: number
+}
+
 export interface ServerCapabilities {
   allowed_index_modes: string[]
   default_index_mode: string

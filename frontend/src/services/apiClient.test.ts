@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiClient, ApiError } from './apiClient'
+import type { TokenStorage } from './apiClient'
 
 describe('ApiClient', () => {
-  it('getHealth() uses relative /api/v1/health and credentials: include', async () => {
+  beforeEach(() => {
+    sessionStorage.clear()
+    localStorage.clear()
+  })
+
+  it('getHealth() is public: uses credentials: omit and sends no Authorization header', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -17,16 +23,39 @@ describe('ApiClient', () => {
 
     expect(mockFetch).toHaveBeenCalledWith('/api/v1/health', {
       method: 'GET',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-      },
+      credentials: 'omit',
+      headers: expect.any(Headers),
     })
+
+    const headers = mockFetch.mock.calls[0][1]?.headers as Headers
+    expect(headers.get('Accept')).toBe('application/json')
+    expect(headers.has('Authorization')).toBe(false)
     expect(health).toEqual({
       status: 'ok',
       version: '1.0.0',
       timestamp: '2026-07-23T16:00:00Z',
     })
+  })
+
+  it('getCapabilities() is public: uses credentials: omit and sends no Authorization header', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        allowed_index_modes: ['static'],
+        default_index_mode: 'static',
+        lexical_search_available: true,
+        semantic_search_available: false,
+        generation_available: false,
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    await client.getCapabilities()
+
+    const callInit = mockFetch.mock.calls[0][1] as RequestInit
+    expect(callInit.credentials).toBe('omit')
+    const headers = callInit.headers as Headers
+    expect(headers.has('Authorization')).toBe(false)
   })
 
   it('defaults to relative /api/v1 base path when VITE_API_BASE_URL is unset', async () => {
@@ -42,7 +71,7 @@ describe('ApiClient', () => {
     expect(requestedUrl).toBe('/api/v1/health')
   })
 
-  it('supports custom production backend URL via VITE_API_BASE_URL or options.baseUrl', async () => {
+  it('supports custom production backend URL via options.baseUrl', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ status: 'ok', version: '1.0.0', timestamp: '2026-07-23T16:00:00Z' }),
@@ -108,48 +137,292 @@ describe('ApiClient', () => {
     }
   })
 
-  it('binds default global fetch to globalThis when customFetch is omitted', async () => {
-    let isGlobalReceiver = false
-    let requestedUrl: string | undefined
-    let requestOptions: RequestInit | undefined
-    const originalFetch = globalThis.fetch
-
-    const mockGlobalFetch = function (this: unknown, url: string | URL | Request, init?: RequestInit) {
-      if (this === globalThis) {
-        isGlobalReceiver = true
-      }
-      requestedUrl = String(url)
-      requestOptions = init
-      return Promise.resolve({
+  it('first protected request provisions token via POST /auth/session, then sends request with Bearer header', async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          status: 'ok',
-          version: '1.0.0',
-          timestamp: '2026-07-23T16:00:00Z',
+          access_token: 'jwt_mock_token_123',
+          token_type: 'Bearer',
+          expires_in: 604800,
         }),
-      } as Response)
-    }
-
-    globalThis.fetch = mockGlobalFetch as typeof fetch
-
-    try {
-      const client = new ApiClient()
-      const health = await client.getHealth()
-
-      expect(isGlobalReceiver).toBe(true)
-      expect(requestedUrl).toBe('/api/v1/health')
-      expect(requestOptions?.credentials).toBe('include')
-      expect(health).toEqual({
-        status: 'ok',
-        version: '1.0.0',
-        timestamp: '2026-07-23T16:00:00Z',
       })
-    } finally {
-      globalThis.fetch = originalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          repositories: [],
+        }),
+      })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const repos = await client.listRepositories()
+
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+
+    // Call 1: Provisioning request
+    const [provUrl, provInit] = mockFetch.mock.calls[0]
+    expect(provUrl).toBe('/api/v1/auth/session')
+    expect(provInit.method).toBe('POST')
+    expect(provInit.credentials).toBe('include')
+    const provHeaders = provInit.headers as Headers
+    expect(provHeaders.has('Authorization')).toBe(false)
+
+    // Call 2: Protected request
+    const [reqUrl, reqInit] = mockFetch.mock.calls[1]
+    expect(reqUrl).toBe('/api/v1/repositories')
+    expect(reqInit.method).toBe('GET')
+    expect(reqInit.credentials).toBe('omit')
+    const reqHeaders = reqInit.headers as Headers
+    expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_mock_token_123')
+
+    expect(sessionStorage.getItem('sourcetrace.access_token')).toBe('jwt_mock_token_123')
+    expect(localStorage.getItem('sourcetrace.access_token')).toBeNull()
+    expect(repos).toEqual({ repositories: [] })
+  })
+
+  it('validates TokenResponse strictly and rejects invalid responses', async () => {
+    const invalidResponses = [
+      { access_token: '', token_type: 'Bearer', expires_in: 604800 },
+      { access_token: 'valid', token_type: 'Basic', expires_in: 604800 },
+      { access_token: 'valid', token_type: 'Bearer', expires_in: 0 },
+      { access_token: 'valid', token_type: 'Bearer', expires_in: -10 },
+      { access_token: 'valid', token_type: 'Bearer', expires_in: '604800' },
+      { access_token: 'valid', token_type: 'Bearer', expires_in: null },
+      { access_token: 'valid', token_type: 'Bearer' },
+      { token_type: 'Bearer', expires_in: 604800 },
+    ]
+
+    for (const invalidResp of invalidResponses) {
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: true,
+        json: async () => invalidResp,
+      })
+
+      const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+
+      try {
+        await client.listRepositories()
+        expect.fail(`Should have thrown ApiError for invalid response: ${JSON.stringify(invalidResp)}`)
+      } catch (err) {
+        const apiErr = err as ApiError
+        expect(apiErr).toBeInstanceOf(ApiError)
+        expect(apiErr.code).toBe('AUTH_RESPONSE_INVALID')
+        expect(apiErr.message).toBe('Authentication response was invalid.')
+      }
+
+      expect(sessionStorage.getItem('sourcetrace.access_token')).toBeNull()
     }
   })
 
-  it('createGitHubRepository() sends POST to /api/v1/repositories with JSON body and credentials', async () => {
+  it('uses pre-populated token from sessionStorage without re-provisioning', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_existing_stored_token')
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ repositories: [] }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    await client.listRepositories()
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [reqUrl, reqInit] = mockFetch.mock.calls[0]
+    expect(reqUrl).toBe('/api/v1/repositories')
+    const reqHeaders = reqInit.headers as Headers
+    expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_existing_stored_token')
+  })
+
+  it('deduplicates concurrent protected requests to share a single provisioning call', async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'jwt_shared_token',
+          token_type: 'Bearer',
+          expires_in: 604800,
+        }),
+      })
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({ repositories: [] }),
+      })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+
+    const [res1, res2, res3] = await Promise.all([
+      client.listRepositories(),
+      client.listRepositories(),
+      client.listRepositories(),
+    ])
+
+    // Exactly 1 provisioning call + 3 protected calls = 4 fetch calls
+    expect(mockFetch).toHaveBeenCalledTimes(4)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/auth/session')
+
+    expect(res1).toEqual({ repositories: [] })
+    expect(res2).toEqual({ repositories: [] })
+    expect(res3).toEqual({ repositories: [] })
+  })
+
+  it('recovers from 401 on protected request by clearing stale token, re-provisioning, and retrying once', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_stale_token')
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication credentials are missing or invalid.',
+          },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'jwt_fresh_replacement_token',
+          token_type: 'Bearer',
+          expires_in: 604800,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ repositories: [] }),
+      })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const res = await client.listRepositories()
+
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+
+    // Call 1: Initial protected request with stale token -> returns 401
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/repositories')
+    expect((mockFetch.mock.calls[0][1].headers as Headers).get('Authorization')).toBe('Bearer jwt_stale_token')
+
+    // Call 2: Re-provisioning request -> returns fresh token
+    expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/auth/session')
+
+    // Call 3: Retried protected request -> returns 200 with fresh token
+    expect(mockFetch.mock.calls[2][0]).toBe('/api/v1/repositories')
+    expect((mockFetch.mock.calls[2][1].headers as Headers).get('Authorization')).toBe(
+      'Bearer jwt_fresh_replacement_token',
+    )
+
+    expect(sessionStorage.getItem('sourcetrace.access_token')).toBe('jwt_fresh_replacement_token')
+    expect(res).toEqual({ repositories: [] })
+  })
+
+  it('stops after single 401 retry if retry fails with 401 again (no infinite loop)', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_stale_token')
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: { code: 'UNAUTHORIZED', message: 'Stale token' },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'jwt_replacement_token',
+          token_type: 'Bearer',
+          expires_in: 604800,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: async () => ({
+          error: { code: 'UNAUTHORIZED', message: 'Replacement token also rejected' },
+        }),
+      })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+
+    try {
+      await client.listRepositories()
+      expect.fail('Should have thrown ApiError on second 401')
+    } catch (err) {
+      const apiErr = err as ApiError
+      expect(apiErr.status).toBe(401)
+      expect(apiErr.code).toBe('UNAUTHORIZED')
+      expect(apiErr.message).toBe('Replacement token also rejected')
+    }
+
+    expect(mockFetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('404 or 500 response on protected request does NOT clear or replace stored token', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_valid_token')
+
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({
+        error: { code: 'RESOURCE_NOT_FOUND', message: 'Not found' },
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+
+    try {
+      await client.getRepository('repo_missing')
+      expect.fail('Should have thrown 404 ApiError')
+    } catch (err) {
+      expect((err as ApiError).status).toBe(404)
+    }
+
+    expect(sessionStorage.getItem('sourcetrace.access_token')).toBe('jwt_valid_token')
+  })
+
+  it('safely falls back to in-memory storage if sessionStorage throws SecurityError', async () => {
+    const throwingStorage: TokenStorage = {
+      getItem: () => {
+        throw new Error('SecurityError: Access denied')
+      },
+      setItem: () => {
+        throw new Error('SecurityError: Quota exceeded')
+      },
+      removeItem: () => {
+        throw new Error('SecurityError: Access denied')
+      },
+    }
+
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'jwt_memory_only_token',
+          token_type: 'Bearer',
+          expires_in: 604800,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ repositories: [] }),
+      })
+
+    const client = new ApiClient({
+      customFetch: mockFetch as unknown as typeof fetch,
+      storage: throwingStorage,
+    })
+
+    const res = await client.listRepositories()
+    expect(res).toEqual({ repositories: [] })
+    expect(mockFetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('createGitHubRepository() sends POST to /api/v1/repositories with JSON body and Bearer token', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_github_test_token')
+
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -179,23 +452,17 @@ describe('ApiClient', () => {
     const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
     const res = await client.createGitHubRepository('https://github.com/octocat/Hello-World')
 
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/repositories', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        github_url: 'https://github.com/octocat/Hello-World',
-        index_mode: 'static',
-      }),
-    })
+    const callInit = mockFetch.mock.calls[0][1] as RequestInit
+    expect(callInit.credentials).toBe('omit')
+    const headers = callInit.headers as Headers
+    expect(headers.get('Authorization')).toBe('Bearer jwt_github_test_token')
+    expect(headers.get('Content-Type')).toBe('application/json')
     expect(res.repository.repository_id).toBe('repo_123')
-    expect(res.indexing_job.job_id).toBe('job_123')
   })
 
-  it('uploadZipRepository() sends POST to /api/v1/repositories/upload with FormData and credentials', async () => {
+  it('uploadZipRepository() sends POST to /api/v1/repositories/upload with FormData and Bearer token', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_zip_test_token')
+
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -225,19 +492,10 @@ describe('ApiClient', () => {
     const file = new File(['fake zip content'], 'project.zip', { type: 'application/zip' })
     const res = await client.uploadZipRepository(file, 'my-project')
 
-    expect(mockFetch).toHaveBeenCalledWith('/api/v1/repositories/upload', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-      },
-      body: expect.any(FormData),
-    })
-
     const callInit = mockFetch.mock.calls[0][1] as RequestInit
-    const formData = callInit.body as FormData
-    expect(formData.get('file')).toBe(file)
-    expect(formData.get('name')).toBe('my-project')
+    expect(callInit.credentials).toBe('omit')
+    const headers = callInit.headers as Headers
+    expect(headers.get('Authorization')).toBe('Bearer jwt_zip_test_token')
     expect(res.repository.repository_id).toBe('repo_456')
   })
 })

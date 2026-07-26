@@ -13,6 +13,7 @@ import type {
   SendMessageRequest,
   SendMessageResponse,
   ServerCapabilities,
+  TokenResponse,
 } from './types'
 
 export class ApiError extends Error {
@@ -29,17 +30,75 @@ export class ApiError extends Error {
   }
 }
 
+export interface TokenStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem(key: string): void
+}
+
+const TOKEN_STORAGE_KEY = 'sourcetrace.access_token'
+
+class SafeSessionStorage implements TokenStorage {
+  getItem(key: string): string | null {
+    try {
+      if (typeof globalThis.sessionStorage !== 'undefined') {
+        return globalThis.sessionStorage.getItem(key)
+      }
+    } catch {
+      // Storage access blocked or unavailable
+    }
+    return null
+  }
+
+  setItem(key: string, value: string): void {
+    try {
+      if (typeof globalThis.sessionStorage !== 'undefined') {
+        globalThis.sessionStorage.setItem(key, value)
+      }
+    } catch {
+      // Storage access blocked or quota exceeded
+    }
+  }
+
+  removeItem(key: string): void {
+    try {
+      if (typeof globalThis.sessionStorage !== 'undefined') {
+        globalThis.sessionStorage.removeItem(key)
+      }
+    } catch {
+      // Storage access blocked
+    }
+  }
+}
+
 export interface ApiClientOptions {
   customFetch?: typeof fetch
   baseUrl?: string
+  storage?: TokenStorage | null
 }
 
 export class ApiClient {
   private readonly baseUrl: string
   private readonly fetcher: typeof fetch
+  private readonly storage: TokenStorage | null
+  private accessToken: string | null = null
+  private provisioningPromise: Promise<string> | null = null
 
   constructor(options: ApiClientOptions = {}) {
     this.fetcher = options.customFetch ?? globalThis.fetch.bind(globalThis)
+    this.storage = options.storage !== undefined ? options.storage : new SafeSessionStorage()
+
+    if (this.storage) {
+      try {
+        const stored = this.storage.getItem(TOKEN_STORAGE_KEY)
+        if (stored && stored.trim().length > 0) {
+          this.accessToken = stored.trim()
+        }
+      } catch {
+        // Storage read failed
+      }
+    }
+
     if (options.baseUrl !== undefined) {
       this.baseUrl = options.baseUrl
     } else {
@@ -53,18 +112,106 @@ export class ApiClient {
     }
   }
 
-  private async request<T>(path: string, init?: RequestInit): Promise<T> {
+  clearAccessToken(): void {
+    this.accessToken = null
+    if (this.storage) {
+      try {
+        this.storage.removeItem(TOKEN_STORAGE_KEY)
+      } catch {
+        // Storage remove failed
+      }
+    }
+  }
+
+  private clearToken(staleToken?: string): void {
+    if (staleToken !== undefined && this.accessToken !== staleToken) {
+      return
+    }
+    this.clearAccessToken()
+  }
+
+  private async provisionAccessToken(): Promise<string> {
+    if (this.provisioningPromise) {
+      return this.provisioningPromise
+    }
+
+    this.provisioningPromise = (async () => {
+      try {
+        const res = await this.request<TokenResponse>('/auth/session', { method: 'POST' }, 'provisioning')
+
+        if (
+          !res ||
+          typeof res !== 'object' ||
+          typeof res.access_token !== 'string' ||
+          res.access_token.trim().length === 0 ||
+          res.token_type !== 'Bearer' ||
+          typeof res.expires_in !== 'number' ||
+          !Number.isInteger(res.expires_in) ||
+          res.expires_in <= 0
+        ) {
+          throw new ApiError('Authentication response was invalid.', 'AUTH_RESPONSE_INVALID', 500)
+        }
+
+        const token = res.access_token.trim()
+        this.accessToken = token
+        if (this.storage) {
+          try {
+            this.storage.setItem(TOKEN_STORAGE_KEY, token)
+          } catch {
+            // Storage write failed
+          }
+        }
+        return token
+      } finally {
+        this.provisioningPromise = null
+      }
+    })()
+
+    return this.provisioningPromise
+  }
+
+  private async request<T>(
+    path: string,
+    init?: RequestInit,
+    mode: 'public' | 'protected' | 'provisioning' = 'protected',
+    retried = false,
+  ): Promise<T> {
+    let tokenForRequest: string | null = null
+
+    if (mode === 'protected') {
+      if (!this.accessToken) {
+        await this.provisionAccessToken()
+      }
+      tokenForRequest = this.accessToken
+    }
+
     const url = `${this.baseUrl}${path}`
+    const headers = new Headers(init?.headers)
+    if (!headers.has('Accept')) {
+      headers.set('Accept', 'application/json')
+    }
+
+    if (mode === 'protected' && tokenForRequest) {
+      headers.set('Authorization', `Bearer ${tokenForRequest}`)
+    } else if (mode === 'public' || mode === 'provisioning') {
+      headers.delete('Authorization')
+    }
+
+    const credentialsMode: RequestCredentials = mode === 'provisioning' ? 'include' : 'omit'
+
     const response = await this.fetcher(url, {
       ...init,
-      credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-        ...init?.headers,
-      },
+      credentials: credentialsMode,
+      headers,
     })
 
     if (!response.ok) {
+      if (mode === 'protected' && response.status === 401 && !retried) {
+        this.clearToken(tokenForRequest ?? undefined)
+        await this.provisionAccessToken()
+        return this.request<T>(path, init, 'protected', true)
+      }
+
       let code = 'HTTP_ERROR'
       let message = `API request failed with status ${response.status}`
       let requestId: string | undefined
@@ -87,11 +234,11 @@ export class ApiClient {
   }
 
   async getHealth(): Promise<HealthResponse> {
-    return this.request<HealthResponse>('/health', { method: 'GET' })
+    return this.request<HealthResponse>('/health', { method: 'GET' }, 'public')
   }
 
   async getCapabilities(): Promise<ServerCapabilities> {
-    return this.request<ServerCapabilities>('/capabilities', { method: 'GET' })
+    return this.request<ServerCapabilities>('/capabilities', { method: 'GET' }, 'public')
   }
 
   async searchEvidence(
@@ -106,20 +253,24 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, limit }),
       },
+      'protected',
     )
   }
 
-  // Future API method signatures (not called by application yet)
   async listRepositories(): Promise<RepositoryListResponse> {
-    return this.request<RepositoryListResponse>('/repositories', { method: 'GET' })
+    return this.request<RepositoryListResponse>('/repositories', { method: 'GET' }, 'protected')
   }
 
   async createGitHubRepository(githubUrl: string, indexMode?: string): Promise<CreateRepositoryResponse> {
-    return this.request<CreateRepositoryResponse>('/repositories', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ github_url: githubUrl, index_mode: indexMode ?? 'static' }),
-    })
+    return this.request<CreateRepositoryResponse>(
+      '/repositories',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ github_url: githubUrl, index_mode: indexMode ?? 'static' }),
+      },
+      'protected',
+    )
   }
 
   async uploadZipRepository(file: File, name?: string, indexMode?: string): Promise<CreateRepositoryResponse> {
@@ -131,22 +282,29 @@ export class ApiClient {
     if (indexMode) {
       formData.append('index_mode', indexMode)
     }
-    return this.request<CreateRepositoryResponse>('/repositories/upload', {
-      method: 'POST',
-      body: formData,
-    })
+    return this.request<CreateRepositoryResponse>(
+      '/repositories/upload',
+      {
+        method: 'POST',
+        body: formData,
+      },
+      'protected',
+    )
   }
 
   async getRepository(repositoryId: string): Promise<Repository> {
-    return this.request<Repository>(`/repositories/${encodeURIComponent(repositoryId)}`, {
-      method: 'GET',
-    })
+    return this.request<Repository>(
+      `/repositories/${encodeURIComponent(repositoryId)}`,
+      { method: 'GET' },
+      'protected',
+    )
   }
 
   async deleteRepository(repositoryId: string): Promise<DeleteRepositoryResponse> {
     return this.request<DeleteRepositoryResponse>(
       `/repositories/${encodeURIComponent(repositoryId)}`,
       { method: 'DELETE' },
+      'protected',
     )
   }
 
@@ -154,13 +312,16 @@ export class ApiClient {
     return this.request<CreateRepositoryResponse>(
       `/repositories/${encodeURIComponent(repositoryId)}/refresh`,
       { method: 'POST' },
+      'protected',
     )
   }
 
   async getIndexingJob(jobId: string): Promise<IndexingJob> {
-    return this.request<IndexingJob>(`/indexing-jobs/${encodeURIComponent(jobId)}`, {
-      method: 'GET',
-    })
+    return this.request<IndexingJob>(
+      `/indexing-jobs/${encodeURIComponent(jobId)}`,
+      { method: 'GET' },
+      'protected',
+    )
   }
 
   async createConversation(
@@ -174,6 +335,7 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
       },
+      'protected',
     )
   }
 
@@ -184,6 +346,7 @@ export class ApiClient {
     return this.request<ConversationDetailResponse>(
       `/repositories/${encodeURIComponent(repositoryId)}/conversations/${encodeURIComponent(conversationId)}`,
       { method: 'GET' },
+      'protected',
     )
   }
 
@@ -199,6 +362,7 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
       },
+      'protected',
     )
   }
 }
