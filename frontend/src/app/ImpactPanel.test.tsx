@@ -91,6 +91,7 @@ const FULL_IMPACT: ChangeImpactResponse = {
       node_id: null,
     },
   ],
+  explanation: null,
 }
 
 const UNRESOLVED_IMPACT: ChangeImpactResponse = {
@@ -110,6 +111,7 @@ const UNRESOLVED_IMPACT: ChangeImpactResponse = {
       node_id: null,
     },
   ],
+  explanation: null,
 }
 
 const NO_IMPACT: ChangeImpactResponse = {
@@ -129,6 +131,7 @@ const NO_IMPACT: ChangeImpactResponse = {
     },
   ],
   gaps: [],
+  explanation: null,
 }
 
 const FULL_DIFF_IMPACT: DiffImpactResponse = {
@@ -190,6 +193,7 @@ const FULL_DIFF_IMPACT: DiffImpactResponse = {
       node_id: null,
     },
   ],
+  explanation: null,
 }
 
 const EMPTY_DIFF_IMPACT: DiffImpactResponse = {
@@ -209,6 +213,7 @@ const EMPTY_DIFF_IMPACT: DiffImpactResponse = {
       node_id: null,
     },
   ],
+  explanation: null,
 }
 
 const SAMPLE_DIFF = '--- a/src/calc.py\n+++ b/src/calc.py\n@@ -13,1 +13,1 @@\n-x\n+y\n'
@@ -450,6 +455,96 @@ describe('ImpactPanel', () => {
     ).toBeInTheDocument()
     expect(screen.getByText('diff_file_unmatched')).toBeInTheDocument()
     expect(screen.queryByText(/Change risk/)).not.toBeInTheDocument()
+  })
+
+  it('hides the explain control when explanations are unavailable', async () => {
+    const previewImpact = vi.fn().mockResolvedValue(FULL_IMPACT)
+    render(
+      <ImpactPanel
+        client={makeClient(previewImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        explainAvailable={false}
+      />,
+    )
+
+    await submitSymbol('load_stats')
+    expect(await screen.findByText(/Upstream dependents \(2\)/)).toBeInTheDocument()
+
+    expect(
+      screen.queryByRole('button', { name: /explain this impact/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('re-requests with explain mode and renders the grounded narration', async () => {
+    const previewImpact = vi
+      .fn()
+      .mockResolvedValueOnce(FULL_IMPACT)
+      .mockResolvedValueOnce({
+        ...FULL_IMPACT,
+        explanation: {
+          text: 'Changing this may break [S1] via its call at line 15.',
+          cited_steps: [1],
+        },
+      })
+    render(
+      <ImpactPanel
+        client={makeClient(previewImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        explainAvailable={true}
+      />,
+    )
+    const user = await submitSymbol('load_stats')
+
+    const explain = await screen.findByRole('button', { name: /explain this impact/i })
+    await user.click(explain)
+
+    expect(
+      await screen.findByText(/Changing this may break \[S1\]/),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/cites items S1/)).toBeInTheDocument()
+    // The explain re-request reuses the originally submitted input and mode.
+    expect(previewImpact).toHaveBeenLastCalledWith(
+      'repo_1',
+      'load_stats',
+      undefined,
+      'explain',
+    )
+    // Button disappears once an explanation is shown.
+    expect(
+      screen.queryByRole('button', { name: /explain this impact/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the explain control for diff previews and explains via the diff endpoint', async () => {
+    const previewDiffImpact = vi
+      .fn()
+      .mockResolvedValueOnce(FULL_DIFF_IMPACT)
+      .mockResolvedValueOnce({
+        ...FULL_DIFF_IMPACT,
+        explanation: { text: 'The diff changes [S1] and [S2].', cited_steps: [1, 2] },
+      })
+    render(
+      <ImpactPanel
+        client={makeClient(vi.fn(), previewDiffImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        explainAvailable={true}
+      />,
+    )
+    const user = await submitDiff(SAMPLE_DIFF)
+
+    const explain = await screen.findByRole('button', { name: /explain this impact/i })
+    await user.click(explain)
+
+    expect(await screen.findByText(/The diff changes \[S1\] and \[S2\]/)).toBeInTheDocument()
+    expect(previewDiffImpact).toHaveBeenLastCalledWith(
+      'repo_1',
+      SAMPLE_DIFF,
+      undefined,
+      'explain',
+    )
   })
 
   it('clears the previous result when switching input modes', async () => {

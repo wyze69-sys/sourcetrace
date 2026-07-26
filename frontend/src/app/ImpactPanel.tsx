@@ -13,6 +13,7 @@ export interface ImpactPanelProps {
   client: ApiClient
   repositoryId: string
   repositoryName: string
+  explainAvailable?: boolean
 }
 
 const SAFE_IMPACT_ERROR_MESSAGE = 'Impact preview failed safely. Try again.'
@@ -173,13 +174,22 @@ type ImpactView =
   | { kind: 'symbol'; data: ChangeImpactResponse }
   | { kind: 'diff'; data: DiffImpactResponse }
 
-export function ImpactPanel({ client, repositoryId, repositoryName }: ImpactPanelProps) {
+export function ImpactPanel({
+  client,
+  repositoryId,
+  repositoryName,
+  explainAvailable = false,
+}: ImpactPanelProps) {
   const [mode, setMode] = useState<'symbol' | 'diff'>('symbol')
   const [symbol, setSymbol] = useState('')
   const [diffText, setDiffText] = useState('')
   const [loading, setLoading] = useState(false)
+  const [explaining, setExplaining] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<ImpactView | null>(null)
+  // The exact input the current view was produced from, so "Explain" re-runs
+  // the same request even if the form fields were edited afterwards.
+  const [lastInput, setLastInput] = useState<string>('')
   const [openCitations, setOpenCitations] = useState<Record<string, boolean>>({})
 
   // A different repository means any previous preview is stale evidence.
@@ -230,19 +240,50 @@ export function ImpactPanel({ client, repositoryId, repositoryName }: ImpactPane
   const handlePreview = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!symbol.trim()) return
+    const input = symbol.trim()
     await runPreview(async () => ({
       kind: 'symbol',
-      data: await client.previewImpact(repositoryId, symbol.trim()),
+      data: await client.previewImpact(repositoryId, input),
     }))
+    setLastInput(input)
   }
 
   const handleDiffPreview = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!diffText.trim()) return
+    const input = diffText
     await runPreview(async () => ({
       kind: 'diff',
-      data: await client.previewDiffImpact(repositoryId, diffText),
+      data: await client.previewDiffImpact(repositoryId, input),
     }))
+    setLastInput(input)
+  }
+
+  const handleExplain = async () => {
+    if (!view) return
+    setExplaining(true)
+    setError(null)
+    try {
+      if (view.kind === 'symbol') {
+        setView({
+          kind: 'symbol',
+          data: await client.previewImpact(repositoryId, lastInput, undefined, 'explain'),
+        })
+      } else {
+        setView({
+          kind: 'diff',
+          data: await client.previewDiffImpact(repositoryId, lastInput, undefined, 'explain'),
+        })
+      }
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError(SAFE_IMPACT_ERROR_MESSAGE)
+      }
+    } finally {
+      setExplaining(false)
+    }
   }
 
   const toggleCitation = (key: string) => {
@@ -480,6 +521,51 @@ export function ImpactPanel({ client, repositoryId, repositoryName }: ImpactPane
             onToggleCitation={toggleCitation}
           />
         </>
+      )}
+
+      {resolved &&
+        explainAvailable &&
+        result.explanation === null &&
+        (view.kind === 'diff' || hasImpact) && (
+          <div style={{ margin: '4px 0 14px 0' }}>
+            <button
+              type="button"
+              className="btn-action"
+              disabled={explaining || loading}
+              onClick={handleExplain}
+            >
+              {explaining ? 'Explaining...' : 'Explain this impact'}
+            </button>
+          </div>
+        )}
+
+      {result !== null && result.explanation !== null && (
+        <div
+          className="impact-explanation"
+          style={{
+            margin: '4px 0 14px 0',
+            border: '1px solid #1e3a5f',
+            background: '#0b1a2b',
+            borderRadius: '8px',
+            padding: '12px',
+          }}
+        >
+          <h3 style={{ fontSize: '0.9rem', color: '#38bdf8', margin: '0 0 8px 0' }}>
+            Grounded explanation (cites items{' '}
+            {result.explanation.cited_steps.map((s) => `S${s}`).join(', ')}):
+          </h3>
+          <p
+            className="panel-text"
+            style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}
+          >
+            {result.explanation.text}
+          </p>
+          <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#64748b' }}>
+            This narration is restricted to the items above; [S#] markers number the
+            changed symbols (diff previews) followed by upstream and downstream items,
+            in listed order.
+          </p>
+        </div>
       )}
 
       {resolved && result.affected_tests.length > 0 && (

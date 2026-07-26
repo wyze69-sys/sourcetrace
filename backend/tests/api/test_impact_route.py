@@ -162,6 +162,151 @@ def test_impact_unresolved_symbol_returns_200_with_unknown_risk() -> None:
     assert [g["kind"] for g in data["gaps"]] == ["entry_unresolved"]
 
 
+def test_impact_explain_mode_without_llm_capability_returns_422() -> None:
+    from sourcetrace.core.config import Settings, get_settings
+
+    app, _ = _app(repo_record=_repo_record())
+    # Explicit keyless settings: generation must be unavailable regardless of
+    # any developer-local .env contents.
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        llm_provider="gemini",
+        gemini_api_key=None,
+        llm_api_key=None,
+        embedding_api_key=None,
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact",
+        json={"symbol": "compute", "mode": "explain"},
+    )
+    assert response.status_code == 422
+
+
+class _FakeExplainer:
+    def __init__(self, outcome):
+        self._outcome = outcome
+        self.received = []
+
+    def explain(self, result):
+        self.received.append(result)
+        return self._outcome
+
+
+def _explain_app(outcome, chunks, lexical_hits):
+    from sourcetrace.api.dependencies import get_impact_explainer_factory
+    from sourcetrace.core.config import Settings, get_settings
+
+    app, _ = _app(repo_record=_repo_record(), chunks=chunks, lexical_hits=lexical_hits)
+    explainer = _FakeExplainer(outcome)
+    app.dependency_overrides[get_impact_explainer_factory] = lambda: (lambda: explainer)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        llm_provider="gemini", gemini_api_key="test-gemini-key"
+    )
+    return app, explainer
+
+
+def _impact_fixture():
+    target = _chunk("c_target", "compute")
+    caller = _chunk(
+        "c_caller", "handler", references=[ReferenceEvidence("compute", "call", 4, 4)]
+    )
+    return target, caller
+
+
+def test_impact_explain_mode_returns_marker_validated_explanation() -> None:
+    target, caller = _impact_fixture()
+    app, explainer = _explain_app(
+        ("Changing this may break [S1].", (1,)), [target, caller], [target]
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact",
+        json={"symbol": "compute", "mode": "explain"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["explanation"] == {
+        "text": "Changing this may break [S1].",
+        "cited_steps": [1],
+    }
+    # The static preview itself is unchanged by explanation.
+    assert [item["node_id"] for item in data["upstream"]] == ["c_caller"]
+    assert "explanation_failed" not in {g["kind"] for g in data["gaps"]}
+    assert len(explainer.received) == 1
+
+
+def test_impact_explain_failure_degrades_to_static_preview_with_gap() -> None:
+    target, caller = _impact_fixture()
+    app, _ = _explain_app(None, [target, caller], [target])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact",
+        json={"symbol": "compute", "mode": "explain"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["explanation"] is None
+    assert [item["node_id"] for item in data["upstream"]] == ["c_caller"]
+    assert "explanation_failed" in {g["kind"] for g in data["gaps"]}
+
+
+def test_impact_static_mode_never_touches_the_explainer() -> None:
+    target, caller = _impact_fixture()
+    app, explainer = _explain_app(("[S1]", (1,)), [target, caller], [target])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact",
+        json={"symbol": "compute", "mode": "static"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["explanation"] is None
+    assert explainer.received == []
+
+
+def test_diff_impact_explain_mode_works_end_to_end() -> None:
+    target, caller = _impact_fixture()
+    app, explainer = _explain_app(
+        ("The diff changes [S1] and [S2]; [S1] has a dependent.", (1, 2)),
+        [target, caller],
+        [target],
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact/diff",
+        json={"diff": _VALID_DIFF, "mode": "explain"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["explanation"]["cited_steps"] == [1, 2]
+    assert len(explainer.received) == 1
+
+
+def test_diff_impact_explain_without_llm_capability_returns_422() -> None:
+    from sourcetrace.core.config import Settings, get_settings
+
+    app, _ = _app(repo_record=_repo_record())
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        llm_provider="gemini",
+        gemini_api_key=None,
+        llm_api_key=None,
+        embedding_api_key=None,
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/repositories/repo_i1/impact/diff",
+        json={"diff": _VALID_DIFF, "mode": "explain"},
+    )
+    assert response.status_code == 422
+
+
 _VALID_DIFF = (
     "--- a/src/app.py\n"
     "+++ b/src/app.py\n"

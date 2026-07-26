@@ -4,7 +4,9 @@ Zero-token: this route makes no LLM/provider calls. The impact preview is
 produced entirely from flow evidence stored on indexed code chunks.
 """
 
-from typing import Annotated, Literal
+from collections.abc import Callable
+from dataclasses import replace
+from typing import Annotated, Literal, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -12,15 +14,20 @@ from pydantic import BaseModel, Field
 from sourcetrace.api.dependencies import (
     CurrentOwnerId,
     get_code_chunk_repository,
+    get_impact_explainer_factory,
     get_repository_repository,
 )
 from sourcetrace.api.schemas import UNAUTHORIZED_RESPONSE, ErrorEnvelope
+from sourcetrace.core.capabilities import evaluate_capabilities
+from sourcetrace.core.config import Settings, get_settings
 from sourcetrace.core.exceptions import StorageDataError, StorageOperationError
+from sourcetrace.generation.impact_explanation import ImpactExplanationService
 from sourcetrace.retrieval.diff import DiffParseError
 from sourcetrace.retrieval.impact import (
     ChangeImpactResult,
     ChangeImpactService,
     DiffImpactResult,
+    ImpactGap,
 )
 from sourcetrace.storage.repositories import (
     CodeChunkRepository,
@@ -39,6 +46,13 @@ class ChangeImpactRequest(BaseModel):
         max_length=300,
         description="Symbol or search text identifying the change target",
     )
+    mode: Literal["static", "explain"] = Field(
+        default="static",
+        description=(
+            "static = zero-token deterministic preview; explain = same preview "
+            "plus an LLM narration grounded in the impact items"
+        ),
+    )
     max_depth: int | None = Field(
         default=None,
         ge=1,
@@ -54,6 +68,13 @@ class DiffImpactRequest(BaseModel):
         min_length=1,
         max_length=200_000,
         description="Unified diff text against the indexed repository baseline",
+    )
+    mode: Literal["static", "explain"] = Field(
+        default="static",
+        description=(
+            "static = zero-token deterministic preview; explain = same preview "
+            "plus an LLM narration grounded in the impact items"
+        ),
     )
     max_depth: int | None = Field(
         default=None,
@@ -113,6 +134,11 @@ class ImpactGapSchema(BaseModel):
     node_id: str | None = None
 
 
+class ImpactExplanationSchema(BaseModel):
+    text: str
+    cited_steps: list[int]
+
+
 class ChangeImpactResponse(BaseModel):
     repository_id: str
     target: ImpactTargetSchema
@@ -124,6 +150,7 @@ class ChangeImpactResponse(BaseModel):
     risk_level: Literal["low", "medium", "high", "unknown"]
     risk_factors: list[RiskFactorSchema]
     gaps: list[ImpactGapSchema]
+    explanation: ImpactExplanationSchema | None = None
 
 
 class DiffImpactResponse(BaseModel):
@@ -137,6 +164,65 @@ class DiffImpactResponse(BaseModel):
     risk_level: Literal["low", "medium", "high", "unknown"]
     risk_factors: list[RiskFactorSchema]
     gaps: list[ImpactGapSchema]
+    explanation: ImpactExplanationSchema | None = None
+
+
+_ImpactResultT = TypeVar("_ImpactResultT", ChangeImpactResult, DiffImpactResult)
+
+
+def _with_explanation_failed_gap(result: _ImpactResultT) -> _ImpactResultT:
+    """Append an explanation_failed gap, preserving the sorted-gaps invariant."""
+    gaps = tuple(
+        sorted(
+            [
+                *result.gaps,
+                ImpactGap(
+                    kind="explanation_failed",
+                    detail=(
+                        "The explanation was discarded (provider failure or invalid "
+                        "item citations); the static preview below is unaffected."
+                    ),
+                ),
+            ],
+            key=lambda g: (g.kind, g.node_id or "", g.detail),
+        )
+    )
+    return replace(result, gaps=gaps)
+
+
+def _explain_or_degrade(
+    mode: str,
+    result: _ImpactResultT,
+    explainer_factory: Callable[[], ImpactExplanationService],
+) -> tuple[_ImpactResultT, ImpactExplanationSchema | None]:
+    """Run explain mode's narration step; degrade to the unchanged static result."""
+    has_items = bool(result.upstream or result.downstream) or (
+        isinstance(result, DiffImpactResult) and bool(result.targets)
+    )
+    if mode != "explain" or not has_items:
+        return result, None
+    try:
+        explained = explainer_factory().explain(result)
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except Exception:
+        explained = None
+    if explained is None:
+        return _with_explanation_failed_gap(result), None
+    return result, ImpactExplanationSchema(
+        text=explained[0], cited_steps=list(explained[1])
+    )
+
+
+def _require_generation_capability(settings: Settings) -> None:
+    if not evaluate_capabilities(settings).generation_available:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "Explain mode requires a configured LLM provider; "
+                "this server only supports static impact previews."
+            ),
+        )
 
 
 def _items_to_schema(items) -> list[ImpactItemSchema]:
@@ -162,10 +248,13 @@ def _items_to_schema(items) -> list[ImpactItemSchema]:
 
 
 def _diff_result_to_response(
-    repository_id: str, result: DiffImpactResult
+    repository_id: str,
+    result: DiffImpactResult,
+    explanation: ImpactExplanationSchema | None = None,
 ) -> DiffImpactResponse:
     return DiffImpactResponse(
         repository_id=repository_id,
+        explanation=explanation,
         targets=[
             DiffTargetSchema(
                 node_id=t.node_id,
@@ -239,10 +328,13 @@ def _load_ready_repository(
 
 
 def _result_to_response(
-    repository_id: str, result: ChangeImpactResult
+    repository_id: str,
+    result: ChangeImpactResult,
+    explanation: ImpactExplanationSchema | None = None,
 ) -> ChangeImpactResponse:
     return ChangeImpactResponse(
         repository_id=repository_id,
+        explanation=explanation,
         target=ImpactTargetSchema(
             query=result.target.query,
             resolved_node_id=result.target.resolved_node_id,
@@ -294,11 +386,18 @@ def preview_change_impact(
     owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
     code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    explainer_factory: Annotated[
+        Callable[[], ImpactExplanationService], Depends(get_impact_explainer_factory)
+    ],
 ) -> ChangeImpactResponse:
     """Produce a deterministic static change impact preview for a symbol."""
     clean_repo_id = _load_ready_repository(
         repository_id, owner_session_id, repository_repo
     )
+
+    if body.mode == "explain":
+        _require_generation_capability(settings)
 
     service = ChangeImpactService(code_chunk_repo)
     try:
@@ -319,7 +418,8 @@ def preview_change_impact(
             detail="Impact analysis failed safely.",
         ) from err
 
-    return _result_to_response(clean_repo_id, result)
+    result, explanation = _explain_or_degrade(body.mode, result, explainer_factory)
+    return _result_to_response(clean_repo_id, result, explanation)
 
 
 @router.post(
@@ -344,11 +444,18 @@ def preview_diff_impact(
     owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
     code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    explainer_factory: Annotated[
+        Callable[[], ImpactExplanationService], Depends(get_impact_explainer_factory)
+    ],
 ) -> DiffImpactResponse:
     """Produce a deterministic static impact preview for a pasted unified diff."""
     clean_repo_id = _load_ready_repository(
         repository_id, owner_session_id, repository_repo
     )
+
+    if body.mode == "explain":
+        _require_generation_capability(settings)
 
     service = ChangeImpactService(code_chunk_repo)
     try:
@@ -374,4 +481,5 @@ def preview_diff_impact(
             detail="Impact analysis failed safely.",
         ) from err
 
-    return _diff_result_to_response(clean_repo_id, result)
+    result, explanation = _explain_or_degrade(body.mode, result, explainer_factory)
+    return _diff_result_to_response(clean_repo_id, result, explanation)

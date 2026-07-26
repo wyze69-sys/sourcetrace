@@ -10,6 +10,7 @@ import type {
   EvidenceSearchResponse,
   FlowTraceResponse,
   HealthResponse,
+  ImpactMode,
   IndexingJob,
   Repository,
   RepositoryListResponse,
@@ -277,6 +278,7 @@ export class ApiClient {
     repositoryId: string,
     symbol: string,
     maxDepth?: number,
+    mode: ImpactMode = 'static',
   ): Promise<ChangeImpactResponse> {
     return this.request<ChangeImpactResponse>(
       `/repositories/${encodeURIComponent(repositoryId)}/impact`,
@@ -285,6 +287,7 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           symbol,
+          mode,
           ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
         }),
       },
@@ -296,6 +299,7 @@ export class ApiClient {
     repositoryId: string,
     diff: string,
     maxDepth?: number,
+    mode: ImpactMode = 'static',
   ): Promise<DiffImpactResponse> {
     return this.request<DiffImpactResponse>(
       `/repositories/${encodeURIComponent(repositoryId)}/impact/diff`,
@@ -304,6 +308,7 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           diff,
+          mode,
           ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
         }),
       },

@@ -296,6 +296,7 @@ describe('ApiClient', () => {
     expect(reqInit.method).toBe('POST')
     expect(JSON.parse(reqInit.body as string)).toEqual({
       symbol: 'compute',
+      mode: 'static',
       max_depth: 3,
     })
     const reqHeaders = reqInit.headers as Headers
@@ -331,7 +332,7 @@ describe('ApiClient', () => {
     const [reqUrl, reqInit] = mockFetch.mock.calls[0]
     expect(reqUrl).toBe('/api/v1/repositories/repo_1/impact/diff')
     expect(reqInit.method).toBe('POST')
-    expect(JSON.parse(reqInit.body as string)).toEqual({ diff: diffText })
+    expect(JSON.parse(reqInit.body as string)).toEqual({ diff: diffText, mode: 'static' })
     const reqHeaders = reqInit.headers as Headers
     expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_impact_token')
     expect(res).toEqual(diffBody)
@@ -359,7 +360,21 @@ describe('ApiClient', () => {
     await client.previewImpact('repo_1', 'x')
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
-    expect(body).toEqual({ symbol: 'x' })
+    expect(body).toEqual({ symbol: 'x', mode: 'static' })
+  })
+
+  it('previewImpact() and previewDiffImpact() send explain mode when requested', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_impact_token')
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) })
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+
+    await client.previewImpact('repo_1', 'compute', undefined, 'explain')
+    await client.previewDiffImpact('repo_1', 'diff text', undefined, 'explain')
+
+    const symbolBody = JSON.parse(mockFetch.mock.calls[0][1].body as string)
+    const diffBody = JSON.parse(mockFetch.mock.calls[1][1].body as string)
+    expect(symbolBody).toEqual({ symbol: 'compute', mode: 'explain' })
+    expect(diffBody).toEqual({ diff: 'diff text', mode: 'explain' })
   })
 
   it('traceFlow() sends explain mode when requested', async () => {

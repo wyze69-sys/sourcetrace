@@ -374,6 +374,18 @@ def get_trace_explainer_factory(
     return factory
 
 
+def get_impact_explainer_factory(
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """Lazy factory for ImpactExplanationService (same rationale as above)."""
+    from sourcetrace.generation.impact_explanation import ImpactExplanationService
+
+    def factory() -> ImpactExplanationService:
+        return ImpactExplanationService(build_generation_adapter(settings))
+
+    return factory
+
+
 def get_conversation_exchange_repository() -> ConversationExchangeRepository:
     """Dependency provider for ConversationExchangeRepository."""
     return MongoConversationExchangeRepository()

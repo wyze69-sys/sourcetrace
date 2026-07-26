@@ -268,6 +268,13 @@ export interface ImpactGap {
   node_id: string | null
 }
 
+export type ImpactMode = 'static' | 'explain'
+
+export interface ImpactExplanation {
+  text: string
+  cited_steps: number[]
+}
+
 export interface ChangeImpactResponse {
   repository_id: string
   target: ImpactTarget
@@ -279,6 +286,7 @@ export interface ChangeImpactResponse {
   risk_level: RiskLevel
   risk_factors: RiskFactor[]
   gaps: ImpactGap[]
+  explanation: ImpactExplanation | null
 }
 
 export interface DiffTarget {
@@ -302,4 +310,5 @@ export interface DiffImpactResponse {
   risk_level: RiskLevel
   risk_factors: RiskFactor[]
   gaps: ImpactGap[]
+  explanation: ImpactExplanation | null
 }
