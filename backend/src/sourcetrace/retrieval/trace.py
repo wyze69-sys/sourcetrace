@@ -87,7 +87,8 @@ def _last_segment(name: str) -> str:
     return name.rsplit(".", 1)[-1]
 
 
-def _chunk_sort_key(chunk: CodeChunk) -> tuple:
+def chunk_sort_key(chunk: CodeChunk) -> tuple:
+    """Total deterministic order over chunks, ending in the unique chunk_id."""
     return (
         chunk.relative_path,
         chunk.start_line,
@@ -143,6 +144,138 @@ def _is_relative_module(source_module: str) -> bool:
     return source_module.startswith(".")
 
 
+# ---------------------------------------------------------------------------
+# Shared deterministic resolution layer (used by trace and impact services)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class FlowIndexes:
+    """Deterministic in-memory lookup structures over a repository's chunks."""
+
+    by_symbol_norm: dict[str, list[CodeChunk]]
+    by_last_segment_norm: dict[str, list[CodeChunk]]
+    declares_by_endpoint: dict[tuple[str, str], list[CodeChunk]]
+
+
+def build_flow_indexes(chunks: list[CodeChunk]) -> FlowIndexes:
+    """Index chunks by normalized symbol name and declared endpoints."""
+    by_symbol_norm: dict[str, list[CodeChunk]] = {}
+    by_last_segment_norm: dict[str, list[CodeChunk]] = {}
+    declares_by_endpoint: dict[tuple[str, str], list[CodeChunk]] = {}
+    for chunk in chunks:
+        full_norm = _norm_name(chunk.symbol_name)
+        if full_norm:
+            by_symbol_norm.setdefault(full_norm, []).append(chunk)
+        last_norm = _norm_name(_last_segment(chunk.symbol_name))
+        if last_norm:
+            by_last_segment_norm.setdefault(last_norm, []).append(chunk)
+        for endpoint in chunk.endpoints:
+            if endpoint.kind == "declares":
+                key = (endpoint.http_method, endpoint.normalized_path)
+                declares_by_endpoint.setdefault(key, []).append(chunk)
+    return FlowIndexes(by_symbol_norm, by_last_segment_norm, declares_by_endpoint)
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceResolution:
+    """Outcome of resolving one reference: a target with confidence, or a miss."""
+
+    target: CodeChunk | None
+    confidence: str
+    alternatives: tuple[CodeChunk, ...]
+    internal_unresolved: bool
+
+
+def resolve_reference(
+    source: CodeChunk,
+    reference: ReferenceEvidence,
+    indexes: FlowIndexes,
+) -> ReferenceResolution:
+    """Resolve an identifier reference to an indexed chunk, deterministically."""
+    name = reference.local_name
+    base = name.split(".", 1)[0]
+
+    candidates: list[CodeChunk] = []
+    seen_ids: set[str] = set()
+    full_norm = _norm_name(name)
+    last_norm = _norm_name(_last_segment(name))
+    for key, mapping in (
+        (full_norm, indexes.by_symbol_norm),
+        (last_norm, indexes.by_last_segment_norm),
+    ):
+        if not key:
+            continue
+        for candidate in mapping.get(key, ()):
+            if candidate.chunk_id not in seen_ids:
+                seen_ids.add(candidate.chunk_id)
+                candidates.append(candidate)
+    candidates.sort(key=chunk_sort_key)
+
+    binding = next(
+        (imp for imp in source.imports if imp.local_name in (name, base)), None
+    )
+
+    if binding is not None:
+        path_matched = [
+            c
+            for c in candidates
+            if _module_matches_path(
+                binding.source_module, source.relative_path, c.relative_path
+            )
+        ]
+        if len(path_matched) == 1:
+            return ReferenceResolution(path_matched[0], "high", (), False)
+        if len(path_matched) > 1:
+            return ReferenceResolution(
+                path_matched[0], "low", tuple(path_matched[1:]), False
+            )
+        if not candidates:
+            # Bound but unresolvable: internal modules are a real gap,
+            # external packages are expected to be absent from the index.
+            return ReferenceResolution(
+                None, "", (), _is_relative_module(binding.source_module)
+            )
+
+    if not candidates:
+        # No declaration and no import binding: builtin, stdlib, or a local
+        # variable method — outside the indexed flow graph, silently skipped.
+        return ReferenceResolution(None, "", (), False)
+
+    if len(candidates) == 1:
+        return ReferenceResolution(candidates[0], "medium", (), False)
+
+    same_file = [c for c in candidates if c.relative_path == source.relative_path]
+    pool = same_file if same_file else candidates
+    chosen = pool[0]
+    alternatives = tuple(c for c in candidates if c.chunk_id != chosen.chunk_id)
+    return ReferenceResolution(chosen, "low", alternatives, False)
+
+
+@dataclass(frozen=True, slots=True)
+class EndpointResolution:
+    """Outcome of matching an HTTP call to a declaring handler (None = unmatched)."""
+
+    target: CodeChunk | None
+    confidence: str
+    alternatives: tuple[CodeChunk, ...]
+
+
+def resolve_endpoint_call(
+    source: CodeChunk,
+    endpoint: EndpointEvidence,
+    indexes: FlowIndexes,
+) -> EndpointResolution:
+    """Match an HTTP call literal against indexed declaring handlers."""
+    key = (endpoint.http_method, endpoint.normalized_path)
+    declaring = sorted(indexes.declares_by_endpoint.get(key, ()), key=chunk_sort_key)
+    declaring = [c for c in declaring if c.chunk_id != source.chunk_id]
+    if not declaring:
+        return EndpointResolution(None, "", ())
+    confidence = "high" if len(declaring) == 1 else "low"
+    return EndpointResolution(declaring[0], confidence, tuple(declaring[1:]))
+
+
 @dataclass
 class _TraceState:
     nodes: dict[str, TraceNode] = field(default_factory=dict)
@@ -171,7 +304,7 @@ class FlowTraceService:
 
         all_chunks = sorted(
             self._chunk_repo.list_by_repository(owner_session_id, repository_id),
-            key=_chunk_sort_key,
+            key=chunk_sort_key,
         )
 
         state = _TraceState()
@@ -216,20 +349,7 @@ class FlowTraceService:
                 gaps=self._sorted_gaps(state),
             )
 
-        by_symbol_norm: dict[str, list[CodeChunk]] = {}
-        by_last_segment_norm: dict[str, list[CodeChunk]] = {}
-        declares_by_endpoint: dict[tuple[str, str], list[CodeChunk]] = {}
-        for chunk in all_chunks:
-            full_norm = _norm_name(chunk.symbol_name)
-            if full_norm:
-                by_symbol_norm.setdefault(full_norm, []).append(chunk)
-            last_norm = _norm_name(_last_segment(chunk.symbol_name))
-            if last_norm:
-                by_last_segment_norm.setdefault(last_norm, []).append(chunk)
-            for endpoint in chunk.endpoints:
-                if endpoint.kind == "declares":
-                    key = (endpoint.http_method, endpoint.normalized_path)
-                    declares_by_endpoint.setdefault(key, []).append(chunk)
+        indexes = build_flow_indexes(all_chunks)
 
         self._visit(
             chunk=entry_chunk,
@@ -237,9 +357,7 @@ class FlowTraceService:
             depth_cap=depth_cap,
             path_ids=(),
             state=state,
-            by_symbol_norm=by_symbol_norm,
-            by_last_segment_norm=by_last_segment_norm,
-            declares_by_endpoint=declares_by_endpoint,
+            indexes=indexes,
         )
 
         return FlowTraceResult(
@@ -264,7 +382,7 @@ class FlowTraceService:
             limit=MAX_ENTRY_CANDIDATES,
         )
         ordered = sorted(
-            results, key=lambda r: (-r.score,) + _chunk_sort_key(r.chunk)
+            results, key=lambda r: (-r.score,) + chunk_sort_key(r.chunk)
         )
         candidates = tuple(r.chunk.chunk_id for r in ordered)
         resolved = candidates[0] if candidates else None
@@ -308,9 +426,7 @@ class FlowTraceService:
         depth_cap: int,
         path_ids: tuple[str, ...],
         state: _TraceState,
-        by_symbol_norm: dict[str, list[CodeChunk]],
-        by_last_segment_norm: dict[str, list[CodeChunk]],
-        declares_by_endpoint: dict[tuple[str, str], list[CodeChunk]],
+        indexes: FlowIndexes,
     ) -> None:
         if not self._ensure_node(chunk, state):
             return
@@ -356,16 +472,14 @@ class FlowTraceService:
             examined += 1
 
             if isinstance(evidence, ReferenceEvidence):
-                edge, target = self._resolve_reference(
-                    chunk, evidence, state, by_symbol_norm, by_last_segment_norm
-                )
+                edge, target = self._resolve_reference(chunk, evidence, indexes)
                 if edge is None:
                     if target == "internal_unresolved":
                         unresolved_names.append(evidence.local_name)
                     continue
             else:
                 edge, target = self._resolve_endpoint_call(
-                    chunk, evidence, state, declares_by_endpoint
+                    chunk, evidence, state, indexes
                 )
                 if edge is None:
                     continue
@@ -394,9 +508,7 @@ class FlowTraceService:
                 depth_cap,
                 next_path,
                 state,
-                by_symbol_norm,
-                by_last_segment_norm,
-                declares_by_endpoint,
+                indexes,
             )
 
         if unresolved_names:
@@ -421,83 +533,23 @@ class FlowTraceService:
         self,
         source: CodeChunk,
         reference: ReferenceEvidence,
-        state: _TraceState,
-        by_symbol_norm: dict[str, list[CodeChunk]],
-        by_last_segment_norm: dict[str, list[CodeChunk]],
+        indexes: FlowIndexes,
     ) -> tuple[TraceEdge | None, CodeChunk | str | None]:
-        name = reference.local_name
-        base = name.split(".", 1)[0]
-
-        candidates: list[CodeChunk] = []
-        seen_ids: set[str] = set()
-        full_norm = _norm_name(name)
-        last_norm = _norm_name(_last_segment(name))
-        for key, mapping in ((full_norm, by_symbol_norm), (last_norm, by_last_segment_norm)):
-            if not key:
-                continue
-            for candidate in mapping.get(key, ()):
-                if candidate.chunk_id not in seen_ids:
-                    seen_ids.add(candidate.chunk_id)
-                    candidates.append(candidate)
-        candidates.sort(key=_chunk_sort_key)
-
-        binding = next(
-            (imp for imp in source.imports if imp.local_name in (name, base)), None
-        )
-
-        if binding is not None:
-            path_matched = [
-                c
-                for c in candidates
-                if _module_matches_path(
-                    binding.source_module, source.relative_path, c.relative_path
-                )
-            ]
-            if len(path_matched) == 1:
-                return (
-                    self._edge(source, path_matched[0], "call", "high", reference, ()),
-                    path_matched[0],
-                )
-            if len(path_matched) > 1:
-                chosen, alternatives = path_matched[0], path_matched[1:]
-                return (
-                    self._edge(
-                        source,
-                        chosen,
-                        "call",
-                        "low",
-                        reference,
-                        tuple(a.chunk_id for a in alternatives),
-                    ),
-                    chosen,
-                )
-            if not candidates:
-                # Bound but unresolvable: internal modules are a real gap,
-                # external packages are expected to be absent from the index.
-                if _is_relative_module(binding.source_module):
-                    return None, "internal_unresolved"
-                return None, None
-
-        if not candidates:
-            # No declaration and no import binding: builtin, stdlib, or a local
-            # variable method — outside the indexed flow graph, silently skipped.
+        resolution = resolve_reference(source, reference, indexes)
+        if resolution.target is None:
+            if resolution.internal_unresolved:
+                return None, "internal_unresolved"
             return None, None
-
-        if len(candidates) == 1:
-            return (
-                self._edge(source, candidates[0], "call", "medium", reference, ()),
-                candidates[0],
-            )
-
-        same_file = [c for c in candidates if c.relative_path == source.relative_path]
-        pool = same_file if same_file else candidates
-        chosen = pool[0]
-        alternatives = tuple(
-            c.chunk_id for c in candidates if c.chunk_id != chosen.chunk_id
-        )
         return (
-            self._edge(source, chosen, "call", "low", reference, alternatives),
-            chosen,
+            self._edge(
+                source,
+                resolution.target,
+                "call",
+                resolution.confidence,
+                reference,
+                tuple(a.chunk_id for a in resolution.alternatives),
+            ),
+            resolution.target,
         )
 
     def _resolve_endpoint_call(
@@ -505,14 +557,10 @@ class FlowTraceService:
         source: CodeChunk,
         endpoint: EndpointEvidence,
         state: _TraceState,
-        declares_by_endpoint: dict[tuple[str, str], list[CodeChunk]],
+        indexes: FlowIndexes,
     ) -> tuple[TraceEdge | None, CodeChunk | None]:
-        key = (endpoint.http_method, endpoint.normalized_path)
-        declaring = sorted(declares_by_endpoint.get(key, ()), key=_chunk_sort_key)
-        declaring = [c for c in declaring if c.chunk_id != source.chunk_id]
-        label = f"{endpoint.http_method} {endpoint.path_literal}"
-
-        if not declaring:
+        resolution = resolve_endpoint_call(source, endpoint, indexes)
+        if resolution.target is None:
             state.gaps.append(
                 TraceGap(
                     kind="endpoint_unmatched",
@@ -525,20 +573,17 @@ class FlowTraceService:
             )
             return None, None
 
-        confidence = "high" if len(declaring) == 1 else "low"
-        chosen = declaring[0]
-        alternatives = tuple(c.chunk_id for c in declaring[1:])
         edge = TraceEdge(
             from_node_id=source.chunk_id,
-            to_node_id=chosen.chunk_id,
+            to_node_id=resolution.target.chunk_id,
             kind="http",
-            confidence=confidence,
-            evidence_label=label,
+            confidence=resolution.confidence,
+            evidence_label=f"{endpoint.http_method} {endpoint.path_literal}",
             evidence_line_start=endpoint.line_start,
             evidence_line_end=endpoint.line_end,
-            alternatives=alternatives,
+            alternatives=tuple(c.chunk_id for c in resolution.alternatives),
         )
-        return edge, chosen
+        return edge, resolution.target
 
     @staticmethod
     def _edge(
