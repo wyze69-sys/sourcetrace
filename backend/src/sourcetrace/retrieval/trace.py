@@ -20,11 +20,17 @@ from sourcetrace.models.domain import CodeChunk, EndpointEvidence, ReferenceEvid
 from sourcetrace.storage.mongo_repositories import tokenize_identifier
 from sourcetrace.storage.repositories import CodeChunkRepository
 
-# Parser versions whose chunks carry flow evidence. python-ast-v2 chunks are
-# still valid evidence — v3 only adds router-prefix folding into
-# normalized_path, so v2 indexes lose some HTTP-edge matches but never lie.
+# Parser versions whose chunks carry flow evidence. Older v2 chunks are
+# still valid evidence — v3 only adds router-prefix/mount folding into
+# normalized_path (and, for JS/TS, top-level Express registration recovery),
+# so v2 indexes lose some HTTP-edge matches but never lie.
 EVIDENCE_PARSER_VERSIONS: frozenset[str] = frozenset(
-    {"python-ast-v2", "python-ast-v3", "js-ts-treesitter-v2"}
+    {
+        "python-ast-v2",
+        "python-ast-v3",
+        "js-ts-treesitter-v2",
+        "js-ts-treesitter-v3",
+    }
 )
 
 MAX_TRACE_DEPTH: int = 8

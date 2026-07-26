@@ -35,6 +35,7 @@ if str(BACKEND_SRC) not in sys.path and BACKEND_SRC.exists():
     sys.path.insert(0, str(BACKEND_SRC))
 
 from sourcetrace.models.domain import CodeChunk, RetrievalResult  # noqa: E402
+from sourcetrace.parsers.javascript_ast import parse_javascript_source  # noqa: E402
 from sourcetrace.parsers.python_ast import parse_python_source  # noqa: E402
 from sourcetrace.retrieval.impact import ChangeImpactService  # noqa: E402
 from sourcetrace.retrieval.trace import FlowTraceService  # noqa: E402
@@ -88,14 +89,23 @@ class StaticChunkRepository:
 
 
 def load_fixture_chunks(fixture_dir: Path, *, reverse: bool = False) -> list[CodeChunk]:
-    """Parse fixture files with the real parser into static-mode chunks."""
+    """Parse fixture files with the real parsers into static-mode chunks."""
     chunks: list[CodeChunk] = []
-    files = sorted(fixture_dir.glob("*.py"), reverse=reverse)
-    for py_file in files:
-        content = py_file.read_text(encoding="utf-8")
-        for parsed in parse_python_source(
+    files = sorted(
+        [*fixture_dir.glob("*.py"), *fixture_dir.glob("*.js")],
+        key=lambda p: p.name,
+        reverse=reverse,
+    )
+    for fixture_file in files:
+        content = fixture_file.read_text(encoding="utf-8")
+        parse = (
+            parse_python_source
+            if fixture_file.suffix == ".py"
+            else parse_javascript_source
+        )
+        for parsed in parse(
             source=content,
-            relative_path=py_file.name,
+            relative_path=fixture_file.name,
             repository_id=_REPOSITORY,
             owner_session_id=_OWNER,
         ):

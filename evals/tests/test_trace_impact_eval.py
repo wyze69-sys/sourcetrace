@@ -214,4 +214,7 @@ def test_fixture_chunks_carry_flow_evidence() -> None:
         "AccessDeniedError",
     }
     assert {i.source_module for i in process.imports} == {"auth", "config", "errors"}
-    assert all(c.parser_version == "python-ast-v3" for c in chunks)
+    assert {c.parser_version for c in chunks} == {
+        "python-ast-v3",
+        "js-ts-treesitter-v3",
+    }

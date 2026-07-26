@@ -276,14 +276,215 @@ def test_non_path_and_dynamic_paths_produce_no_endpoints() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Express mounts and top-level registrations (TRACE-007)
+# ---------------------------------------------------------------------------
+
+
+def test_mounted_router_prefix_is_folded_into_normalized_path() -> None:
+    source = """const express = require('express');
+const router = express.Router();
+
+router.get('/:id/summary', (req, res) => {
+  res.json({});
+});
+
+const app = express();
+app.use('/api/v1/reports', router);
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "GET /:id/summary")
+    assert handler.symbol_type == "route_handler"
+    assert handler.endpoints == (
+        EndpointEvidence(
+            kind="declares",
+            http_method="GET",
+            # Literal stays as written; only the normalized form is mounted.
+            path_literal="/:id/summary",
+            normalized_path="/api/v1/reports/{}/summary",
+            line_start=4,
+            line_end=6,
+        ),
+    )
+
+
+def test_top_level_registration_with_named_handler_attaches_to_that_symbol() -> None:
+    source = """const express = require('express');
+const app = express();
+
+function listUsers(req, res) {
+  res.json(loadUsers());
+}
+
+app.get('/api/v1/users', listUsers);
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "listUsers")
+    declared = [e for e in handler.endpoints if e.kind == "declares"]
+    assert [(e.http_method, e.normalized_path) for e in declared] == [
+        ("GET", "/api/v1/users")
+    ]
+    # No synthetic chunk when a named same-file handler owns the route.
+    assert not any(c.symbol_type == "route_handler" for c in chunks)
+
+
+def test_top_level_inline_registration_synthesizes_route_handler_chunk() -> None:
+    source = """const express = require('express');
+const app = express();
+
+app.post('/api/v1/logs', (req, res) => {
+  recordLog(req.body);
+  res.status(201).end();
+});
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "POST /api/v1/logs")
+    assert handler.symbol_type == "route_handler"
+    assert handler.start_line == 4 and handler.end_line == 7
+    assert "recordLog" in handler.content
+    declared = [e for e in handler.endpoints if e.kind == "declares"]
+    assert [(e.http_method, e.normalized_path) for e in declared] == [
+        ("POST", "/api/v1/logs")
+    ]
+    # The handler body's own references are owned by the synthetic chunk.
+    assert any(r.local_name == "recordLog" for r in handler.references)
+
+
+def test_named_handler_registration_on_server_object_is_a_declaration() -> None:
+    source = """const express = require('express');
+const app = express();
+
+function health(req, res) {
+  res.send('ok');
+}
+
+function setup() {
+  app.get('/health', health);
+}
+"""
+    chunks = _parse(source)
+    setup = _chunk(chunks, "setup")
+    declared = [e for e in setup.endpoints if e.kind == "declares"]
+    assert [(e.http_method, e.normalized_path) for e in declared] == [
+        ("GET", "/health")
+    ]
+
+
+def test_conflicting_mounts_never_fold_a_prefix() -> None:
+    source = """const express = require('express');
+const router = express.Router();
+
+router.get('/items', (req, res) => res.json([]));
+
+const app = express();
+app.use('/api/a', router);
+app.use('/api/b', router);
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "GET /items")
+    assert handler.endpoints[0].normalized_path == "/items"
+
+
+def test_computed_mount_prefix_is_never_guessed() -> None:
+    source = """const express = require('express');
+const router = express.Router();
+
+router.get('/items', (req, res) => res.json([]));
+
+const app = express();
+app.use(BASE_PATH + '/api', router);
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "GET /items")
+    assert handler.endpoints[0].normalized_path == "/items"
+
+
+def test_client_calls_on_unknown_objects_remain_calls() -> None:
+    source = """async function pushLog(client) {
+  return client.post('/api/v1/logs', payload);
+}
+"""
+    chunks = _parse(source)
+    pusher = _chunk(chunks, "pushLog")
+    assert [(e.kind, e.http_method) for e in pusher.endpoints] == [("calls", "POST")]
+
+
+def test_client_call_resolves_to_mounted_express_handler_through_flow_trace() -> None:
+    """Cross-file regression: the exact gap TRACE-007 closes for JS/TS."""
+    from datetime import UTC, datetime
+
+    from sourcetrace.models.domain import CodeChunk, RetrievalResult
+    from sourcetrace.retrieval.trace import FlowTraceService
+
+    server_source = """const express = require('express');
+const router = express.Router();
+
+router.get('/summary', (req, res) => {
+  res.json({});
+});
+
+const app = express();
+app.use('/api/v1/reports', router);
+"""
+    client_source = """export async function fetchReportSummary() {
+  const res = await fetch('/api/v1/reports/summary');
+  return res.json();
+}
+"""
+    parsed = _parse(server_source, "server/routes.js") + _parse(
+        client_source, "client/api.js"
+    )
+    now = datetime(2026, 7, 26, tzinfo=UTC)
+    chunks = [
+        CodeChunk(
+            chunk_id=p.chunk_id,
+            repository_id=p.repository_id,
+            owner_session_id=p.owner_session_id,
+            relative_path=p.relative_path,
+            language=p.language,
+            symbol_name=p.symbol_name,
+            symbol_type=p.symbol_type,
+            start_line=p.start_line,
+            end_line=p.end_line,
+            content=p.content,
+            content_hash=p.content_hash,
+            parser_version=p.parser_version,
+            created_at=now,
+            references=p.references,
+            imports=p.imports,
+            endpoints=p.endpoints,
+        )
+        for p in parsed
+    ]
+
+    class _Repo:
+        def list_by_repository(self, owner_session_id, repository_id):
+            return list(chunks)
+
+        def search_lexical(self, owner_session_id, repository_id, query_text, limit=5):
+            hits = [c for c in chunks if query_text in c.symbol_name]
+            return [RetrievalResult(chunk=c, score=1.0) for c in hits[:limit]]
+
+    result = FlowTraceService(_Repo()).trace(
+        "sess_flow", "repo_flow", "fetchReportSummary"
+    )
+
+    http_edges = [e for e in result.edges if e.kind == "http"]
+    assert len(http_edges) == 1
+    assert http_edges[0].evidence_label == "GET /api/v1/reports/summary"
+    target = next(c for c in chunks if c.chunk_id == http_edges[0].to_node_id)
+    assert target.symbol_type == "route_handler"
+    assert not any(g.kind == "endpoint_unmatched" for g in result.gaps)
+
+
+# ---------------------------------------------------------------------------
 # Version, fallback, and worker round-trip
 # ---------------------------------------------------------------------------
 
 
 def test_parser_version_bumped_for_flow_evidence() -> None:
-    assert JS_TS_PARSER_VERSION == "js-ts-treesitter-v2"
+    assert JS_TS_PARSER_VERSION == "js-ts-treesitter-v3"
     chunks = _parse("function f() { return 1; }\n")
-    assert chunks[0].parser_version == "js-ts-treesitter-v2"
+    assert chunks[0].parser_version == "js-ts-treesitter-v3"
 
 
 def test_module_fallback_chunk_has_empty_evidence() -> None:

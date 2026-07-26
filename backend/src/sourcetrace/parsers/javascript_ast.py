@@ -38,7 +38,7 @@ from sourcetrace.parsers.flow_evidence import (
 
 logger = logging.getLogger(__name__)
 
-JS_TS_PARSER_VERSION: str = "js-ts-treesitter-v2"
+JS_TS_PARSER_VERSION: str = "js-ts-treesitter-v3"
 
 # Path to the worker script used for subprocess-based safe parsing
 _WORKER_SCRIPT: Path = Path(__file__).resolve().parent / "js_parser_worker.py"
@@ -225,10 +225,108 @@ def _object_string_prop(
     return None
 
 
+@dataclass(frozen=True, slots=True)
+class _ExpressContext:
+    """Same-file Express knowledge: server/router names and literal mounts.
+
+    server_objects: identifiers assigned from express() / express.Router() /
+    Router(), plus every identifier mounted via use() — registrations on them
+    are endpoint declarations even when the handler is a named reference.
+    mount_prefixes: router name -> literal path prefix from
+    `X.use('/prefix', router)`. Conflicting or computed mounts are never
+    guessed: a router mounted twice with different literal prefixes loses its
+    prefix entirely (declares keep their unprefixed normalized path).
+    """
+
+    server_objects: frozenset[str]
+    mount_prefixes: dict[str, str]
+
+
+_EMPTY_EXPRESS_CONTEXT = _ExpressContext(frozenset(), {})
+
+# Exact factory-call texts that create Express apps/routers; deliberately not
+# suffix-matched so e.g. React Router's createBrowserRouter never qualifies.
+_EXPRESS_FACTORY_CALLS = frozenset({"express", "Router", "express.Router"})
+
+
+def _identifier_text(node: tree_sitter.Node | None, source_bytes: bytes) -> str | None:
+    if node is not None and node.type == "identifier":
+        return _get_node_text(node, source_bytes)
+    return None
+
+
+def collect_express_context(
+    root: tree_sitter.Node, source_bytes: bytes
+) -> _ExpressContext:
+    """One deterministic pass over the whole file for Express server facts."""
+    server_objects: set[str] = set()
+    mounts: dict[str, str | None] = {}  # None = conflicting, never fold
+
+    pending = [root]
+    while pending:
+        node = pending.pop()
+        pending.extend(reversed(node.children))
+
+        if node.type == "variable_declarator":
+            name = _identifier_text(node.child_by_field_name("name"), source_bytes)
+            value = node.child_by_field_name("value")
+            if (
+                name
+                and value is not None
+                and value.type == "call_expression"
+            ):
+                callee = value.child_by_field_name("function")
+                callee_text = (
+                    _get_node_text(callee, source_bytes) if callee is not None else ""
+                )
+                if callee_text in _EXPRESS_FACTORY_CALLS:
+                    server_objects.add(name)
+            continue
+
+        if node.type != "call_expression":
+            continue
+        fn_node = node.child_by_field_name("function")
+        if fn_node is None or fn_node.type != "member_expression":
+            continue
+        prop = fn_node.child_by_field_name("property")
+        if prop is None or _get_node_text(prop, source_bytes) != "use":
+            continue
+        args = _call_arguments(node)
+        if len(args) < 2:
+            continue
+        prefix = _string_literal_value(args[0], source_bytes)
+        if prefix is None or not prefix.startswith("/") or len(prefix) < 2:
+            continue
+        for arg in args[1:]:
+            mounted = _identifier_text(arg, source_bytes)
+            if mounted is None:
+                continue
+            server_objects.add(mounted)
+            clean = prefix.rstrip("/")
+            existing = mounts.get(mounted, clean)
+            mounts[mounted] = clean if existing == clean else None
+
+    return _ExpressContext(
+        server_objects=frozenset(server_objects),
+        mount_prefixes={k: v for k, v in mounts.items() if v is not None},
+    )
+
+
+def _prefixed_normalized(prefix: str | None, path: str) -> str:
+    if prefix is None:
+        return normalize_endpoint_path(path)
+    if path in ("", "/"):
+        return normalize_endpoint_path(prefix)
+    if path.startswith("/"):
+        return normalize_endpoint_path(prefix + path)
+    return normalize_endpoint_path(f"{prefix}/{path}")
+
+
 def _js_call_endpoint(
     call_node: tree_sitter.Node,
     fn_node: tree_sitter.Node,
     source_bytes: bytes,
+    express: _ExpressContext = _EMPTY_EXPRESS_CONTEXT,
 ) -> EndpointEvidence | None:
     args = _call_arguments(call_node)
     if not args:
@@ -255,13 +353,29 @@ def _js_call_endpoint(
         verb = _get_node_text(prop, source_bytes).casefold()
         if verb not in HTTP_ENDPOINT_METHODS:
             return None
-        # Express-style declarations pass a handler function; client calls do not.
+        base = _identifier_text(fn_node.child_by_field_name("object"), source_bytes)
+        is_server_object = base is not None and base in express.server_objects
+        # Express-style declarations pass a handler (inline function, or any
+        # second argument when the receiver is a known same-file server or
+        # mounted router object); client calls do not.
         has_inline_handler = any(
             a.type in _FUNCTION_VALUED_NODE_TYPES for a in args[1:]
         )
-        kind = "declares" if has_inline_handler else "calls"
+        is_declaration = has_inline_handler or (is_server_object and len(args) > 1)
+        if is_declaration:
+            prefix = (
+                express.mount_prefixes.get(base) if base is not None else None
+            )
+            return EndpointEvidence(
+                "declares",
+                verb.upper(),
+                path,
+                _prefixed_normalized(prefix, path),
+                line_start,
+                line_end,
+            )
         return EndpointEvidence(
-            kind, verb.upper(), path, normalize_endpoint_path(path), line_start, line_end
+            "calls", verb.upper(), path, normalize_endpoint_path(path), line_start, line_end
         )
     return None
 
@@ -433,6 +547,8 @@ def _extract_js_flow_evidence(
     source_bytes: bytes,
     module_imports: list[ImportEvidence],
     skip_methods: bool,
+    express: _ExpressContext = _EMPTY_EXPRESS_CONTEXT,
+    extra_endpoints: tuple[EndpointEvidence, ...] = (),
 ) -> tuple[
     tuple[ReferenceEvidence, ...],
     tuple[ImportEvidence, ...],
@@ -442,7 +558,7 @@ def _extract_js_flow_evidence(
     """Deterministically extract references, imports, and endpoints for one symbol."""
     references: list[ReferenceEvidence] = []
     imports: list[ImportEvidence] = list(module_imports)
-    endpoints: list[EndpointEvidence] = []
+    endpoints: list[EndpointEvidence] = list(extra_endpoints)
 
     for node in _walk_evidence_scope(scope_node, skip_methods):
         node_type = node.type
@@ -457,7 +573,7 @@ def _extract_js_flow_evidence(
                         ReferenceEvidence(named[0], named[1], line_start, line_end)
                     )
                 if node_type == "call_expression":
-                    endpoint = _js_call_endpoint(node, fn_node, source_bytes)
+                    endpoint = _js_call_endpoint(node, fn_node, source_bytes, express)
                     if endpoint is not None:
                         endpoints.append(endpoint)
         elif node_type == "variable_declarator":
@@ -860,6 +976,70 @@ def _make_module_chunk(
     return chunks
 
 
+def _absorb_top_level_registrations(
+    root: tree_sitter.Node,
+    source_bytes: bytes,
+    express: _ExpressContext,
+    source_lines: list[str],
+    known_symbol_names: set[str],
+    extra_endpoints_by_symbol: dict[str, list[EndpointEvidence]],
+) -> list[_RawSymbol]:
+    """Recover declares evidence from top-level Express route registrations.
+
+    `app.get('/path', ...)` at module top level lives outside every extracted
+    symbol, so its declaration evidence was previously lost. Same-file only:
+    the receiver must be a known server/router object. When a handler
+    argument names a same-file symbol, the declares evidence is attached to
+    that symbol's chunk; otherwise (inline handler) a synthetic
+    `route_handler` chunk is created for the registration so the endpoint is
+    still traceable — its scope walk also captures the handler body's own
+    references.
+    """
+    synthesized: list[_RawSymbol] = []
+    for child in root.children:
+        if child.type != "expression_statement" or not child.children:
+            continue
+        call_node = child.children[0]
+        if call_node.type != "call_expression":
+            continue
+        fn_node = call_node.child_by_field_name("function")
+        if fn_node is None or fn_node.type != "member_expression":
+            continue
+        base = _identifier_text(fn_node.child_by_field_name("object"), source_bytes)
+        if base is None or base not in express.server_objects:
+            continue
+        evidence = _js_call_endpoint(call_node, fn_node, source_bytes, express)
+        if evidence is None or evidence.kind != "declares":
+            continue
+
+        args = _call_arguments(call_node)
+        named_handlers = [
+            name
+            for arg in args[1:]
+            if (name := _identifier_text(arg, source_bytes)) is not None
+            and name in known_symbol_names
+        ]
+        if named_handlers:
+            for name in named_handlers:
+                extra_endpoints_by_symbol.setdefault(name, []).append(evidence)
+            continue
+
+        symbol_name = f"{evidence.http_method} {evidence.path_literal}"
+        start_line, end_line = _calc_line_bounds(call_node)
+        synthesized.append(
+            _RawSymbol(
+                symbol_name=symbol_name,
+                symbol_type="route_handler",
+                start_line=start_line,
+                end_line=end_line,
+                content="".join(source_lines[start_line - 1 : end_line]),
+                node=call_node,
+            )
+        )
+        extra_endpoints_by_symbol.setdefault(symbol_name, []).append(evidence)
+    return synthesized
+
+
 def _parse_javascript_source_in_process(
     source: str,
     relative_path: str,
@@ -896,6 +1076,21 @@ def _parse_javascript_source_in_process(
             )
             raw_symbols.extend(extracted)
 
+    express = _EMPTY_EXPRESS_CONTEXT
+    extra_endpoints_by_symbol: dict[str, list[EndpointEvidence]] = {}
+    if tree is not None and tree.root_node is not None:
+        express = collect_express_context(tree.root_node, source_bytes)
+        raw_symbols.extend(
+            _absorb_top_level_registrations(
+                tree.root_node,
+                source_bytes,
+                express,
+                source_lines,
+                {s.symbol_name for s in raw_symbols},
+                extra_endpoints_by_symbol,
+            )
+        )
+
     # Sort symbols deterministically by start_line, end_line
     raw_symbols.sort(key=lambda s: (s.start_line, s.end_line, s.symbol_name))
 
@@ -928,7 +1123,12 @@ def _parse_javascript_source_in_process(
         truncated = False
         if sym.node is not None:
             references, imports, endpoints, truncated = _extract_js_flow_evidence(
-                sym.node, source_bytes, module_imports, sym.skip_methods
+                sym.node,
+                source_bytes,
+                module_imports,
+                sym.skip_methods,
+                express,
+                tuple(extra_endpoints_by_symbol.get(sym.symbol_name, ())),
             )
         chunks.append(
             ParsedCodeChunk(

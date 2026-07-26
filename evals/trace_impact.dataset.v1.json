@@ -47,6 +47,25 @@
       "expected_steps": [],
       "expected_edges": [],
       "expected_gap_kinds": ["entry_unresolved"]
+    },
+    {
+      "id": "ti-trace-004",
+      "description": "JS client fetch resolves across the HTTP boundary to a mounted Express route handler (TRACE-007)",
+      "entry": "fetchReportSummary",
+      "expected_steps": [
+        {"relative_path": "web_client.js", "symbol_name": "fetchReportSummary"},
+        {"relative_path": "server_routes.js", "symbol_name": "GET /summary"}
+      ],
+      "expected_edges": [
+        {
+          "from_symbol": "fetchReportSummary",
+          "to_symbol": "GET /summary",
+          "kind": "http",
+          "confidence": "high",
+          "evidence_line": 2
+        }
+      ],
+      "expected_gap_kinds": []
     }
   ],
   "impact_cases": [
@@ -99,6 +118,23 @@
         {
           "relative_path": "errors.py",
           "symbol_name": "AccessDeniedError",
+          "distance": 1,
+          "confidence": "high"
+        }
+      ],
+      "expected_risk_factor_kinds": ["no_test_coverage"],
+      "expected_risk_level": "medium",
+      "expected_gap_kinds": []
+    },
+    {
+      "id": "ti-impact-004",
+      "description": "JS client's downstream dependency is the mounted Express handler across the HTTP boundary",
+      "symbol": "fetchReportSummary",
+      "expected_upstream": [],
+      "expected_downstream": [
+        {
+          "relative_path": "server_routes.js",
+          "symbol_name": "GET /summary",
           "distance": 1,
           "confidence": "high"
         }
