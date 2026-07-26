@@ -12,6 +12,7 @@ from sourcetrace.api.routes.health import router as health_router
 from sourcetrace.api.routes.indexing_jobs import router as indexing_jobs_router
 from sourcetrace.api.routes.repositories import router as repositories_router
 from sourcetrace.api.routes.search import router as search_router
+from sourcetrace.api.routes.trace import router as trace_router
 from sourcetrace.core.config import get_settings
 
 
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
     app.include_router(capabilities_router)
     app.include_router(repositories_router, prefix="/api/v1")
     app.include_router(search_router)
+    app.include_router(trace_router)
     app.include_router(indexing_jobs_router, prefix="/api/v1")
     app.include_router(conversations_router, prefix="/api/v1")
     return app
