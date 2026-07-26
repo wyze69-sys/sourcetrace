@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient as defaultApiClient, ApiError, type ApiClient } from '../services/apiClient'
+import { FlowTracePanel } from './FlowTracePanel'
 import type {
   EvidenceSearchItem,
   HealthResponse,
@@ -789,6 +790,14 @@ export function App({ client = defaultApiClient }: AppProps) {
                     ? 'No repositories imported yet. Enter a GitHub URL or select a ZIP archive above.'
                     : 'Select a ready repository from the sidebar to inspect or search.'}
                 </section>
+              )}
+
+              {selectedRepo && selectedRepo.status === 'ready' && (
+                <FlowTracePanel
+                  client={client}
+                  repositoryId={selectedRepo.repository_id}
+                  repositoryName={selectedRepo.name}
+                />
               )}
             </>
           )}

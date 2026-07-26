@@ -6,6 +6,7 @@ import type {
   DeleteRepositoryResponse,
   ErrorEnvelope,
   EvidenceSearchResponse,
+  FlowTraceResponse,
   HealthResponse,
   IndexingJob,
   Repository,
@@ -243,6 +244,26 @@ export class ApiClient {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query, limit }),
+      },
+      'protected',
+    )
+  }
+
+  async traceFlow(
+    repositoryId: string,
+    entry: string,
+    maxDepth?: number,
+  ): Promise<FlowTraceResponse> {
+    return this.request<FlowTraceResponse>(
+      `/repositories/${encodeURIComponent(repositoryId)}/trace`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entry,
+          mode: 'static',
+          ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
+        }),
       },
       'protected',
     )

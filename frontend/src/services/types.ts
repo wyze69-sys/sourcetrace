@@ -166,3 +166,50 @@ export interface EvidenceSearchResponse {
   total: number
   items: EvidenceSearchItem[]
 }
+
+export type TraceEdgeKind = 'call' | 'import' | 'http'
+
+export type TraceConfidence = 'high' | 'medium' | 'low'
+
+export interface TraceEntry {
+  query: string
+  resolved_node_id: string | null
+  candidates: string[]
+}
+
+export interface TraceNode {
+  node_id: string
+  relative_path: string
+  symbol_name: string
+  symbol_type: string
+  start_line: number
+  end_line: number
+  snippet: string
+}
+
+export interface TraceEdge {
+  from_node_id: string
+  to_node_id: string
+  kind: TraceEdgeKind
+  confidence: TraceConfidence
+  evidence_label: string
+  evidence_line_start: number
+  evidence_line_end: number
+  alternatives: string[]
+}
+
+export interface TraceGap {
+  kind: string
+  detail: string
+  node_id: string | null
+}
+
+export interface FlowTraceResponse {
+  repository_id: string
+  entry: TraceEntry
+  nodes: TraceNode[]
+  edges: TraceEdge[]
+  steps: string[]
+  gaps: TraceGap[]
+  explanation: null
+}

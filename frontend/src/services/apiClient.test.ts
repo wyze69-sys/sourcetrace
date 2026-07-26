@@ -233,6 +233,62 @@ describe('ApiClient', () => {
     expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_existing_stored_token')
   })
 
+  it('traceFlow() posts static mode entry to the trace endpoint with Bearer auth', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_trace_token')
+
+    const traceBody = {
+      repository_id: 'repo_1',
+      entry: { query: 'main', resolved_node_id: 'c_main', candidates: ['c_main'] },
+      nodes: [],
+      edges: [],
+      steps: [],
+      gaps: [],
+      explanation: null,
+    }
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => traceBody,
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const res = await client.traceFlow('repo_1', 'main', 4)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [reqUrl, reqInit] = mockFetch.mock.calls[0]
+    expect(reqUrl).toBe('/api/v1/repositories/repo_1/trace')
+    expect(reqInit.method).toBe('POST')
+    expect(JSON.parse(reqInit.body as string)).toEqual({
+      entry: 'main',
+      mode: 'static',
+      max_depth: 4,
+    })
+    const reqHeaders = reqInit.headers as Headers
+    expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_trace_token')
+    expect(res).toEqual(traceBody)
+  })
+
+  it('traceFlow() omits max_depth when not supplied', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_trace_token')
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repository_id: 'repo_1',
+        entry: { query: 'x', resolved_node_id: null, candidates: [] },
+        nodes: [],
+        edges: [],
+        steps: [],
+        gaps: [{ kind: 'entry_unresolved', detail: 'no match', node_id: null }],
+        explanation: null,
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    await client.traceFlow('repo_1', 'x')
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
+    expect(body).toEqual({ entry: 'x', mode: 'static' })
+  })
+
   it('deduplicates concurrent protected requests to share a single provisioning call', async () => {
     const mockFetch = vi
       .fn()
