@@ -2,7 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,7 +56,6 @@ class Settings(BaseSettings):
     llm_provider: str = "gemini"
     embedding_provider: str = "gemini"
 
-
     # -------------------------------------------------------------------------
     # Gemini provider (google-genai SDK)
     # -------------------------------------------------------------------------
@@ -100,10 +99,24 @@ class Settings(BaseSettings):
     session_signing_secret: SecretStr | None = None
 
     jwt_secret: SecretStr | None = None
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: Literal["HS256"] = "HS256"
     jwt_access_token_ttl_seconds: int = 604800
     jwt_issuer: str = "sourcetrace"
     jwt_audience: str = "sourcetrace-api"
+
+    @field_validator("jwt_access_token_ttl_seconds")
+    @classmethod
+    def _validate_jwt_ttl(cls, v: int) -> int:
+        if isinstance(v, bool) or v <= 0:
+            raise ValueError("jwt_access_token_ttl_seconds must be a positive integer.")
+        return v
+
+    @field_validator("jwt_issuer", "jwt_audience")
+    @classmethod
+    def _validate_jwt_string_field(cls, v: str) -> str:
+        if not v or not isinstance(v, str) or not v.strip():
+            raise ValueError("JWT configuration string cannot be empty or whitespace-only.")
+        return v.strip()
 
 
 @lru_cache

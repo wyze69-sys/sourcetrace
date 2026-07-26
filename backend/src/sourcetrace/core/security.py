@@ -123,18 +123,21 @@ class JWTSigner:
             raw_secret = secret.get_secret_value()
         elif isinstance(secret, str):
             raw_secret = secret
-        elif secret is None:
-            if active_settings.jwt_secret is not None:
-                raw_secret = active_settings.jwt_secret.get_secret_value()
-            elif active_settings.session_signing_secret is not None:
-                raw_secret = active_settings.session_signing_secret.get_secret_value()
+        elif secret is None and active_settings.jwt_secret is not None:
+            raw_secret = active_settings.jwt_secret.get_secret_value()
 
-        if not raw_secret or len(raw_secret) < MIN_SECRET_LENGTH:
+        if not raw_secret:
             raise SessionConfigurationError(
                 "JWT signing secret is not configured or is too short."
             )
 
-        self._secret_bytes = raw_secret.encode("utf-8")
+        secret_bytes = raw_secret.encode("utf-8")
+        if len(secret_bytes) < MIN_SECRET_LENGTH:
+            raise SessionConfigurationError(
+                "JWT signing secret is not configured or is too short."
+            )
+
+        self._secret_bytes = secret_bytes
         self._algorithm = "HS256"
         self._issuer = active_settings.jwt_issuer
         self._audience = active_settings.jwt_audience
@@ -154,12 +157,15 @@ class JWTSigner:
         ):
             raise ValueError("Invalid owner_session_id format.")
 
+        ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl_seconds
+        if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl <= 0:
+            raise ValueError("ttl_seconds must be a positive integer.")
+
         now = current_time or datetime.now(UTC)
         if now.tzinfo is None:
             now = now.replace(tzinfo=UTC)
 
         iat = int(now.timestamp())
-        ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl_seconds
         exp = iat + ttl
         jti = f"jti_{secrets.token_urlsafe(16)}"
 
@@ -208,12 +214,28 @@ class JWTSigner:
             raise SessionInvalidError("Invalid subject in token.")
 
         token_type = payload.get("type")
-        if token_type != "anonymous_access":
+        if not isinstance(token_type, str) or token_type != "anonymous_access":
             raise SessionInvalidError("Invalid token type.")
 
         jti = payload.get("jti")
         if not isinstance(jti, str) or not jti:
             raise SessionInvalidError("Invalid JTI in token.")
+
+        iss = payload.get("iss")
+        if not isinstance(iss, str) or iss != self._issuer:
+            raise SessionInvalidError("Invalid issuer in token.")
+
+        aud = payload.get("aud")
+        if not isinstance(aud, str) or aud != self._audience:
+            raise SessionInvalidError("Invalid audience in token.")
+
+        iat = payload.get("iat")
+        if isinstance(iat, bool) or not isinstance(iat, int):
+            raise SessionInvalidError("Invalid iat claim in token.")
+
+        exp = payload.get("exp")
+        if isinstance(exp, bool) or not isinstance(exp, int):
+            raise SessionInvalidError("Invalid exp claim in token.")
 
         if current_time is not None:
             now = (
@@ -222,7 +244,7 @@ class JWTSigner:
                 else current_time.replace(tzinfo=UTC)
             )
             now_ts = int(now.timestamp())
-            if now_ts >= payload.get("exp", 0) or now_ts < payload.get("iat", 0):
+            if now_ts >= exp or now_ts < iat:
                 raise SessionInvalidError("Token expired or not yet valid.")
 
         return sub

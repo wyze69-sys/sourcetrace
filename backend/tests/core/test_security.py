@@ -3,16 +3,21 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from sourcetrace.core.config import Settings
-from sourcetrace.core.exceptions import SessionConfigurationError
+from sourcetrace.core.exceptions import (
+    SessionConfigurationError,
+    SessionInvalidError,
+)
 from sourcetrace.core.security import (
+    JWTSigner,
     SessionSigner,
     generate_owner_session_id,
 )
 
 VALID_SECRET = "a_very_secret_key_that_is_at_least_32_bytes_long!"
+
 
 
 def test_opaque_ids_are_unique_and_cryptographically_random() -> None:
@@ -379,9 +384,6 @@ def test_jwt_empty_jti_rejected() -> None:
 def test_jwt_algorithm_confusion_or_unsupported_algorithm_rejected() -> None:
     import jwt
 
-    from sourcetrace.core.exceptions import SessionInvalidError
-    from sourcetrace.core.security import JWTSigner
-
     signer = JWTSigner(secret=VALID_SECRET)
     now = datetime.now(UTC)
     payload = {
@@ -393,8 +395,184 @@ def test_jwt_algorithm_confusion_or_unsupported_algorithm_rejected() -> None:
         "iss": "sourcetrace",
         "aud": "sourcetrace-api",
     }
-    # Encode token with algorithm 'none'
     raw_token = jwt.encode(payload, "", algorithm="none")
+    with pytest.raises(SessionInvalidError):
+        signer.verify_access_token(raw_token)
+
+
+
+# ---------------------------------------------------------------------------
+# AUTH-002A Regression & Hardening Tests
+# ---------------------------------------------------------------------------
+
+
+def test_jwt_secret_isolation_does_not_fallback_to_session_signing_secret() -> None:
+    # JWTSigner must NOT fall back to session_signing_secret if jwt_secret is None
+    settings = Settings(
+        _env_file=None,
+        jwt_secret=None,
+        session_signing_secret=SecretStr(VALID_SECRET),
+    )
+    with pytest.raises(SessionConfigurationError) as exc_info:
+        JWTSigner(settings=settings)
+    assert "JWT signing secret is not configured" in str(exc_info.value)
+
+    # Explicit JWT secret works even if session_signing_secret is different
+    jwt_secret_val = "a_separate_jwt_secret_key_that_is_32_bytes!!"
+    settings_with_jwt = Settings(
+        _env_file=None,
+        jwt_secret=SecretStr(jwt_secret_val),
+        session_signing_secret=SecretStr(VALID_SECRET),
+    )
+    signer = JWTSigner(settings=settings_with_jwt)
+    token = signer.create_access_token("sess_isolation_test")
+    assert signer.verify_access_token(token) == "sess_isolation_test"
+
+
+def test_jwt_utf8_byte_length_strength_validation() -> None:
+    # 31 ASCII characters = 31 bytes -> rejected
+    secret_31_ascii = "a" * 31
+    assert len(secret_31_ascii.encode("utf-8")) == 31
+    with pytest.raises(SessionConfigurationError):
+        JWTSigner(secret=secret_31_ascii)
+
+    # 16 multi-byte Unicode characters (e.g., 🔑 = 4 bytes each, 16 * 4 = 64 bytes >= 32)
+    # Character length is 16 (< 32 char count), but UTF-8 byte length is 64 (>= 32 bytes)
+    unicode_secret = "🔑" * 16
+    assert len(unicode_secret) == 16
+    assert len(unicode_secret.encode("utf-8")) == 64
+    signer = JWTSigner(secret=unicode_secret)
+    token = signer.create_access_token("sess_utf8_test")
+    assert signer.verify_access_token(token) == "sess_utf8_test"
+
+
+@pytest.mark.parametrize(
+    "missing_claim",
+    ["sub", "iat", "exp", "jti", "type", "iss", "aud"],
+)
+def test_jwt_independently_missing_each_required_claim_rejected(
+    missing_claim: str,
+) -> None:
+    import jwt
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    full_payload = {
+        "sub": "sess_param_missing",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_1234567890",
+        "type": "anonymous_access",
+        "iss": "sourcetrace",
+        "aud": "sourcetrace-api",
+    }
+    del full_payload[missing_claim]
+    raw_token = jwt.encode(full_payload, VALID_SECRET, algorithm="HS256")
 
     with pytest.raises(SessionInvalidError):
         signer.verify_access_token(raw_token)
+
+
+@pytest.mark.parametrize(
+    ("claim_name", "invalid_value"),
+    [
+        ("sub", 12345),
+        ("sub", True),
+        ("sub", ["sess_123"]),
+        ("sub", "invalid_prefix"),
+        ("iat", "1700000000"),
+        ("iat", True),
+        ("iat", 1700000000.5),
+        ("iat", None),
+        ("exp", "1700000000"),
+        ("exp", False),
+        ("exp", 1700000000.5),
+        ("exp", None),
+        ("jti", 9999),
+        ("jti", True),
+        ("jti", ""),
+        ("type", "user_access"),
+        ("type", 123),
+        ("type", True),
+        ("iss", "wrong_iss"),
+        ("iss", ""),
+        ("iss", 123),
+        ("aud", "wrong_aud"),
+        ("aud", ""),
+        ("aud", 123),
+    ],
+)
+def test_jwt_invalid_claim_types_and_values_rejected(
+    claim_name: str,
+    invalid_value: object,
+) -> None:
+    import jwt
+
+    signer = JWTSigner(secret=VALID_SECRET)
+    now = datetime.now(UTC)
+    base_payload = {
+        "sub": "sess_claim_type_test",
+        "iat": int(now.timestamp()),
+        "exp": int(now.timestamp()) + 3600,
+        "jti": "jti_1234567890",
+        "type": "anonymous_access",
+        "iss": "sourcetrace",
+        "aud": "sourcetrace-api",
+    }
+    base_payload[claim_name] = invalid_value
+    with pytest.raises((SessionInvalidError, TypeError)):
+        raw_token = jwt.encode(base_payload, VALID_SECRET, algorithm="HS256")
+        signer.verify_access_token(raw_token)
+
+
+
+@pytest.mark.parametrize("invalid_ttl", [0, -1, -3600, True, False, "3600"])
+def test_jwt_create_access_token_rejects_invalid_ttl(invalid_ttl: object) -> None:
+    signer = JWTSigner(secret=VALID_SECRET)
+    with pytest.raises(ValueError):
+        signer.create_access_token("sess_ttl_invalid", ttl_seconds=invalid_ttl)  # type: ignore[arg-type]
+
+
+def test_jwt_settings_validation_rules() -> None:
+    # Algorithm must be HS256
+    assert Settings(_env_file=None, jwt_algorithm="HS256").jwt_algorithm == "HS256"
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_algorithm="HS512")  # type: ignore[arg-type]
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_algorithm="none")  # type: ignore[arg-type]
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_algorithm="RS256")  # type: ignore[arg-type]
+
+    # TTL must be > 0
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_access_token_ttl_seconds=0)
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_access_token_ttl_seconds=-100)
+
+    # Issuer & Audience must be non-empty and non-whitespace
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_issuer="")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_issuer="   ")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_audience="")
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_audience="   ")
+
+
+    # Customized valid issuer and audience work
+    custom = Settings(
+        _env_file=None,
+        jwt_issuer="custom_issuer",
+        jwt_audience="custom_audience",
+    )
+    signer = JWTSigner(secret=VALID_SECRET, settings=custom)
+    token = signer.create_access_token("sess_custom_iss_aud")
+    assert signer.verify_access_token(token) == "sess_custom_iss_aud"
