@@ -99,6 +99,10 @@ def embed_chunks(
                 embedding_dimensions=expected_dim,
                 created_at=now_dt,
                 embedding=vec,
+                references=parsed.references,
+                imports=parsed.imports,
+                endpoints=parsed.endpoints,
+                extraction_truncated=parsed.extraction_truncated,
             )
         )
 

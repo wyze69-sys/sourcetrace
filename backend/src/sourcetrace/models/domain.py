@@ -73,6 +73,39 @@ class EvidenceSnippetRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ReferenceEvidence:
+    """An outbound identifier reference inside a chunk, with exact source lines."""
+
+    local_name: str
+    kind: str  # "call" | "attribute_call"
+    line_start: int
+    line_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class ImportEvidence:
+    """An import binding visible to a chunk, with exact source lines."""
+
+    local_name: str
+    source_module: str
+    imported_name: str
+    line_start: int
+    line_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class EndpointEvidence:
+    """An HTTP endpoint literal a chunk declares or calls, with exact source lines."""
+
+    kind: str  # "declares" | "calls"
+    http_method: str
+    path_literal: str
+    normalized_path: str
+    line_start: int
+    line_end: int
+
+
+@dataclass(frozen=True, slots=True)
 class ParsedCodeChunk:
     """Parser output before embedding — internal model for deterministic AST parsing."""
 
@@ -88,6 +121,10 @@ class ParsedCodeChunk:
     content: str
     content_hash: str
     parser_version: str
+    references: tuple[ReferenceEvidence, ...] = ()
+    imports: tuple[ImportEvidence, ...] = ()
+    endpoints: tuple[EndpointEvidence, ...] = ()
+    extraction_truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +154,10 @@ class CodeChunk:
     relative_path_normalized: str = ""
     search_terms: tuple[str, ...] = ()
     search_text: str = ""
+    references: tuple[ReferenceEvidence, ...] = ()
+    imports: tuple[ImportEvidence, ...] = ()
+    endpoints: tuple[EndpointEvidence, ...] = ()
+    extraction_truncated: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -20,9 +20,12 @@ from sourcetrace.models.domain import (
     CitationRecord,
     CodeChunk,
     ConversationRecord,
+    EndpointEvidence,
     EvidenceSnippetRecord,
+    ImportEvidence,
     IndexingJobRecord,
     MessageRecord,
+    ReferenceEvidence,
     RepositoryRecord,
     RetrievalResult,
 )
@@ -632,6 +635,177 @@ def derive_chunk_search_metadata(
     }
 
 
+_REFERENCE_KINDS: frozenset[str] = frozenset({"call", "attribute_call"})
+_ENDPOINT_KINDS: frozenset[str] = frozenset({"declares", "calls"})
+
+
+def _validate_evidence_lines(raw_start: Any, raw_end: Any) -> tuple[int, int]:
+    line_start = _validate_int(raw_start)
+    line_end = _validate_int(raw_end)
+    if line_start < 1 or line_end < line_start:
+        raise StorageDataError("Invalid evidence line range.")
+    return line_start, line_end
+
+
+def _doc_to_flow_evidence(
+    doc: dict[str, Any],
+) -> tuple[
+    tuple[ReferenceEvidence, ...],
+    tuple[ImportEvidence, ...],
+    tuple[EndpointEvidence, ...],
+    bool,
+]:
+    """Read flow evidence fields; absent keys mean pre-trace chunks (empty)."""
+    references: list[ReferenceEvidence] = []
+    raw_refs = doc.get("references")
+    if raw_refs is not None:
+        if not isinstance(raw_refs, (list, tuple)):
+            raise StorageDataError("Malformed references field in chunk document.")
+        for item in raw_refs:
+            if not isinstance(item, dict):
+                raise StorageDataError("Malformed reference evidence item.")
+            kind = _validate_non_empty_string(item.get("kind"))
+            if kind not in _REFERENCE_KINDS:
+                raise StorageDataError("Unknown reference evidence kind.")
+            line_start, line_end = _validate_evidence_lines(
+                item.get("line_start"), item.get("line_end")
+            )
+            references.append(
+                ReferenceEvidence(
+                    local_name=_validate_non_empty_string(item.get("local_name")),
+                    kind=kind,
+                    line_start=line_start,
+                    line_end=line_end,
+                )
+            )
+
+    imports: list[ImportEvidence] = []
+    raw_imports = doc.get("imports")
+    if raw_imports is not None:
+        if not isinstance(raw_imports, (list, tuple)):
+            raise StorageDataError("Malformed imports field in chunk document.")
+        for item in raw_imports:
+            if not isinstance(item, dict):
+                raise StorageDataError("Malformed import evidence item.")
+            line_start, line_end = _validate_evidence_lines(
+                item.get("line_start"), item.get("line_end")
+            )
+            imports.append(
+                ImportEvidence(
+                    local_name=_validate_non_empty_string(item.get("local_name")),
+                    source_module=_validate_non_empty_string(item.get("source_module")),
+                    imported_name=_validate_non_empty_string(item.get("imported_name")),
+                    line_start=line_start,
+                    line_end=line_end,
+                )
+            )
+
+    endpoints: list[EndpointEvidence] = []
+    raw_endpoints = doc.get("endpoints")
+    if raw_endpoints is not None:
+        if not isinstance(raw_endpoints, (list, tuple)):
+            raise StorageDataError("Malformed endpoints field in chunk document.")
+        for item in raw_endpoints:
+            if not isinstance(item, dict):
+                raise StorageDataError("Malformed endpoint evidence item.")
+            kind = _validate_non_empty_string(item.get("kind"))
+            if kind not in _ENDPOINT_KINDS:
+                raise StorageDataError("Unknown endpoint evidence kind.")
+            path_literal = item.get("path_literal")
+            normalized_path = item.get("normalized_path")
+            # Empty path literals are legitimate (e.g. @router.get("")).
+            if not isinstance(path_literal, str) or not isinstance(normalized_path, str):
+                raise StorageDataError("Malformed endpoint evidence path.")
+            line_start, line_end = _validate_evidence_lines(
+                item.get("line_start"), item.get("line_end")
+            )
+            endpoints.append(
+                EndpointEvidence(
+                    kind=kind,
+                    http_method=_validate_non_empty_string(item.get("http_method")),
+                    path_literal=path_literal,
+                    normalized_path=normalized_path,
+                    line_start=line_start,
+                    line_end=line_end,
+                )
+            )
+
+    raw_truncated = doc.get("extraction_truncated")
+    if raw_truncated is None:
+        extraction_truncated = False
+    elif isinstance(raw_truncated, bool):
+        extraction_truncated = raw_truncated
+    else:
+        raise StorageDataError("Malformed extraction_truncated field.")
+
+    return tuple(references), tuple(imports), tuple(endpoints), extraction_truncated
+
+
+def _flow_evidence_to_doc_fields(chunk: CodeChunk) -> dict[str, Any]:
+    """Serialize flow evidence tuples to plain BSON-safe structures."""
+    references: list[dict[str, Any]] = []
+    for ref in chunk.references or ():
+        if not isinstance(ref, ReferenceEvidence) or ref.kind not in _REFERENCE_KINDS:
+            raise StorageDataError("Invalid reference evidence on chunk.")
+        _validate_non_empty_string(ref.local_name)
+        _validate_evidence_lines(ref.line_start, ref.line_end)
+        references.append(
+            {
+                "local_name": ref.local_name,
+                "kind": ref.kind,
+                "line_start": ref.line_start,
+                "line_end": ref.line_end,
+            }
+        )
+
+    imports: list[dict[str, Any]] = []
+    for imp in chunk.imports or ():
+        if not isinstance(imp, ImportEvidence):
+            raise StorageDataError("Invalid import evidence on chunk.")
+        _validate_non_empty_string(imp.local_name)
+        _validate_non_empty_string(imp.source_module)
+        _validate_non_empty_string(imp.imported_name)
+        _validate_evidence_lines(imp.line_start, imp.line_end)
+        imports.append(
+            {
+                "local_name": imp.local_name,
+                "source_module": imp.source_module,
+                "imported_name": imp.imported_name,
+                "line_start": imp.line_start,
+                "line_end": imp.line_end,
+            }
+        )
+
+    endpoints: list[dict[str, Any]] = []
+    for ep in chunk.endpoints or ():
+        if not isinstance(ep, EndpointEvidence) or ep.kind not in _ENDPOINT_KINDS:
+            raise StorageDataError("Invalid endpoint evidence on chunk.")
+        _validate_non_empty_string(ep.http_method)
+        if not isinstance(ep.path_literal, str) or not isinstance(ep.normalized_path, str):
+            raise StorageDataError("Invalid endpoint evidence path on chunk.")
+        _validate_evidence_lines(ep.line_start, ep.line_end)
+        endpoints.append(
+            {
+                "kind": ep.kind,
+                "http_method": ep.http_method,
+                "path_literal": ep.path_literal,
+                "normalized_path": ep.normalized_path,
+                "line_start": ep.line_start,
+                "line_end": ep.line_end,
+            }
+        )
+
+    if not isinstance(chunk.extraction_truncated, bool):
+        raise StorageDataError("Invalid extraction_truncated flag on chunk.")
+
+    return {
+        "references": references,
+        "imports": imports,
+        "endpoints": endpoints,
+        "extraction_truncated": chunk.extraction_truncated,
+    }
+
+
 def _doc_to_chunk(doc: dict[str, Any]) -> CodeChunk:
     if not isinstance(doc, dict):
         raise StorageDataError("Malformed code chunk document in storage.")
@@ -710,6 +884,8 @@ def _doc_to_chunk(doc: dict[str, Any]) -> CodeChunk:
             search_terms = derived["search_terms"]
             search_text = derived["search_text"]
 
+        references, imports, endpoints, extraction_truncated = _doc_to_flow_evidence(doc)
+
         return CodeChunk(
             chunk_id=chunk_id,
             repository_id=repository_id,
@@ -731,6 +907,10 @@ def _doc_to_chunk(doc: dict[str, Any]) -> CodeChunk:
             relative_path_normalized=path_norm,
             search_terms=search_terms,
             search_text=search_text,
+            references=references,
+            imports=imports,
+            endpoints=endpoints,
+            extraction_truncated=extraction_truncated,
         )
     except StorageDataError:
         raise
@@ -831,6 +1011,8 @@ def _chunk_to_doc(chunk: CodeChunk) -> dict[str, Any]:
     )
     doc["search_terms"] = list(chunk.search_terms or derived["search_terms"])
     doc["search_text"] = chunk.search_text or derived["search_text"]
+
+    doc.update(_flow_evidence_to_doc_fields(chunk))
 
     return doc
 

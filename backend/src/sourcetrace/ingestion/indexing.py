@@ -230,6 +230,10 @@ class RepositoryIndexingService:
                             relative_path_normalized=derived["relative_path_normalized"],
                             search_terms=derived["search_terms"],
                             search_text=derived["search_text"],
+                            references=p.references,
+                            imports=p.imports,
+                            endpoints=p.endpoints,
+                            extraction_truncated=p.extraction_truncated,
                         )
                     )
 
@@ -358,6 +362,10 @@ class RepositoryIndexingService:
                         relative_path_normalized=derived["relative_path_normalized"],
                         search_terms=derived["search_terms"],
                         search_text=derived["search_text"],
+                        references=embedded.references,
+                        imports=embedded.imports,
+                        endpoints=embedded.endpoints,
+                        extraction_truncated=embedded.extraction_truncated,
                     )
                 )
 
