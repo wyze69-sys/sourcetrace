@@ -24,19 +24,21 @@ from sourcetrace.models.domain import (
     ParsedCodeChunk,
     ReferenceEvidence,
 )
+from sourcetrace.parsers.flow_evidence import (
+    HTTP_ENDPOINT_METHODS as _HTTP_ENDPOINT_METHODS,
+)
+from sourcetrace.parsers.flow_evidence import (
+    finalize_evidence as _finalize_evidence,
+)
+from sourcetrace.parsers.flow_evidence import (
+    normalize_endpoint_path as _normalize_endpoint_path,
+)
 from sourcetrace.parsers.javascript_ast import (
     _make_module_chunk,
     parse_javascript_source,
 )
 
 PYTHON_AST_PARSER_VERSION: str = "python-ast-v2"
-
-# Per-category cap on flow evidence items stored per chunk.
-FLOW_EVIDENCE_MAX_ITEMS: int = 100
-
-_HTTP_ENDPOINT_METHODS: frozenset[str] = frozenset(
-    {"get", "post", "put", "delete", "patch", "head", "options"}
-)
 
 _SYMBOL_NODE_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
@@ -79,25 +81,6 @@ def _node_lines(node: ast.AST) -> tuple[int, int]:
     start = getattr(node, "lineno", 1)
     end = getattr(node, "end_lineno", None) or start
     return start, max(start, end)
-
-
-def _normalize_endpoint_path(path_literal: str) -> str:
-    """Reduce a path literal to a comparable form: host stripped, params as {}."""
-    path = path_literal
-    if path.startswith(("http://", "https://")):
-        after_scheme = path.split("://", 1)[1]
-        slash = after_scheme.find("/")
-        path = after_scheme[slash:] if slash >= 0 else "/"
-    path = path.split("?", 1)[0]
-    segments = []
-    for seg in path.split("/"):
-        is_param = (
-            (seg.startswith("{") and seg.endswith("}"))
-            or (seg.startswith("<") and seg.endswith(">"))
-            or seg.startswith(":")
-        )
-        segments.append("{}" if is_param and len(seg) > 1 else seg)
-    return "/".join(segments)
 
 
 def _dotted_call_name(func: ast.expr) -> tuple[str, str] | None:
@@ -205,24 +188,6 @@ def _decorator_endpoints(
                     )
                 )
     return out, consumed
-
-
-def _finalize_evidence(items: list, identity_key) -> tuple[tuple, bool]:
-    """Dedupe by identity key (keeping earliest lines), sort, and cap."""
-    best: dict = {}
-    for item in items:
-        key = identity_key(item)
-        existing = best.get(key)
-        if existing is None or (item.line_start, item.line_end) < (
-            existing.line_start,
-            existing.line_end,
-        ):
-            best[key] = item
-    ordered = sorted(
-        best.values(),
-        key=lambda i: (i.line_start, i.line_end) + identity_key(i),
-    )
-    return tuple(ordered[:FLOW_EVIDENCE_MAX_ITEMS]), len(ordered) > FLOW_EVIDENCE_MAX_ITEMS
 
 
 def _extract_flow_evidence(

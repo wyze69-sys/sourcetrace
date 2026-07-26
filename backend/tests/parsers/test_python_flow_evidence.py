@@ -13,8 +13,8 @@ from sourcetrace.models.domain import (
     ImportEvidence,
     ReferenceEvidence,
 )
+from sourcetrace.parsers.flow_evidence import FLOW_EVIDENCE_MAX_ITEMS
 from sourcetrace.parsers.python_ast import (
-    FLOW_EVIDENCE_MAX_ITEMS,
     PYTHON_AST_PARSER_VERSION,
     _normalize_endpoint_path,
     parse_python_source,
