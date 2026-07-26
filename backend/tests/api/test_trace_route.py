@@ -101,13 +101,104 @@ def test_trace_not_ready_repository_returns_400() -> None:
     assert response.status_code == 400
 
 
-def test_trace_rejects_explain_mode_until_it_ships() -> None:
-    client = TestClient(_app(repo_record=_repo_record()))
+def test_trace_explain_mode_without_llm_capability_returns_422() -> None:
+    from sourcetrace.core.config import Settings, get_settings
+
+    app = _app(repo_record=_repo_record())
+    # Explicit keyless settings: generation must be unavailable regardless of
+    # any developer-local .env contents.
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        llm_provider="gemini",
+        gemini_api_key=None,
+        llm_api_key=None,
+        embedding_api_key=None,
+    )
+    client = TestClient(app)
     response = client.post(
         "/api/v1/repositories/repo_t3/trace",
         json={"entry": "main", "mode": "explain"},
     )
     assert response.status_code == 422
+
+
+class _FakeExplainer:
+    def __init__(self, outcome):
+        self._outcome = outcome
+        self.received = []
+
+    def explain(self, result):
+        self.received.append(result)
+        return self._outcome
+
+
+def _explain_app(outcome, chunks, lexical_hits):
+    from sourcetrace.api.dependencies import get_trace_explainer_factory
+    from sourcetrace.core.config import Settings, get_settings
+
+    app = _app(repo_record=_repo_record(), chunks=chunks, lexical_hits=lexical_hits)
+    explainer = _FakeExplainer(outcome)
+    app.dependency_overrides[get_trace_explainer_factory] = lambda: (lambda: explainer)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        llm_provider="gemini", gemini_api_key="test-gemini-key"
+    )
+    return app, explainer
+
+
+def test_trace_explain_mode_returns_marker_validated_explanation() -> None:
+    main = _chunk("c_main", "main", references=[ReferenceEvidence("helper", "call", 4, 4)])
+    helper = _chunk("c_helper", "helper")
+    app, explainer = _explain_app(
+        ("The flow starts at [S1] and calls [S2].", (1, 2)), [main, helper], [main]
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_t3/trace",
+        json={"entry": "main", "mode": "explain"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["explanation"] == {
+        "text": "The flow starts at [S1] and calls [S2].",
+        "cited_steps": [1, 2],
+    }
+    # The static trace itself is unchanged by explanation.
+    assert data["steps"] == ["c_main", "c_helper"]
+    assert [g["kind"] for g in data["gaps"]] == []
+    assert len(explainer.received) == 1
+
+
+def test_trace_explain_failure_degrades_to_static_trace_with_gap() -> None:
+    main = _chunk("c_main", "main", references=[ReferenceEvidence("helper", "call", 4, 4)])
+    helper = _chunk("c_helper", "helper")
+    app, _ = _explain_app(None, [main, helper], [main])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_t3/trace",
+        json={"entry": "main", "mode": "explain"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["explanation"] is None
+    assert data["steps"] == ["c_main", "c_helper"]
+    assert [g["kind"] for g in data["gaps"]] == ["explanation_failed"]
+
+
+def test_trace_static_mode_never_touches_the_explainer() -> None:
+    main = _chunk("c_main", "main")
+    app, explainer = _explain_app(("[S1]", (1,)), [main], [main])
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/repositories/repo_t3/trace", json={"entry": "main", "mode": "static"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["explanation"] is None
+    assert explainer.received == []
 
 
 def test_trace_success_returns_nodes_edges_steps_and_null_explanation() -> None:

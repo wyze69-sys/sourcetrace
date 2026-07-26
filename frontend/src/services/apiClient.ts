@@ -15,6 +15,7 @@ import type {
   SendMessageResponse,
   ServerCapabilities,
   TokenResponse,
+  TraceMode,
 } from './types'
 
 export class ApiError extends Error {
@@ -253,6 +254,7 @@ export class ApiClient {
     repositoryId: string,
     entry: string,
     maxDepth?: number,
+    mode: TraceMode = 'static',
   ): Promise<FlowTraceResponse> {
     return this.request<FlowTraceResponse>(
       `/repositories/${encodeURIComponent(repositoryId)}/trace`,
@@ -261,7 +263,7 @@ export class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           entry,
-          mode: 'static',
+          mode,
           ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
         }),
       },

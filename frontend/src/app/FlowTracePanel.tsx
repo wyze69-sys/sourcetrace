@@ -11,6 +11,7 @@ export interface FlowTracePanelProps {
   client: ApiClient
   repositoryId: string
   repositoryName: string
+  explainAvailable?: boolean
 }
 
 const SAFE_TRACE_ERROR_MESSAGE = 'Flow trace failed safely. Try again.'
@@ -71,9 +72,15 @@ function extraConnections(result: FlowTraceResponse): TraceEdge[] {
   return extras
 }
 
-export function FlowTracePanel({ client, repositoryId, repositoryName }: FlowTracePanelProps) {
+export function FlowTracePanel({
+  client,
+  repositoryId,
+  repositoryName,
+  explainAvailable = false,
+}: FlowTracePanelProps) {
   const [entry, setEntry] = useState('')
   const [loading, setLoading] = useState(false)
+  const [explaining, setExplaining] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<FlowTraceResponse | null>(null)
   const [openSnippets, setOpenSnippets] = useState<Record<string, boolean>>({})
@@ -111,6 +118,29 @@ export function FlowTracePanel({ client, repositoryId, repositoryName }: FlowTra
       }
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleExplain = async () => {
+    if (!result || result.steps.length === 0) return
+    setExplaining(true)
+    setError(null)
+    try {
+      const res = await client.traceFlow(
+        repositoryId,
+        result.entry.query,
+        undefined,
+        'explain',
+      )
+      setResult(res)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else {
+        setError(SAFE_TRACE_ERROR_MESSAGE)
+      }
+    } finally {
+      setExplaining(false)
     }
   }
 
@@ -288,6 +318,49 @@ export function FlowTracePanel({ client, repositoryId, repositoryName }: FlowTra
               </ul>
             </div>
           )}
+        </div>
+      )}
+
+      {result !== null && rows.length > 0 && explainAvailable && (
+        <div style={{ marginTop: '14px' }}>
+          {result.explanation === null && (
+            <button
+              type="button"
+              className="btn-action"
+              disabled={explaining}
+              onClick={handleExplain}
+            >
+              {explaining ? 'Explaining...' : 'Explain this flow'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {result !== null && result.explanation !== null && (
+        <div
+          className="trace-explanation"
+          style={{
+            marginTop: '14px',
+            border: '1px solid #1e3a5f',
+            background: '#0b1a2b',
+            borderRadius: '8px',
+            padding: '12px',
+          }}
+        >
+          <h3 style={{ fontSize: '0.9rem', color: '#38bdf8', margin: '0 0 8px 0' }}>
+            Grounded explanation (cites steps{' '}
+            {result.explanation.cited_steps.map((s) => `S${s}`).join(', ')}):
+          </h3>
+          <p
+            className="panel-text"
+            style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}
+          >
+            {result.explanation.text}
+          </p>
+          <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#64748b' }}>
+            This narration is restricted to the traced steps above; [S#] markers map to
+            step numbers.
+          </p>
         </div>
       )}
 

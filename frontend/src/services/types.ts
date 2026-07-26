@@ -204,6 +204,13 @@ export interface TraceGap {
   node_id: string | null
 }
 
+export type TraceMode = 'static' | 'explain'
+
+export interface TraceExplanation {
+  text: string
+  cited_steps: number[]
+}
+
 export interface FlowTraceResponse {
   repository_id: string
   entry: TraceEntry
@@ -211,5 +218,5 @@ export interface FlowTraceResponse {
   edges: TraceEdge[]
   steps: string[]
   gaps: TraceGap[]
-  explanation: null
+  explanation: TraceExplanation | null
 }

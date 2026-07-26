@@ -267,6 +267,29 @@ describe('ApiClient', () => {
     expect(res).toEqual(traceBody)
   })
 
+  it('traceFlow() sends explain mode when requested', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_trace_token')
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repository_id: 'repo_1',
+        entry: { query: 'main', resolved_node_id: 'c_main', candidates: ['c_main'] },
+        nodes: [],
+        edges: [],
+        steps: [],
+        gaps: [],
+        explanation: { text: 'Starts at [S1].', cited_steps: [1] },
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const res = await client.traceFlow('repo_1', 'main', undefined, 'explain')
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
+    expect(body).toEqual({ entry: 'main', mode: 'explain' })
+    expect(res.explanation).toEqual({ text: 'Starts at [S1].', cited_steps: [1] })
+  })
+
   it('traceFlow() omits max_depth when not supplied', async () => {
     sessionStorage.setItem('sourcetrace.access_token', 'jwt_trace_token')
     const mockFetch = vi.fn().mockResolvedValue({

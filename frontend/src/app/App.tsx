@@ -797,6 +797,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                   client={client}
                   repositoryId={selectedRepo.repository_id}
                   repositoryName={selectedRepo.name}
+                  explainAvailable={capabilities?.generation_available ?? false}
                 />
               )}
             </>

@@ -322,36 +322,56 @@ def get_semantic_retrieval_service(
     )
 
 
+def build_generation_adapter(settings: Settings):
+    """Select the LLM generation adapter from SOURCETRACE_LLM_PROVIDER.
+
+    No OpenAI client is constructed when Gemini is selected (and vice versa).
+    Raises RuntimeError for unsupported providers — callers must only invoke
+    this when generation is actually needed.
+    """
+    provider_name = (settings.llm_provider or "").strip().lower()
+
+    if provider_name == "gemini":
+        from sourcetrace.generation.client import GeminiGenerationAdapter
+
+        return GeminiGenerationAdapter(settings=settings)
+    if provider_name == "openai":
+        from sourcetrace.generation.client import OpenAIGenerationAdapter
+
+        return OpenAIGenerationAdapter(settings=settings)
+    raise RuntimeError(f"Unsupported LLM provider: {provider_name!r}")
+
+
 def get_grounded_answer_service(
     retrieval_service: Annotated[
         SemanticRetrievalService, Depends(get_semantic_retrieval_service)
     ],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GroundedAnswerService:
-    """Dependency provider for GroundedAnswerService.
-
-    Selects the LLM generation provider based on SOURCETRACE_LLM_PROVIDER
-    (default: "gemini"). No OpenAI client is constructed when Gemini is selected.
-    """
+    """Dependency provider for GroundedAnswerService."""
     from sourcetrace.generation.service import GroundedAnswerService
-
-    provider_name = (settings.llm_provider or "").strip().lower()
-
-    if provider_name == "gemini":
-        from sourcetrace.generation.client import GeminiGenerationAdapter
-
-        generation_adapter = GeminiGenerationAdapter(settings=settings)
-    elif provider_name == "openai":
-        from sourcetrace.generation.client import OpenAIGenerationAdapter
-
-        generation_adapter = OpenAIGenerationAdapter(settings=settings)
-    else:
-        raise RuntimeError(f"Unsupported LLM provider: {provider_name!r}")
 
     return GroundedAnswerService(
         retrieval_service=retrieval_service,
-        generation_provider=generation_adapter,
+        generation_provider=build_generation_adapter(settings),
     )
+
+
+def get_trace_explainer_factory(
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """Lazy factory for TraceExplanationService.
+
+    Returned as a zero-argument callable so static-mode trace requests never
+    construct an LLM adapter (which would raise when no provider is
+    configured). The route invokes it only after the capability gate passes.
+    """
+    from sourcetrace.generation.trace_explanation import TraceExplanationService
+
+    def factory() -> TraceExplanationService:
+        return TraceExplanationService(build_generation_adapter(settings))
+
+    return factory
 
 
 def get_conversation_exchange_repository() -> ConversationExchangeRepository:

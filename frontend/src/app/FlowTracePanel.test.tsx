@@ -192,4 +192,90 @@ describe('FlowTracePanel', () => {
       expect(screen.getByText('Flow trace failed safely. Try again.')).toBeInTheDocument(),
     )
   })
+
+  it('hides the explain control when generation is unavailable', async () => {
+    const traceFlow = vi.fn().mockResolvedValue(FULL_TRACE)
+    await runTrace(traceFlow, 'Dashboard')
+
+    await screen.findByText('Flow steps (3):')
+    expect(screen.queryByRole('button', { name: 'Explain this flow' })).not.toBeInTheDocument()
+  })
+
+  it('explain control re-traces in explain mode and renders the grounded explanation', async () => {
+    const explained: FlowTraceResponse = {
+      ...FULL_TRACE,
+      explanation: {
+        text: 'The component [S1] calls the client [S2], which hits the handler [S3].',
+        cited_steps: [1, 2, 3],
+      },
+    }
+    const traceFlow = vi
+      .fn()
+      .mockResolvedValueOnce(FULL_TRACE)
+      .mockResolvedValueOnce(explained)
+
+    const user = userEvent.setup()
+    render(
+      <FlowTracePanel
+        client={makeClient(traceFlow)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        explainAvailable
+      />,
+    )
+    await user.type(screen.getByLabelText('Trace entry symbol'), 'Dashboard')
+    await user.click(screen.getByRole('button', { name: 'Trace Flow' }))
+
+    const explainButton = await screen.findByRole('button', { name: 'Explain this flow' })
+    await user.click(explainButton)
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          'The component [S1] calls the client [S2], which hits the handler [S3].',
+        ),
+      ).toBeInTheDocument(),
+    )
+    expect(screen.getByText(/cites steps S1, S2, S3/)).toBeInTheDocument()
+    expect(traceFlow).toHaveBeenNthCalledWith(2, 'repo_1', 'Dashboard', undefined, 'explain')
+    // Control disappears once an explanation is shown.
+    expect(screen.queryByRole('button', { name: 'Explain this flow' })).not.toBeInTheDocument()
+  })
+
+  it('failed explanation keeps the static trace and surfaces the explanation_failed gap', async () => {
+    const failed: FlowTraceResponse = {
+      ...FULL_TRACE,
+      explanation: null,
+      gaps: [
+        ...FULL_TRACE.gaps,
+        {
+          kind: 'explanation_failed',
+          detail: 'The explanation was discarded; the static trace below is unaffected.',
+          node_id: null,
+        },
+      ],
+    }
+    const traceFlow = vi
+      .fn()
+      .mockResolvedValueOnce(FULL_TRACE)
+      .mockResolvedValueOnce(failed)
+
+    const user = userEvent.setup()
+    render(
+      <FlowTracePanel
+        client={makeClient(traceFlow)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        explainAvailable
+      />,
+    )
+    await user.type(screen.getByLabelText('Trace entry symbol'), 'Dashboard')
+    await user.click(screen.getByRole('button', { name: 'Trace Flow' }))
+    await user.click(await screen.findByRole('button', { name: 'Explain this flow' }))
+
+    await waitFor(() => expect(screen.getByText('explanation_failed')).toBeInTheDocument())
+    // Static trace untouched; explain remains offered for retry.
+    expect(screen.getByText('Flow steps (3):')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Explain this flow' })).toBeInTheDocument()
+  })
 })
