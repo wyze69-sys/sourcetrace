@@ -20,7 +20,9 @@ dependencies = [
   "pyjwt<3",
   "pymongo>=4.10,<5.0",
   "python-multipart>=0.0.20,<1.0",
-  "tree-sitter>=0.26.0",
+  # 0.26.0 causes a native access violation (0xC0000005) during JS/TS chunk
+  # extraction; see tests/fixtures/parser_fixtures/js_worker_av_regression.js
+  "tree-sitter>=0.25.2,<0.26",
   "tree-sitter-javascript>=0.25.0",
   "tree-sitter-typescript>=0.23.2",
   "uvicorn[standard]>=0.34,<1.0",
