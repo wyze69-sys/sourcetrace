@@ -267,6 +267,67 @@ describe('ApiClient', () => {
     expect(res).toEqual(traceBody)
   })
 
+  it('previewImpact() posts the symbol to the impact endpoint with Bearer auth', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_impact_token')
+
+    const impactBody = {
+      repository_id: 'repo_1',
+      target: { query: 'compute', resolved_node_id: 'c_target', candidates: ['c_target'] },
+      upstream: [],
+      downstream: [],
+      affected_endpoints: [],
+      affected_components: [],
+      affected_tests: [],
+      risk_level: 'medium',
+      risk_factors: [],
+      gaps: [],
+    }
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => impactBody,
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const res = await client.previewImpact('repo_1', 'compute', 3)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [reqUrl, reqInit] = mockFetch.mock.calls[0]
+    expect(reqUrl).toBe('/api/v1/repositories/repo_1/impact')
+    expect(reqInit.method).toBe('POST')
+    expect(JSON.parse(reqInit.body as string)).toEqual({
+      symbol: 'compute',
+      max_depth: 3,
+    })
+    const reqHeaders = reqInit.headers as Headers
+    expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_impact_token')
+    expect(res).toEqual(impactBody)
+  })
+
+  it('previewImpact() omits max_depth when not supplied', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_impact_token')
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repository_id: 'repo_1',
+        target: { query: 'x', resolved_node_id: null, candidates: [] },
+        upstream: [],
+        downstream: [],
+        affected_endpoints: [],
+        affected_components: [],
+        affected_tests: [],
+        risk_level: 'unknown',
+        risk_factors: [],
+        gaps: [],
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    await client.previewImpact('repo_1', 'x')
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string)
+    expect(body).toEqual({ symbol: 'x' })
+  })
+
   it('traceFlow() sends explain mode when requested', async () => {
     sessionStorage.setItem('sourcetrace.access_token', 'jwt_trace_token')
     const mockFetch = vi.fn().mockResolvedValue({

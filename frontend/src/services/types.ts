@@ -220,3 +220,63 @@ export interface FlowTraceResponse {
   gaps: TraceGap[]
   explanation: TraceExplanation | null
 }
+
+export type ImpactEdgeKind = 'call' | 'http'
+
+export type RiskSeverity = 'low' | 'medium' | 'high'
+
+export type RiskLevel = 'low' | 'medium' | 'high' | 'unknown'
+
+export interface ImpactTarget {
+  query: string
+  resolved_node_id: string | null
+  candidates: string[]
+}
+
+export interface ImpactItem {
+  node_id: string
+  relative_path: string
+  symbol_name: string
+  symbol_type: string
+  start_line: number
+  end_line: number
+  distance: number
+  confidence: TraceConfidence
+  edge_kind: ImpactEdgeKind
+  via_node_id: string
+  evidence_node_id: string
+  evidence_label: string
+  evidence_line_start: number
+  evidence_line_end: number
+}
+
+export interface AffectedEndpoint {
+  http_method: string
+  normalized_path: string
+  node_id: string
+}
+
+export interface RiskFactor {
+  kind: string
+  severity: RiskSeverity
+  detail: string
+}
+
+export interface ImpactGap {
+  kind: string
+  detail: string
+  node_id: string | null
+}
+
+export interface ChangeImpactResponse {
+  repository_id: string
+  target: ImpactTarget
+  upstream: ImpactItem[]
+  downstream: ImpactItem[]
+  affected_endpoints: AffectedEndpoint[]
+  affected_components: string[]
+  affected_tests: string[]
+  risk_level: RiskLevel
+  risk_factors: RiskFactor[]
+  gaps: ImpactGap[]
+}

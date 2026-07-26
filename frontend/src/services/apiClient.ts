@@ -1,4 +1,5 @@
 import type {
+  ChangeImpactResponse,
   ConversationDetailResponse,
   CreateConversationRequest,
   CreateConversationResponse,
@@ -264,6 +265,25 @@ export class ApiClient {
         body: JSON.stringify({
           entry,
           mode,
+          ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
+        }),
+      },
+      'protected',
+    )
+  }
+
+  async previewImpact(
+    repositoryId: string,
+    symbol: string,
+    maxDepth?: number,
+  ): Promise<ChangeImpactResponse> {
+    return this.request<ChangeImpactResponse>(
+      `/repositories/${encodeURIComponent(repositoryId)}/impact`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol,
           ...(maxDepth !== undefined ? { max_depth: maxDepth } : {}),
         }),
       },

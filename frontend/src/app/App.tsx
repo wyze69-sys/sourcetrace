@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient as defaultApiClient, ApiError, type ApiClient } from '../services/apiClient'
 import { FlowTracePanel } from './FlowTracePanel'
+import { ImpactPanel } from './ImpactPanel'
 import type {
   EvidenceSearchItem,
   HealthResponse,
@@ -798,6 +799,14 @@ export function App({ client = defaultApiClient }: AppProps) {
                   repositoryId={selectedRepo.repository_id}
                   repositoryName={selectedRepo.name}
                   explainAvailable={capabilities?.generation_available ?? false}
+                />
+              )}
+
+              {selectedRepo && selectedRepo.status === 'ready' && (
+                <ImpactPanel
+                  client={client}
+                  repositoryId={selectedRepo.repository_id}
+                  repositoryName={selectedRepo.name}
                 />
               )}
             </>
