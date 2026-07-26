@@ -272,6 +272,172 @@ def health():
     assert [(e.kind, e.http_method) for e in health.endpoints] == [("declares", "GET")]
 
 
+def test_apirouter_prefix_is_folded_into_normalized_path() -> None:
+    source = """from fastapi import APIRouter
+
+router = APIRouter(prefix="/api/v1/repositories", tags=["impact"])
+
+
+@router.post("/{repository_id}/impact")
+def preview_change_impact(repository_id: str):
+    return None
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "preview_change_impact")
+    assert handler.endpoints == (
+        EndpointEvidence(
+            kind="declares",
+            http_method="POST",
+            # The literal stays exactly as written in source (citation honesty);
+            # only the comparable normalized form gains the router prefix.
+            path_literal="/{repository_id}/impact",
+            normalized_path="/api/v1/repositories/{}/impact",
+            line_start=6,
+            line_end=6,
+        ),
+    )
+
+
+def test_blueprint_url_prefix_is_folded_including_route_decorator() -> None:
+    source = """from flask import Blueprint
+
+bp = Blueprint("admin", __name__, url_prefix="/admin")
+
+
+@bp.route("/users/<int:user_id>", methods=["GET", "DELETE"])
+def user(user_id):
+    return None
+"""
+    chunks = _parse(source)
+    user = _chunk(chunks, "user")
+    declared = {(e.http_method, e.normalized_path) for e in user.endpoints}
+    assert declared == {("GET", "/admin/users/{}"), ("DELETE", "/admin/users/{}")}
+
+
+def test_root_path_on_prefixed_router_declares_the_prefix_itself() -> None:
+    source = """router = APIRouter(prefix="/api/v1/items")
+
+
+@router.get("/")
+def list_items():
+    return []
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "list_items")
+    assert handler.endpoints[0].normalized_path == "/api/v1/items"
+    assert handler.endpoints[0].path_literal == "/"
+
+
+def test_trailing_slash_prefix_is_normalized_before_folding() -> None:
+    source = """router = APIRouter(prefix="/api/v1/things/")
+
+
+@router.get("/{thing_id}")
+def get_thing(thing_id: str):
+    return None
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "get_thing")
+    assert handler.endpoints[0].normalized_path == "/api/v1/things/{}"
+
+
+def test_computed_prefix_is_never_guessed() -> None:
+    source = """PREFIX = "/api/v1"
+router = APIRouter(prefix=PREFIX + "/repos")
+
+
+@router.get("/{repo_id}")
+def get_repo(repo_id: str):
+    return None
+"""
+    chunks = _parse(source)
+    handler = _chunk(chunks, "get_repo")
+    # Non-literal prefix: the declared path is kept unprefixed rather than
+    # fabricating a normalized path from an unresolved expression.
+    assert handler.endpoints[0].normalized_path == "/{}"
+
+
+def test_unprefixed_app_decorator_is_unchanged() -> None:
+    source = """router = APIRouter(prefix="/api/v1/other")
+
+
+@app.get("/api/v1/health")
+def health():
+    return "ok"
+"""
+    chunks = _parse(source)
+    health = _chunk(chunks, "health")
+    assert health.endpoints[0].normalized_path == "/api/v1/health"
+
+
+def test_prefixed_declares_matches_client_call_through_flow_trace() -> None:
+    """Cross-file regression: the exact gap this fix closes (client calls the
+    full path; the handler declares only the suffix under a router prefix)."""
+    from datetime import UTC, datetime
+
+    from sourcetrace.models.domain import CodeChunk, RetrievalResult
+    from sourcetrace.retrieval.trace import FlowTraceService
+
+    handler_source = """router = APIRouter(prefix="/api/v1/stats")
+
+
+@router.get("/summary")
+def read_summary():
+    return None
+"""
+    client_source = """def fetch_summary(client):
+    return client.get("/api/v1/stats/summary")
+"""
+    parsed = parse_python_source(
+        source=handler_source,
+        relative_path="backend/routes/stats.py",
+        repository_id="repo_flow",
+        owner_session_id="sess_flow",
+    ) + parse_python_source(
+        source=client_source,
+        relative_path="backend/client.py",
+        repository_id="repo_flow",
+        owner_session_id="sess_flow",
+    )
+    now = datetime(2026, 7, 26, tzinfo=UTC)
+    chunks = [
+        CodeChunk(
+            chunk_id=p.chunk_id,
+            repository_id=p.repository_id,
+            owner_session_id=p.owner_session_id,
+            relative_path=p.relative_path,
+            language=p.language,
+            symbol_name=p.symbol_name,
+            symbol_type=p.symbol_type,
+            start_line=p.start_line,
+            end_line=p.end_line,
+            content=p.content,
+            content_hash=p.content_hash,
+            parser_version=p.parser_version,
+            created_at=now,
+            references=p.references,
+            imports=p.imports,
+            endpoints=p.endpoints,
+        )
+        for p in parsed
+    ]
+
+    class _Repo:
+        def list_by_repository(self, owner_session_id, repository_id):
+            return list(chunks)
+
+        def search_lexical(self, owner_session_id, repository_id, query_text, limit=5):
+            hits = [c for c in chunks if query_text in c.symbol_name]
+            return [RetrievalResult(chunk=c, score=1.0) for c in hits[:limit]]
+
+    result = FlowTraceService(_Repo()).trace("sess_flow", "repo_flow", "fetch_summary")
+
+    http_edges = [e for e in result.edges if e.kind == "http"]
+    assert len(http_edges) == 1
+    assert http_edges[0].evidence_label == "GET /api/v1/stats/summary"
+    assert not any(g.kind == "endpoint_unmatched" for g in result.gaps)
+
+
 def test_http_client_call_yields_calls_endpoint_with_host_stripped() -> None:
     source = """import requests
 
@@ -339,9 +505,9 @@ def test_normalize_endpoint_path_forms() -> None:
 
 
 def test_parser_version_bumped_for_flow_evidence() -> None:
-    assert PYTHON_AST_PARSER_VERSION == "python-ast-v2"
+    assert PYTHON_AST_PARSER_VERSION == "python-ast-v3"
     chunks = _parse("def f():\n    return 1\n")
-    assert chunks[0].parser_version == "python-ast-v2"
+    assert chunks[0].parser_version == "python-ast-v3"
 
 
 def test_symbol_free_module_chunk_has_empty_evidence() -> None:

@@ -38,7 +38,7 @@ from sourcetrace.parsers.javascript_ast import (
     parse_javascript_source,
 )
 
-PYTHON_AST_PARSER_VERSION: str = "python-ast-v2"
+PYTHON_AST_PARSER_VERSION: str = "python-ast-v3"
 
 _SYMBOL_NODE_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
@@ -135,8 +135,66 @@ def _import_evidence(node: ast.Import | ast.ImportFrom) -> list[ImportEvidence]:
     return out
 
 
+_ROUTER_PREFIX_KEYWORDS: frozenset[str] = frozenset({"prefix", "url_prefix"})
+
+
+def collect_router_prefixes(tree: ast.Module) -> dict[str, str]:
+    """Map module-level router names to their literal path prefixes.
+
+    Detects `name = SomeCall(..., prefix="/lit")` (FastAPI APIRouter) and
+    `name = SomeCall(..., url_prefix="/lit")` (Flask Blueprint) assignments.
+    Only string literals are folded; computed prefixes stay unresolvable and
+    surface downstream as endpoint_unmatched gaps rather than guesses.
+    Prefixes applied at include/mount time in *other* files (e.g.
+    `app.include_router(router, prefix=...)`) are outside a single-file parse
+    and are intentionally not resolved here.
+    """
+    prefixes: dict[str, str] = {}
+    for top_node in tree.body:
+        if isinstance(top_node, ast.Assign) and len(top_node.targets) == 1:
+            target = top_node.targets[0]
+        elif isinstance(top_node, ast.AnnAssign):
+            target = top_node.target
+        else:
+            continue
+        value = top_node.value
+        if not (isinstance(target, ast.Name) and isinstance(value, ast.Call)):
+            continue
+        for kw in value.keywords:
+            if (
+                kw.arg in _ROUTER_PREFIX_KEYWORDS
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+                and kw.value.value.startswith("/")
+                and len(kw.value.value) > 1
+            ):
+                prefixes[target.id] = kw.value.value.rstrip("/")
+    return prefixes
+
+
+def _prefixed_normalized_path(
+    dec_func: ast.Attribute, path: str, router_prefixes: dict[str, str]
+) -> str:
+    """Normalize a declared path, folding the router's own literal prefix in."""
+    prefix = (
+        router_prefixes.get(dec_func.value.id)
+        if isinstance(dec_func.value, ast.Name)
+        else None
+    )
+    if prefix is None:
+        return _normalize_endpoint_path(path)
+    if path in ("", "/"):
+        full = prefix
+    elif path.startswith("/"):
+        full = prefix + path
+    else:
+        full = f"{prefix}/{path}"
+    return _normalize_endpoint_path(full)
+
+
 def _decorator_endpoints(
     node: ast.AST,
+    router_prefixes: dict[str, str],
 ) -> tuple[list[EndpointEvidence], set[int]]:
     """Extract declares-endpoints from decorators; also return consumed Call ids."""
     out: list[EndpointEvidence] = []
@@ -151,6 +209,7 @@ def _decorator_endpoints(
             continue
         method_attr = dec.func.attr.casefold()
         path = first_arg.value
+        normalized = _prefixed_normalized_path(dec.func, path, router_prefixes)
         line_start, line_end = _node_lines(dec)
         if method_attr in _HTTP_ENDPOINT_METHODS:
             consumed.add(id(dec))
@@ -159,7 +218,7 @@ def _decorator_endpoints(
                     "declares",
                     method_attr.upper(),
                     path,
-                    _normalize_endpoint_path(path),
+                    normalized,
                     line_start,
                     line_end,
                 )
@@ -182,7 +241,7 @@ def _decorator_endpoints(
                         "declares",
                         str(method).upper(),
                         path,
-                        _normalize_endpoint_path(path),
+                        normalized,
                         line_start,
                         line_end,
                     )
@@ -193,11 +252,12 @@ def _decorator_endpoints(
 def _extract_flow_evidence(
     node: ast.AST,
     module_imports: list[ImportEvidence],
+    router_prefixes: dict[str, str],
 ) -> _FlowEvidence:
     """Deterministically extract references, imports, and endpoints for one symbol."""
     references: list[ReferenceEvidence] = []
     imports: list[ImportEvidence] = list(module_imports)
-    endpoints, consumed_decorators = _decorator_endpoints(node)
+    endpoints, consumed_decorators = _decorator_endpoints(node, router_prefixes)
 
     for scoped in _iter_scope(node):
         if isinstance(scoped, (ast.Import, ast.ImportFrom)):
@@ -378,6 +438,8 @@ def parse_python_source(
         if isinstance(top_node, (ast.Import, ast.ImportFrom)):
             module_imports.extend(_import_evidence(top_node))
 
+    router_prefixes = collect_router_prefixes(tree)
+
     for sym in raw_symbols:
         # Extract content from source lines (0-indexed slice)
         content = "".join(source_lines[sym.start_line - 1 : sym.end_line])
@@ -386,7 +448,7 @@ def parse_python_source(
             repository_id, relative_path, sym.symbol_type, sym.qualified_name,
             sym.start_line, sym.end_line, content_hash, PYTHON_AST_PARSER_VERSION
         )
-        evidence = _extract_flow_evidence(sym.node, module_imports)
+        evidence = _extract_flow_evidence(sym.node, module_imports, router_prefixes)
         chunks.append(
             ParsedCodeChunk(
                 chunk_id=chunk_id,
