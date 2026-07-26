@@ -70,13 +70,12 @@ def test_no_cookie_protected_request_creates_one_persisted_session_and_set_cooki
     response = client.get("/api/v1/protected")
 
     assert response.status_code == 200
-    assert "set-cookie" in response.headers
-    cookie_header = response.headers["set-cookie"]
-    assert "sourcetrace_session=" in cookie_header
-    assert "httponly" in cookie_header.lower()
-    assert "samesite=lax" in cookie_header.lower()
-    assert "max-age=604800" in cookie_header.lower()
-    assert "path=/" in cookie_header.lower()
+    cookie_headers = response.headers.get_list("set-cookie")
+    assert any("sourcetrace_session=" in h for h in cookie_headers)
+    assert any("httponly" in h.lower() for h in cookie_headers)
+    assert any("samesite=strict" in h.lower() for h in cookie_headers)
+    assert any("max-age=604800" in h.lower() for h in cookie_headers)
+    assert any("path=/api/v1/auth/session" in h.lower() for h in cookie_headers)
 
     mock_repo.save.assert_called_once()
     saved_session = mock_repo.save.call_args[0][0]

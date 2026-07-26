@@ -30,5 +30,7 @@ services:
         sync: false
       - key: SOURCETRACE_SESSION_SIGNING_SECRET
         generateValue: true
+      - key: SOURCETRACE_JWT_SECRET
+        generateValue: true
       - key: SOURCETRACE_CORS_ORIGINS
         sync: false

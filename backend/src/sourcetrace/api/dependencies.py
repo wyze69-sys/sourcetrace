@@ -204,6 +204,34 @@ CurrentOwnerId = Annotated[str, Depends(get_current_owner_id)]
 
 
 
+AUTH_SESSION_COOKIE_PATH = "/api/v1/auth/session"
+
+
+def _set_bootstrap_cookie(
+    response: Response,
+    settings: Settings,
+    token: str,
+    max_age: int,
+) -> None:
+    is_production = settings.env.lower() == "production"
+    response.delete_cookie(
+        key=settings.session_cookie_name,
+        path="/",
+        httponly=True,
+        samesite="strict",
+        secure=is_production,
+    )
+    response.set_cookie(
+        key=settings.session_cookie_name,
+        value=token,
+        max_age=max_age,
+        httponly=True,
+        samesite="strict",
+        path=AUTH_SESSION_COOKIE_PATH,
+        secure=is_production,
+    )
+
+
 def get_current_session(
     request: Request,
     response: Response,
@@ -213,20 +241,25 @@ def get_current_session(
 ) -> AnonymousSession:
     """FastAPI dependency resolving or provisioning the anonymous browser session context."""
     cookie_value = request.cookies.get(settings.session_cookie_name)
+    now = datetime.now(UTC)
 
     if cookie_value:
-        claimed_owner_id = signer.verify_cookie_token(cookie_value)
+        claimed_owner_id = signer.verify_cookie_token(cookie_value, current_time=now)
         if claimed_owner_id:
             existing_session = repo.get_by_id(claimed_owner_id)
-            if existing_session is not None:
-                now = datetime.now(UTC)
-                if (
-                    existing_session.owner_session_id == claimed_owner_id
-                    and existing_session.expires_at > now
-                ):
-                    return existing_session
+            if (
+                existing_session is not None
+                and existing_session.owner_session_id == claimed_owner_id
+                and existing_session.expires_at > now
+            ):
+                token = signer.create_cookie_token(
+                    existing_session.owner_session_id, existing_session.expires_at
+                )
+                remaining_seconds = int((existing_session.expires_at - now).total_seconds())
+                max_age = max(1, remaining_seconds)
+                _set_bootstrap_cookie(response, settings, token, max_age)
+                return existing_session
 
-    now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=SESSION_MAX_AGE_SECONDS)
     owner_session_id = generate_owner_session_id()
 
@@ -240,17 +273,7 @@ def get_current_session(
     repo.save(new_session)
 
     token = signer.create_cookie_token(owner_session_id, expires_at)
-    is_production = settings.env.lower() == "production"
-
-    response.set_cookie(
-        key=settings.session_cookie_name,
-        value=token,
-        max_age=SESSION_MAX_AGE_SECONDS,
-        httponly=True,
-        samesite="lax",
-        path="/",
-        secure=is_production,
-    )
+    _set_bootstrap_cookie(response, settings, token, SESSION_MAX_AGE_SECONDS)
 
     return new_session
 

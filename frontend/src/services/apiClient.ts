@@ -102,13 +102,7 @@ export class ApiClient {
     if (options.baseUrl !== undefined) {
       this.baseUrl = options.baseUrl
     } else {
-      const envUrl = import.meta.env.VITE_API_BASE_URL
-      if (envUrl && envUrl.trim().length > 0) {
-        const trimmed = envUrl.trim().replace(/\/$/, '')
-        this.baseUrl = trimmed.endsWith('/api/v1') ? trimmed : `${trimmed}/api/v1`
-      } else {
-        this.baseUrl = '/api/v1'
-      }
+      this.baseUrl = '/api/v1'
     }
   }
 
@@ -207,8 +201,12 @@ export class ApiClient {
 
     if (!response.ok) {
       if (mode === 'protected' && response.status === 401 && !retried) {
-        this.clearToken(tokenForRequest ?? undefined)
-        await this.provisionAccessToken()
+        if (this.accessToken === tokenForRequest) {
+          this.clearToken(tokenForRequest ?? undefined)
+          await this.provisionAccessToken()
+        } else if (!this.accessToken) {
+          await this.provisionAccessToken()
+        }
         return this.request<T>(path, init, 'protected', true)
       }
 

@@ -58,7 +58,7 @@ describe('ApiClient', () => {
     expect(headers.has('Authorization')).toBe(false)
   })
 
-  it('defaults to relative /api/v1 base path when VITE_API_BASE_URL is unset', async () => {
+  it('defaults to relative /api/v1 base path and ignores VITE_API_BASE_URL', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ status: 'ok', version: '1.0.0', timestamp: '2026-07-23T16:00:00Z' }),
@@ -357,6 +357,85 @@ describe('ApiClient', () => {
     }
 
     expect(mockFetch).toHaveBeenCalledTimes(3)
+  })
+
+  it('handles delayed 401 when token B is already active without issuing a redundant third token', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_stale_token_A')
+
+    let fetchCount = 0
+    let secondRequestResolver: ((val: unknown) => void) | null = null
+
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      fetchCount++
+      const headers = init?.headers as Headers
+      const authHeader = headers?.get?.('Authorization')
+
+      if (url === '/api/v1/auth/session') {
+        return {
+          ok: true,
+          json: async () => ({
+            access_token: 'jwt_fresh_token_B',
+            token_type: 'Bearer',
+            expires_in: 604800,
+          }),
+        }
+      }
+
+      if (url === '/api/v1/repositories') {
+        if (authHeader === 'Bearer jwt_stale_token_A') {
+          if (fetchCount === 1) {
+            // First request fails immediately with 401
+            return {
+              ok: false,
+              status: 401,
+              json: async () => ({ error: { code: 'UNAUTHORIZED', message: 'Stale token A' } }),
+            }
+          } else {
+            // Second request returns 401 after a delay (simulating delayed arrival)
+            return new Promise((resolve) => {
+              secondRequestResolver = () =>
+                resolve({
+                  ok: false,
+                  status: 401,
+                  json: async () => ({ error: { code: 'UNAUTHORIZED', message: 'Stale token A' } }),
+                })
+            })
+          }
+        }
+        if (authHeader === 'Bearer jwt_fresh_token_B') {
+          return {
+            ok: true,
+            json: async () => ({ repositories: [] }),
+          }
+        }
+      }
+
+      throw new Error(`Unexpected request: ${url}`)
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+
+    // Start request 1 and request 2 concurrently with stale token A
+    const req1Promise = client.listRepositories()
+    const req2Promise = client.listRepositories()
+
+    // Wait for req1 to finish its 401 recovery and resolve with token B
+    await req1Promise
+
+    // Now token B is active in client & sessionStorage
+    expect(sessionStorage.getItem('sourcetrace.access_token')).toBe('jwt_fresh_token_B')
+
+    // Now release second request's delayed 401 response
+    if (secondRequestResolver) {
+      ;(secondRequestResolver as () => void)()
+    }
+
+    const res2 = await req2Promise
+    expect(res2).toEqual({ repositories: [] })
+
+    // Total calls to /auth/session MUST be exactly 1
+    const authSessionCalls = mockFetch.mock.calls.filter(([url]) => url === '/api/v1/auth/session')
+    expect(authSessionCalls.length).toBe(1)
   })
 
   it('404 or 500 response on protected request does NOT clear or replace stored token', async () => {
