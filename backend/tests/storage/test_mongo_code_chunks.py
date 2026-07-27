@@ -696,16 +696,18 @@ def test_unusual_numeric_objects_cannot_leak_raw_exceptions() -> None:
     assert "sk-numeric-key" not in str(exc_info.value)
 
 
-def test_runtime_indexes_include_unique_owner_repo_chunk_index() -> None:
+def test_runtime_indexes_include_unique_owner_repo_gen_chunk_index() -> None:
     mock_db = MagicMock()
     init_indexes(mock_db)
     mock_db["code_chunks"].create_index.assert_any_call(
         [
             ("owner_session_id", 1),
             ("repository_id", 1),
+            ("generation_id", 1),
             ("chunk_id", 1),
         ],
         unique=True,
-        name="code_chunks_owner_repo_chunk_idx",
+        name="code_chunks_owner_repo_gen_chunk_idx",
     )
+    mock_db["code_chunks"].drop_index.assert_called_once_with("code_chunks_owner_repo_chunk_idx")
 

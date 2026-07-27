@@ -470,6 +470,37 @@ class MongoRepositoryRepository:
             return None
         return _doc_to_repository(doc)
 
+    def update_active_generation(
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        active_generation_id: str,
+        updated_at: datetime,
+    ) -> RepositoryRecord | None:
+        owner_id = _validate_non_empty_string(owner_session_id)
+        repo_id = _validate_non_empty_string(repository_id)
+        gen_id = _validate_non_empty_string(active_generation_id)
+
+        query_filter = {
+            "owner_session_id": owner_id,
+            "repository_id": repo_id,
+        }
+        set_doc = {
+            "active_generation_id": gen_id,
+            "last_indexed_at": _ensure_utc(updated_at),
+            "updated_at": _ensure_utc(updated_at),
+        }
+
+        doc = self._collection.find_one_and_update(
+            query_filter,
+            {"$set": set_doc},
+            return_document=ReturnDocument.AFTER,
+            upsert=False,
+        )
+        if doc is None:
+            return None
+        return _doc_to_repository(doc)
+
     def delete(self, owner_session_id: str, repository_id: str) -> bool:
 
         query_filter = {
@@ -656,6 +687,10 @@ def build_vector_search_index_definition(
                 {
                     "type": "filter",
                     "path": "repository_id",
+                },
+                {
+                    "type": "filter",
+                    "path": "generation_id",
                 },
             ]
         },
@@ -1169,6 +1204,7 @@ class MongoCodeChunkRepository:
 
         owner_id = _validate_non_empty_string(first.owner_session_id)
         repo_id = _validate_non_empty_string(first.repository_id)
+        gen_id = first.generation_id
         model_id = first.embedding_model
         dimensions = first.embedding_dimensions
 
@@ -1192,11 +1228,12 @@ class MongoCodeChunkRepository:
                 not isinstance(chunk, CodeChunk)
                 or chunk.owner_session_id != owner_id
                 or chunk.repository_id != repo_id
+                or chunk.generation_id != gen_id
                 or chunk.embedding_model != model_id
                 or chunk.embedding_dimensions != dimensions
             ):
                 raise StorageDataError(
-                    "Mismatched owner, repository, model, or dimensions in batch."
+                    "Mismatched owner, repository, generation, model, or dimensions in batch."
                 )
 
             _validate_non_empty_string(chunk.chunk_id)
@@ -1208,6 +1245,7 @@ class MongoCodeChunkRepository:
             query_filter = {
                 "owner_session_id": owner_id,
                 "repository_id": repo_id,
+                "generation_id": chunk.generation_id,
                 "chunk_id": chunk.chunk_id,
             }
             bulk_requests.append(ReplaceOne(query_filter, doc, upsert=True))
@@ -1224,16 +1262,22 @@ class MongoCodeChunkRepository:
         return len(chunks)
 
     def list_by_repository(
-        self, owner_session_id: str, repository_id: str
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        generation_id: str | None = None,
     ) -> list[CodeChunk]:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
         repo_id = _validate_non_empty_string(repository_id)
 
-        query_filter = {
+        query_filter: dict[str, Any] = {
             "owner_session_id": owner_id,
             "repository_id": repo_id,
         }
+        if generation_id is not None:
+            query_filter["generation_id"] = _validate_non_empty_string(generation_id)
+
         sort_spec = [
             ("relative_path", 1),
             ("start_line", 1),
@@ -1263,7 +1307,29 @@ class MongoCodeChunkRepository:
 
         try:
             result = self._collection.delete_many(query_filter)
-            return result.deleted_count
+            return int(result.deleted_count)
+        except Exception:
+            raise StorageOperationError(
+                "Database delete operation failed safely."
+            ) from None
+
+    def delete_by_generation(
+        self, owner_session_id: str, repository_id: str, generation_id: str
+    ) -> int:
+        self._ensure_indexes_lazily()
+        owner_id = _validate_non_empty_string(owner_session_id)
+        repo_id = _validate_non_empty_string(repository_id)
+        gen_id = _validate_non_empty_string(generation_id)
+
+        query_filter = {
+            "owner_session_id": owner_id,
+            "repository_id": repo_id,
+            "generation_id": gen_id,
+        }
+
+        try:
+            result = self._collection.delete_many(query_filter)
+            return int(result.deleted_count)
         except Exception:
             raise StorageOperationError(
                 "Database delete operation failed safely."
@@ -1275,6 +1341,7 @@ class MongoCodeChunkRepository:
         repository_id: str,
         query_vector: list[float],
         limit: int = 5,
+        generation_id: str | None = None,
     ) -> list[RetrievalResult]:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
@@ -1352,6 +1419,13 @@ class MongoCodeChunkRepository:
 
         effective_num_candidates = max(configured_num_candidates, limit)
 
+        vector_filter: dict[str, Any] = {
+            "owner_session_id": {"$eq": owner_id},
+            "repository_id": {"$eq": repo_id},
+        }
+        if generation_id is not None:
+            vector_filter["generation_id"] = {"$eq": _validate_non_empty_string(generation_id)}
+
         pipeline: list[dict[str, Any]] = [
             {
                 "$vectorSearch": {
@@ -1360,10 +1434,7 @@ class MongoCodeChunkRepository:
                     "queryVector": float_query,
                     "numCandidates": effective_num_candidates,
                     "limit": limit,
-                    "filter": {
-                        "owner_session_id": {"$eq": owner_id},
-                        "repository_id": {"$eq": repo_id},
-                    },
+                    "filter": vector_filter,
                 }
             },
             {
@@ -1429,6 +1500,7 @@ class MongoCodeChunkRepository:
         repository_id: str,
         query_text: str,
         limit: int = 5,
+        generation_id: str | None = None,
     ) -> list[RetrievalResult]:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
@@ -1454,10 +1526,12 @@ class MongoCodeChunkRepository:
         query_clean = " ".join(query_tokens).lower()
         query_token_set = set(query_tokens)
 
-        base_filter = {
+        base_filter: dict[str, Any] = {
             "owner_session_id": owner_id,
             "repository_id": repo_id,
         }
+        if generation_id is not None:
+            base_filter["generation_id"] = _validate_non_empty_string(generation_id)
 
         candidates_by_id: dict[str, dict] = {}
         stage_limit = max(limit * 20, 100)
@@ -2140,10 +2214,19 @@ def init_indexes(db: Database) -> None:
         )
 
         db["code_chunks"].create_index(
-            [("owner_session_id", 1), ("repository_id", 1), ("chunk_id", 1)],
+            [
+                ("owner_session_id", 1),
+                ("repository_id", 1),
+                ("generation_id", 1),
+                ("chunk_id", 1),
+            ],
             unique=True,
-            name="code_chunks_owner_repo_chunk_idx",
+            name="code_chunks_owner_repo_gen_chunk_idx",
         )
+        try:
+            db["code_chunks"].drop_index("code_chunks_owner_repo_chunk_idx")
+        except Exception:
+            pass
         db["code_chunks"].create_index(
             [("owner_session_id", 1), ("repository_id", 1)], name="code_chunks_owner_repo_idx"
         )

@@ -61,6 +61,14 @@ class RepositoryRepository(Protocol):
         chunk_count: int | None = None,
     ) -> RepositoryRecord | None: ...
 
+    def update_active_generation(
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        active_generation_id: str,
+        updated_at: datetime,
+    ) -> RepositoryRecord | None: ...
+
     def delete(self, owner_session_id: str, repository_id: str) -> bool: ...
 
 
@@ -96,14 +104,16 @@ class IndexingJobRepository(Protocol):
     ) -> int: ...
 
 
-
 class CodeChunkRepository(Protocol):
     """Persistence interface for AST code chunks and vector search."""
 
     def save_many(self, chunks: list[CodeChunk]) -> int: ...
 
     def list_by_repository(
-        self, owner_session_id: str, repository_id: str
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        generation_id: str | None = None,
     ) -> list[CodeChunk]: ...
 
     def search_vectors(
@@ -112,6 +122,7 @@ class CodeChunkRepository(Protocol):
         repository_id: str,
         query_vector: list[float],
         limit: int = 5,
+        generation_id: str | None = None,
     ) -> list[RetrievalResult]: ...
 
     def search_lexical(
@@ -120,10 +131,15 @@ class CodeChunkRepository(Protocol):
         repository_id: str,
         query_text: str,
         limit: int = 5,
+        generation_id: str | None = None,
     ) -> list[RetrievalResult]: ...
 
     def delete_by_repository(
         self, owner_session_id: str, repository_id: str
+    ) -> int: ...
+
+    def delete_by_generation(
+        self, owner_session_id: str, repository_id: str, generation_id: str
     ) -> int: ...
 
 
