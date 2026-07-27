@@ -402,6 +402,7 @@ def preview_change_impact(
             symbol_query=body.symbol,
             max_depth=body.max_depth,
             generation_id=repo.active_generation_id,
+            repository=repo,
         )
     except StorageDataError as err:
         raise HTTPException(
@@ -459,6 +460,7 @@ def preview_diff_impact(
             diff_text=body.diff,
             max_depth=body.max_depth,
             generation_id=repo.active_generation_id,
+            repository=repo,
         )
     except DiffParseError as err:
         raise HTTPException(

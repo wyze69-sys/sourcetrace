@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sourcetrace.models.domain import CodeChunk
+from sourcetrace.models.domain import CodeChunk, RepositoryRecord
 from sourcetrace.retrieval.diff import DiffFile, parse_unified_diff
 from sourcetrace.retrieval.trace import (
     EVIDENCE_PARSER_VERSIONS,
@@ -37,6 +37,34 @@ from sourcetrace.retrieval.trace import (
     resolve_reference,
 )
 from sourcetrace.storage.repositories import CodeChunkRepository
+
+
+def _build_repo_stale_detail(repository: RepositoryRecord) -> str:
+    details: list[str] = []
+    if repository.indexed_commit_sha:
+        sha_str = (
+            repository.indexed_commit_sha[:7]
+            if len(repository.indexed_commit_sha) >= 7
+            else repository.indexed_commit_sha
+        )
+        details.append(f"indexed commit {sha_str}")
+    if repository.last_indexed_at:
+        details.append(f"last indexed {repository.last_indexed_at.isoformat()}")
+
+    meta_info = f" ({'; '.join(details)})" if details else ""
+    return f"Repository index is out of date{meta_info}; refresh repository to update."
+
+
+def _should_report_stale_index_gap(
+    all_chunks: list[CodeChunk],
+    repository: RepositoryRecord | None,
+) -> bool:
+    if repository is not None and repository.parser_versions:
+        if repository.flow_evidence_complete:
+            return False
+        return any(c.parser_version not in EVIDENCE_PARSER_VERSIONS for c in all_chunks)
+    return any(c.parser_version not in EVIDENCE_PARSER_VERSIONS for c in all_chunks)
+
 
 MAX_IMPACT_DEPTH: int = 6
 MAX_IMPACT_NODES_PER_DIRECTION: int = 50
@@ -183,6 +211,7 @@ class ChangeImpactService:
         symbol_query: str,
         max_depth: int | None = None,
         generation_id: str | None = None,
+        repository: RepositoryRecord | None = None,
     ) -> ChangeImpactResult:
         depth_cap = MAX_IMPACT_DEPTH
         if max_depth is not None:
@@ -196,8 +225,18 @@ class ChangeImpactService:
         )
 
         gaps: list[ImpactGap] = []
-        stale_count = sum(1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS)
-        if stale_count:
+        if repository is not None and repository.is_stale is True:
+            gaps.append(
+                ImpactGap(
+                    kind="repo_stale",
+                    detail=_build_repo_stale_detail(repository),
+                )
+            )
+
+        if _should_report_stale_index_gap(all_chunks, repository):
+            stale_count = sum(
+                1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS
+            )
             gaps.append(
                 ImpactGap(
                     kind="stale_index",
@@ -295,16 +334,9 @@ class ChangeImpactService:
         diff_text: str,
         max_depth: int | None = None,
         generation_id: str | None = None,
+        repository: RepositoryRecord | None = None,
     ) -> DiffImpactResult:
-        """Aggregate impact preview for a pasted unified diff.
-
-        The indexed repository is treated as the diff's pre-change baseline:
-        hunks are mapped to indexed chunks by old-file line numbers, every
-        touched chunk becomes a traversal seed, and mismatches between the
-        diff's context/deleted lines and indexed content are reported as
-        diff_stale gaps. DiffParseError from unparseable input propagates to
-        the caller.
-        """
+        """Produce a deterministic static impact preview for a pasted unified diff."""
         depth_cap = MAX_IMPACT_DEPTH
         if max_depth is not None:
             depth_cap = max(1, min(max_depth, MAX_IMPACT_DEPTH))
@@ -320,8 +352,18 @@ class ChangeImpactService:
         by_id = {c.chunk_id: c for c in all_chunks}
         gaps: list[ImpactGap] = []
 
-        stale_count = sum(1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS)
-        if stale_count:
+        if repository is not None and repository.is_stale is True:
+            gaps.append(
+                ImpactGap(
+                    kind="repo_stale",
+                    detail=_build_repo_stale_detail(repository),
+                )
+            )
+
+        if _should_report_stale_index_gap(all_chunks, repository):
+            stale_count = sum(
+                1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS
+            )
             gaps.append(
                 ImpactGap(
                     kind="stale_index",

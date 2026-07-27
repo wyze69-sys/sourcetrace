@@ -16,10 +16,43 @@ from __future__ import annotations
 import posixpath
 from dataclasses import dataclass, field
 
-from sourcetrace.models.domain import CodeChunk, EndpointEvidence, ReferenceEvidence
+from sourcetrace.models.domain import (
+    CodeChunk,
+    EndpointEvidence,
+    ReferenceEvidence,
+    RepositoryRecord,
+)
 from sourcetrace.parsers.flow_evidence import EVIDENCE_PARSER_VERSIONS
 from sourcetrace.storage.mongo_repositories import tokenize_identifier
 from sourcetrace.storage.repositories import CodeChunkRepository
+
+
+def _build_repo_stale_detail(repository: RepositoryRecord) -> str:
+    details: list[str] = []
+    if repository.indexed_commit_sha:
+        sha_str = (
+            repository.indexed_commit_sha[:7]
+            if len(repository.indexed_commit_sha) >= 7
+            else repository.indexed_commit_sha
+        )
+        details.append(f"indexed commit {sha_str}")
+    if repository.last_indexed_at:
+        details.append(f"last indexed {repository.last_indexed_at.isoformat()}")
+
+    meta_info = f" ({'; '.join(details)})" if details else ""
+    return f"Repository index is out of date{meta_info}; refresh repository to update."
+
+
+def _should_report_stale_index_gap(
+    all_chunks: list[CodeChunk],
+    repository: RepositoryRecord | None,
+) -> bool:
+    if repository is not None and repository.parser_versions:
+        if repository.flow_evidence_complete:
+            return False
+        return any(c.parser_version not in EVIDENCE_PARSER_VERSIONS for c in all_chunks)
+    return any(c.parser_version not in EVIDENCE_PARSER_VERSIONS for c in all_chunks)
+
 
 MAX_TRACE_DEPTH: int = 8
 MAX_TRACE_NODES: int = 50
@@ -286,6 +319,7 @@ class FlowTraceService:
         entry_query: str,
         max_depth: int | None = None,
         generation_id: str | None = None,
+        repository: RepositoryRecord | None = None,
     ) -> FlowTraceResult:
         depth_cap = MAX_TRACE_DEPTH
         if max_depth is not None:
@@ -300,8 +334,18 @@ class FlowTraceService:
 
         state = _TraceState()
 
-        stale_count = sum(1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS)
-        if stale_count:
+        if repository is not None and repository.is_stale is True:
+            state.gaps.append(
+                TraceGap(
+                    kind="repo_stale",
+                    detail=_build_repo_stale_detail(repository),
+                )
+            )
+
+        if _should_report_stale_index_gap(all_chunks, repository):
+            stale_count = sum(
+                1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS
+            )
             state.gaps.append(
                 TraceGap(
                     kind="stale_index",

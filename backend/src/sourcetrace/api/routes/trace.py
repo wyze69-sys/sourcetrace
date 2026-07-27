@@ -237,6 +237,7 @@ def trace_feature_flow(
             entry_query=body.entry,
             max_depth=body.max_depth,
             generation_id=repo.active_generation_id,
+            repository=repo,
         )
     except StorageDataError as err:
         raise HTTPException(
