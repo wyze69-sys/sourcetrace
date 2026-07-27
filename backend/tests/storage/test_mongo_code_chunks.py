@@ -344,7 +344,11 @@ def test_listing_filter_includes_owner_and_repo_ids() -> None:
     mock_coll.find.return_value.sort.return_value = []
     repo = MongoCodeChunkRepository(collection=mock_coll)
     repo.list_by_repository("owner_123", "repo_456")
-    expected_flt = {"owner_session_id": "owner_123", "repository_id": "repo_456"}
+    expected_flt = {
+        "owner_session_id": "owner_123",
+        "repository_id": "repo_456",
+        "generation_id": None,
+    }
     mock_coll.find.assert_called_once_with(expected_flt)
 
 
@@ -710,4 +714,3 @@ def test_runtime_indexes_include_unique_owner_repo_gen_chunk_index() -> None:
         name="code_chunks_owner_repo_gen_chunk_idx",
     )
     mock_db["code_chunks"].drop_index.assert_called_once_with("code_chunks_owner_repo_chunk_idx")
-

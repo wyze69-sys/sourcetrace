@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from sourcetrace.core.exceptions import StorageDataError
-from sourcetrace.models.domain import CodeChunk, RepositoryRecord
+from sourcetrace.models.domain import ALL_GENERATIONS, CodeChunk, RepositoryRecord
 from sourcetrace.storage.mongo_repositories import (
     MongoCodeChunkRepository,
     MongoRepositoryRepository,
@@ -115,25 +115,39 @@ def test_save_many_batch_generation_id_validation() -> None:
         chunk_storage.save_many([chunk1, chunk2_mismatched_gen])
 
 
-def test_list_by_repository_with_and_without_generation_id() -> None:
+def test_list_by_repository_generation_scopes() -> None:
     mock_coll = MagicMock()
     mock_coll.find.return_value.sort.return_value = []
     chunk_storage = MongoCodeChunkRepository(collection=mock_coll)
 
-    # Legacy: generation_id is None
+    # Legacy active snapshot: generation_id is None
     chunk_storage.list_by_repository("sess_1", "repo_1", generation_id=None)
-    mock_coll.find.assert_called_with({
-        "owner_session_id": "sess_1",
-        "repository_id": "repo_1",
-    })
+    mock_coll.find.assert_called_with(
+        {
+            "owner_session_id": "sess_1",
+            "repository_id": "repo_1",
+            "generation_id": None,
+        }
+    )
+
+    # All generations admin scope: generation_id is ALL_GENERATIONS
+    chunk_storage.list_by_repository("sess_1", "repo_1", generation_id=ALL_GENERATIONS)
+    mock_coll.find.assert_called_with(
+        {
+            "owner_session_id": "sess_1",
+            "repository_id": "repo_1",
+        }
+    )
 
     # Generation-aware: generation_id is passed
     chunk_storage.list_by_repository("sess_1", "repo_1", generation_id="gen_100")
-    mock_coll.find.assert_called_with({
-        "owner_session_id": "sess_1",
-        "repository_id": "repo_1",
-        "generation_id": "gen_100",
-    })
+    mock_coll.find.assert_called_with(
+        {
+            "owner_session_id": "sess_1",
+            "repository_id": "repo_1",
+            "generation_id": "gen_100",
+        }
+    )
 
 
 def test_delete_by_generation() -> None:
@@ -143,11 +157,13 @@ def test_delete_by_generation() -> None:
 
     deleted = chunk_storage.delete_by_generation("sess_1", "repo_1", "gen_old")
     assert deleted == 15
-    mock_coll.delete_many.assert_called_once_with({
-        "owner_session_id": "sess_1",
-        "repository_id": "repo_1",
-        "generation_id": "gen_old",
-    })
+    mock_coll.delete_many.assert_called_once_with(
+        {
+            "owner_session_id": "sess_1",
+            "repository_id": "repo_1",
+            "generation_id": "gen_old",
+        }
+    )
 
 
 def test_search_lexical_with_generation_id_filter() -> None:

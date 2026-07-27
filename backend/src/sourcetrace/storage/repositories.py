@@ -138,7 +138,7 @@ class CodeChunkRepository(Protocol):
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int: ...
 
     def delete_by_generation(
-        self, owner_session_id: str, repository_id: str, generation_id: str
+        self, owner_session_id: str, repository_id: str, generation_id: str | None
     ) -> int: ...
 
 

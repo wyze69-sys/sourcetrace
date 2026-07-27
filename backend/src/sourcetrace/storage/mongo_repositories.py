@@ -16,6 +16,7 @@ from sourcetrace.core.exceptions import (
     StorageOperationError,
 )
 from sourcetrace.models.domain import (
+    ALL_GENERATIONS,
     AnonymousSession,
     CitationRecord,
     CodeChunk,
@@ -96,6 +97,36 @@ def _validate_int(val: Any, default: int = 0) -> int:
     if isinstance(val, bool) or not isinstance(val, int):
         raise StorageDataError("Invalid integer field in stored document.")
     return val
+
+
+def _apply_generation_filter(filter_dict: dict[str, Any], generation_id: Any) -> None:
+    """Apply generation query scope filter to a PyMongo query dictionary."""
+    if generation_id is ALL_GENERATIONS or generation_id in (
+        ALL_GENERATIONS,
+        "*",
+        "__ALL_GENERATIONS__",
+        "ALL_GENERATIONS",
+    ):
+        return
+    if generation_id is None:
+        filter_dict["generation_id"] = None
+    else:
+        filter_dict["generation_id"] = _validate_non_empty_string(generation_id)
+
+
+def _apply_vector_generation_filter(vector_filter: dict[str, Any], generation_id: Any) -> None:
+    """Apply generation query scope filter to an Atlas Vector Search filter dictionary."""
+    if generation_id is ALL_GENERATIONS or generation_id in (
+        ALL_GENERATIONS,
+        "*",
+        "__ALL_GENERATIONS__",
+        "ALL_GENERATIONS",
+    ):
+        return
+    if generation_id is None:
+        vector_filter["generation_id"] = {"$eq": None}
+    else:
+        vector_filter["generation_id"] = {"$eq": _validate_non_empty_string(generation_id)}
 
 
 def _doc_to_session(doc: dict[str, Any]) -> AnonymousSession:
@@ -1238,7 +1269,7 @@ class MongoCodeChunkRepository:
         self,
         owner_session_id: str,
         repository_id: str,
-        generation_id: str | None = None,
+        generation_id: str | None | object = None,
     ) -> list[CodeChunk]:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
@@ -1248,8 +1279,7 @@ class MongoCodeChunkRepository:
             "owner_session_id": owner_id,
             "repository_id": repo_id,
         }
-        if generation_id is not None:
-            query_filter["generation_id"] = _validate_non_empty_string(generation_id)
+        _apply_generation_filter(query_filter, generation_id)
 
         sort_spec = [
             ("relative_path", 1),
@@ -1281,18 +1311,17 @@ class MongoCodeChunkRepository:
             raise StorageOperationError("Database delete operation failed safely.") from None
 
     def delete_by_generation(
-        self, owner_session_id: str, repository_id: str, generation_id: str
+        self, owner_session_id: str, repository_id: str, generation_id: str | None
     ) -> int:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
         repo_id = _validate_non_empty_string(repository_id)
-        gen_id = _validate_non_empty_string(generation_id)
 
-        query_filter = {
+        query_filter: dict[str, Any] = {
             "owner_session_id": owner_id,
             "repository_id": repo_id,
-            "generation_id": gen_id,
         }
+        _apply_generation_filter(query_filter, generation_id)
 
         try:
             result = self._collection.delete_many(query_filter)
@@ -1306,7 +1335,7 @@ class MongoCodeChunkRepository:
         repository_id: str,
         query_vector: list[float],
         limit: int = 5,
-        generation_id: str | None = None,
+        generation_id: str | None | object = None,
     ) -> list[RetrievalResult]:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
@@ -1377,8 +1406,7 @@ class MongoCodeChunkRepository:
             "owner_session_id": {"$eq": owner_id},
             "repository_id": {"$eq": repo_id},
         }
-        if generation_id is not None:
-            vector_filter["generation_id"] = {"$eq": _validate_non_empty_string(generation_id)}
+        _apply_vector_generation_filter(vector_filter, generation_id)
 
         pipeline: list[dict[str, Any]] = [
             {
@@ -1452,7 +1480,7 @@ class MongoCodeChunkRepository:
         repository_id: str,
         query_text: str,
         limit: int = 5,
-        generation_id: str | None = None,
+        generation_id: str | None | object = None,
     ) -> list[RetrievalResult]:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
@@ -1482,8 +1510,7 @@ class MongoCodeChunkRepository:
             "owner_session_id": owner_id,
             "repository_id": repo_id,
         }
-        if generation_id is not None:
-            base_filter["generation_id"] = _validate_non_empty_string(generation_id)
+        _apply_generation_filter(base_filter, generation_id)
 
         candidates_by_id: dict[str, dict] = {}
         stage_limit = max(limit * 20, 100)

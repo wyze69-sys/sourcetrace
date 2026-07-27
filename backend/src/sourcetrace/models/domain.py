@@ -4,6 +4,21 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 
+class _AllGenerationsSentinel:
+    """Sentinel type representing all chunk generations for admin/GC storage queries."""
+
+    def __repr__(self) -> str:
+        return "ALL_GENERATIONS"
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, str) and other in ("*", "__ALL_GENERATIONS__", "ALL_GENERATIONS"):
+            return True
+        return self is other
+
+
+ALL_GENERATIONS = _AllGenerationsSentinel()
+
+
 @dataclass(frozen=True, slots=True)
 class AnonymousSession:
     """Anonymous browser session domain record."""
@@ -236,6 +251,3 @@ class GroundedAnswerResult:
     evidence: tuple[EvidenceSnippetRecord, ...] = field(default_factory=tuple)
     insufficient_evidence: bool = False
     chunks_retrieved: int = 0
-
-
-
