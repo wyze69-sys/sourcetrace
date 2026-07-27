@@ -31,6 +31,17 @@ class RepositoryRecord:
     file_count: int = 0
     chunk_count: int = 0
     index_mode: str = "static"
+    active_generation_id: str | None = None
+    last_indexed_at: datetime | None = None
+    indexed_commit_sha: str | None = None
+    indexed_branch: str | None = None
+    parser_versions: tuple[str, ...] = ()
+    flow_evidence_complete: bool = False
+    indexed_file_count: int = 0
+    indexed_chunk_count: int = 0
+    consecutive_refresh_failures: int = 0
+    is_stale: bool | None = None
+    stale_checked_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +58,7 @@ class IndexingJobRecord:
     progress_percentage: int = 0
     error_message: str | None = None
     completed_at: datetime | None = None
+    job_type: str = "initial"
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +170,7 @@ class CodeChunk:
     imports: tuple[ImportEvidence, ...] = ()
     endpoints: tuple[EndpointEvidence, ...] = ()
     extraction_truncated: bool = False
+    generation_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -59,6 +59,17 @@ class Repository(BaseModel):
     created_at: datetime
     updated_at: datetime
     index_mode: Literal["static", "cloud_ai"] = "static"
+    active_generation_id: str | None = None
+    last_indexed_at: datetime | None = None
+    indexed_commit_sha: str | None = None
+    indexed_branch: str | None = None
+    parser_versions: list[str] = Field(default_factory=list)
+    flow_evidence_complete: bool = False
+    indexed_file_count: int = 0
+    indexed_chunk_count: int = 0
+    consecutive_refresh_failures: int = 0
+    is_stale: bool | None = None
+    stale_checked_at: datetime | None = None
 
 
 class IndexingJob(BaseModel):
@@ -82,6 +93,7 @@ class IndexingJob(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None
+    job_type: str = "initial"
 
 
 class CreateGitHubRepositoryRequest(BaseModel):
@@ -209,6 +221,17 @@ def repository_record_to_schema(record: RepositoryRecord) -> Repository:
         created_at=record.created_at,
         updated_at=record.updated_at,
         index_mode=idx_mode,  # type: ignore[arg-type]
+        active_generation_id=record.active_generation_id,
+        last_indexed_at=record.last_indexed_at,
+        indexed_commit_sha=record.indexed_commit_sha,
+        indexed_branch=record.indexed_branch,
+        parser_versions=list(record.parser_versions) if record.parser_versions else [],
+        flow_evidence_complete=record.flow_evidence_complete,
+        indexed_file_count=record.indexed_file_count,
+        indexed_chunk_count=record.indexed_chunk_count,
+        consecutive_refresh_failures=record.consecutive_refresh_failures,
+        is_stale=record.is_stale,
+        stale_checked_at=record.stale_checked_at,
     )
 
 
@@ -224,6 +247,7 @@ def job_record_to_schema(record: IndexingJobRecord) -> IndexingJob:
         created_at=record.created_at,
         updated_at=record.updated_at,
         completed_at=record.completed_at,
+        job_type=record.job_type,
     )
 
 

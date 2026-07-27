@@ -132,6 +132,38 @@ def _doc_to_repository(doc: dict[str, Any]) -> RepositoryRecord:
             if index_mode not in ("static", "cloud_ai"):
                 raise StorageDataError("Invalid index_mode in stored document.")
 
+        raw_last_indexed = doc.get("last_indexed_at")
+        last_indexed_at = (
+            _to_utc(raw_last_indexed) if raw_last_indexed is not None else None
+        )
+
+        raw_stale_checked = doc.get("stale_checked_at")
+        stale_checked_at = (
+            _to_utc(raw_stale_checked) if raw_stale_checked is not None else None
+        )
+
+        raw_parser_versions = doc.get("parser_versions")
+        if raw_parser_versions is None:
+            parser_versions: tuple[str, ...] = ()
+        elif isinstance(raw_parser_versions, (list, tuple)):
+            parser_versions = tuple(
+                _validate_non_empty_string(v) for v in raw_parser_versions
+            )
+        else:
+            raise StorageDataError("Invalid parser_versions in stored document.")
+
+        raw_is_stale = doc.get("is_stale")
+        if raw_is_stale is not None and not isinstance(raw_is_stale, bool):
+            raise StorageDataError("Invalid is_stale in stored document.")
+
+        raw_flow_complete = doc.get("flow_evidence_complete")
+        if raw_flow_complete is None:
+            flow_evidence_complete = False
+        elif isinstance(raw_flow_complete, bool):
+            flow_evidence_complete = raw_flow_complete
+        else:
+            raise StorageDataError("Invalid flow_evidence_complete in stored document.")
+
         return RepositoryRecord(
             repository_id=_validate_non_empty_string(doc.get("repository_id")),
             owner_session_id=_validate_non_empty_string(doc.get("owner_session_id")),
@@ -144,6 +176,27 @@ def _doc_to_repository(doc: dict[str, Any]) -> RepositoryRecord:
             file_count=_validate_int(doc.get("file_count"), default=0),
             chunk_count=_validate_int(doc.get("chunk_count"), default=0),
             index_mode=index_mode,
+            active_generation_id=_validate_optional_string(
+                doc.get("active_generation_id")
+            ),
+            last_indexed_at=last_indexed_at,
+            indexed_commit_sha=_validate_optional_string(
+                doc.get("indexed_commit_sha")
+            ),
+            indexed_branch=_validate_optional_string(doc.get("indexed_branch")),
+            parser_versions=parser_versions,
+            flow_evidence_complete=flow_evidence_complete,
+            indexed_file_count=_validate_int(
+                doc.get("indexed_file_count"), default=0
+            ),
+            indexed_chunk_count=_validate_int(
+                doc.get("indexed_chunk_count"), default=0
+            ),
+            consecutive_refresh_failures=_validate_int(
+                doc.get("consecutive_refresh_failures"), default=0
+            ),
+            is_stale=raw_is_stale,
+            stale_checked_at=stale_checked_at,
         )
     except StorageDataError:
         raise
@@ -159,6 +212,12 @@ def _doc_to_job(doc: dict[str, Any]) -> IndexingJobRecord:
         completed_at = (
             _to_utc(completed_at_raw) if completed_at_raw is not None else None
         )
+        raw_job_type = doc.get("job_type")
+        if raw_job_type is None:
+            job_type = "initial"
+        else:
+            job_type = _validate_non_empty_string(raw_job_type)
+
         return IndexingJobRecord(
             job_id=_validate_non_empty_string(doc.get("job_id")),
             repository_id=_validate_non_empty_string(doc.get("repository_id")),
@@ -172,6 +231,7 @@ def _doc_to_job(doc: dict[str, Any]) -> IndexingJobRecord:
             ),
             error_message=_validate_optional_string(doc.get("error_message")),
             completed_at=completed_at,
+            job_type=job_type,
         )
     except StorageDataError:
         raise
@@ -345,6 +405,27 @@ class MongoRepositoryRepository:
             "file_count": repository.file_count,
             "chunk_count": repository.chunk_count,
             "index_mode": repository.index_mode,
+            "active_generation_id": repository.active_generation_id,
+            "last_indexed_at": (
+                _ensure_utc(repository.last_indexed_at)
+                if repository.last_indexed_at is not None
+                else None
+            ),
+            "indexed_commit_sha": repository.indexed_commit_sha,
+            "indexed_branch": repository.indexed_branch,
+            "parser_versions": (
+                list(repository.parser_versions) if repository.parser_versions else []
+            ),
+            "flow_evidence_complete": repository.flow_evidence_complete,
+            "indexed_file_count": repository.indexed_file_count,
+            "indexed_chunk_count": repository.indexed_chunk_count,
+            "consecutive_refresh_failures": repository.consecutive_refresh_failures,
+            "is_stale": repository.is_stale,
+            "stale_checked_at": (
+                _ensure_utc(repository.stale_checked_at)
+                if repository.stale_checked_at is not None
+                else None
+            ),
         }
         self._collection.replace_one(query_filter, doc, upsert=True)
         return repository
@@ -467,6 +548,7 @@ class MongoIndexingJobRepository:
             "progress_percentage": job.progress_percentage,
             "error_message": job.error_message,
             "completed_at": completed_at,
+            "job_type": job.job_type,
         }
         self._collection.replace_one(query_filter, doc, upsert=True)
         return job
@@ -885,6 +967,7 @@ def _doc_to_chunk(doc: dict[str, Any]) -> CodeChunk:
             search_text = derived["search_text"]
 
         references, imports, endpoints, extraction_truncated = _doc_to_flow_evidence(doc)
+        generation_id = _validate_optional_string(doc.get("generation_id"))
 
         return CodeChunk(
             chunk_id=chunk_id,
@@ -911,6 +994,7 @@ def _doc_to_chunk(doc: dict[str, Any]) -> CodeChunk:
             imports=imports,
             endpoints=endpoints,
             extraction_truncated=extraction_truncated,
+            generation_id=generation_id,
         )
     except StorageDataError:
         raise
@@ -962,6 +1046,7 @@ def _chunk_to_doc(chunk: CodeChunk) -> dict[str, Any]:
         "content_hash": chunk.content_hash.strip(),
         "parser_version": chunk.parser_version.strip(),
         "created_at": _ensure_utc(chunk.created_at),
+        "generation_id": chunk.generation_id,
     }
 
     if chunk.embedding is None:
