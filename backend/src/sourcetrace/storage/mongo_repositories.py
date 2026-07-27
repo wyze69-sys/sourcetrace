@@ -559,6 +559,36 @@ class MongoRepositoryRepository:
             return None
         return _doc_to_repository(doc)
 
+    def update_staleness(
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        is_stale: bool,
+        stale_checked_at: datetime,
+    ) -> RepositoryRecord | None:
+        owner_id = _validate_non_empty_string(owner_session_id)
+        repo_id = _validate_non_empty_string(repository_id)
+        checked_at_utc = _ensure_utc(stale_checked_at)
+
+        query_filter = {
+            "owner_session_id": owner_id,
+            "repository_id": repo_id,
+        }
+        set_doc = {
+            "is_stale": is_stale,
+            "stale_checked_at": checked_at_utc,
+            "updated_at": checked_at_utc,
+        }
+        doc = self._collection.find_one_and_update(
+            query_filter,
+            {"$set": set_doc},
+            return_document=ReturnDocument.AFTER,
+            upsert=False,
+        )
+        if doc is None:
+            return None
+        return _doc_to_repository(doc)
+
     def delete(self, owner_session_id: str, repository_id: str) -> bool:
 
         query_filter = {

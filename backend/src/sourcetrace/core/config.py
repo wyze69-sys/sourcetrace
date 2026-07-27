@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     allowed_index_modes: tuple[str, ...] = ("static", "cloud_ai")
     default_index_mode: str = "static"
+    enable_stale_check: bool = True
     # Valid values: "gemini" | "openai"
     # Gemini is the default cloud provider. Switch to "openai" only when an OpenAI
     # API key is available. The inactive provider's client is never instantiated.

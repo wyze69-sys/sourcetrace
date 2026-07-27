@@ -44,6 +44,7 @@ from sourcetrace.core.exceptions import (
     RepositoryQuotaExceededError,
     RepositoryValidationError,
 )
+from sourcetrace.ingestion.freshness import check_github_freshness
 from sourcetrace.ingestion.service import IngestionService, RepositoryCreationResult
 from sourcetrace.ingestion.upload_staging import (
     StagedUpload,
@@ -474,6 +475,8 @@ def get_repository(
     repository_id: str,
     owner_session_id: CurrentOwnerId,
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    check_freshness: bool = False,
 ) -> Repository:
     """Fetch details of a single repository owned by caller's session."""
     try:
@@ -492,6 +495,34 @@ def get_repository(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Repository not found",
         )
+
+    if (
+        check_freshness
+        and settings.enable_stale_check
+        and record.source_type == "github"
+        and record.github_url
+        and record.indexed_branch
+        and record.indexed_commit_sha
+    ):
+        now = datetime.now(UTC)
+        is_stale, _remote_sha = check_github_freshness(
+            github_url=record.github_url,
+            indexed_branch=record.indexed_branch,
+            indexed_commit_sha=record.indexed_commit_sha,
+            now=now,
+        )
+        if is_stale is not None:
+            try:
+                updated_record = repository_repo.update_staleness(
+                    owner_session_id=owner_session_id,
+                    repository_id=repository_id,
+                    is_stale=is_stale,
+                    stale_checked_at=now,
+                )
+                if updated_record is not None:
+                    record = updated_record
+            except Exception:  # noqa: BLE001
+                pass
 
     return repository_record_to_schema(record)
 

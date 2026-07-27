@@ -84,6 +84,14 @@ class RepositoryRepository(Protocol):
         is_stale: bool | None = None,
     ) -> RepositoryRecord | None: ...
 
+    def update_staleness(
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        is_stale: bool,
+        stale_checked_at: datetime,
+    ) -> RepositoryRecord | None: ...
+
     def delete(self, owner_session_id: str, repository_id: str) -> bool: ...
 
 
