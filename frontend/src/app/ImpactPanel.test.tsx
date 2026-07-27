@@ -588,4 +588,58 @@ describe('ImpactPanel', () => {
     expect(screen.queryByText(/Upstream dependents/)).not.toBeInTheDocument()
     expect(screen.queryByText('read_stats')).not.toBeInTheDocument()
   })
+
+  it('renders stale warning banner when sourceType is github and isStale is true', () => {
+    const previewImpact = vi.fn()
+    render(
+      <ImpactPanel
+        client={makeClient(previewImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="github"
+        isStale={true}
+      />,
+    )
+    expect(screen.getByText(/Index Out of Date:/i)).toBeInTheDocument()
+  })
+
+  it('renders freshness unknown banner when sourceType is github and isStale is null', () => {
+    const previewImpact = vi.fn()
+    render(
+      <ImpactPanel
+        client={makeClient(previewImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="github"
+        isStale={null}
+      />,
+    )
+    expect(screen.getByText(/Freshness Unknown:/i)).toBeInTheDocument()
+  })
+
+  it('does not render warning banner when isStale is false or sourceType is zip', () => {
+    const previewImpact = vi.fn()
+    const { rerender } = render(
+      <ImpactPanel
+        client={makeClient(previewImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="github"
+        isStale={false}
+      />,
+    )
+    expect(screen.queryByText(/Index Out of Date:/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Freshness Unknown:/i)).not.toBeInTheDocument()
+
+    rerender(
+      <ImpactPanel
+        client={makeClient(previewImpact)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="zip"
+        isStale={true}
+      />,
+    )
+    expect(screen.queryByText(/Index Out of Date:/i)).not.toBeInTheDocument()
+  })
 })

@@ -278,4 +278,58 @@ describe('FlowTracePanel', () => {
     expect(screen.getByText('Flow steps (3):')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Explain this flow' })).toBeInTheDocument()
   })
+
+  it('renders stale warning banner when sourceType is github and isStale is true', () => {
+    const traceFlow = vi.fn()
+    render(
+      <FlowTracePanel
+        client={makeClient(traceFlow)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="github"
+        isStale={true}
+      />,
+    )
+    expect(screen.getByText(/Index Out of Date:/i)).toBeInTheDocument()
+  })
+
+  it('renders freshness unknown banner when sourceType is github and isStale is null', () => {
+    const traceFlow = vi.fn()
+    render(
+      <FlowTracePanel
+        client={makeClient(traceFlow)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="github"
+        isStale={null}
+      />,
+    )
+    expect(screen.getByText(/Freshness Unknown:/i)).toBeInTheDocument()
+  })
+
+  it('does not render warning banner when isStale is false or sourceType is zip', () => {
+    const traceFlow = vi.fn()
+    const { rerender } = render(
+      <FlowTracePanel
+        client={makeClient(traceFlow)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="github"
+        isStale={false}
+      />,
+    )
+    expect(screen.queryByText(/Index Out of Date:/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Freshness Unknown:/i)).not.toBeInTheDocument()
+
+    rerender(
+      <FlowTracePanel
+        client={makeClient(traceFlow)}
+        repositoryId="repo_1"
+        repositoryName="demo-repo"
+        sourceType="zip"
+        isStale={true}
+      />,
+    )
+    expect(screen.queryByText(/Index Out of Date:/i)).not.toBeInTheDocument()
+  })
 })

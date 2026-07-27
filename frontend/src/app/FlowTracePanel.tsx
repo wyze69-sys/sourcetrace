@@ -12,6 +12,8 @@ export interface FlowTracePanelProps {
   repositoryId: string
   repositoryName: string
   explainAvailable?: boolean
+  isStale?: boolean | null
+  sourceType?: string
 }
 
 const SAFE_TRACE_ERROR_MESSAGE = 'Flow trace failed safely. Try again.'
@@ -77,6 +79,8 @@ export function FlowTracePanel({
   repositoryId,
   repositoryName,
   explainAvailable = false,
+  isStale,
+  sourceType,
 }: FlowTracePanelProps) {
   const [entry, setEntry] = useState('')
   const [loading, setLoading] = useState(false)
@@ -157,6 +161,40 @@ export function FlowTracePanel({
         Trace an execution flow from a symbol through calls, imports, and HTTP boundaries.
         Every step is cited from indexed source; unresolved paths are reported as gaps.
       </p>
+
+      {sourceType === 'github' && isStale === true && (
+        <div
+          className="freshness-banner banner-stale"
+          style={{
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: '1px solid rgba(245, 158, 11, 0.4)',
+            borderRadius: '6px',
+            padding: '8px 12px',
+            marginBottom: '16px',
+            color: '#f59e0b',
+            fontSize: '0.85rem',
+          }}
+        >
+          <strong>Index Out of Date:</strong> This repository has new remote commits. Flow trace results reflect the last indexed commit and remain fully usable.
+        </div>
+      )}
+
+      {sourceType === 'github' && (isStale === null || isStale === undefined) && (
+        <div
+          className="freshness-banner banner-unknown"
+          style={{
+            background: 'rgba(156, 163, 175, 0.12)',
+            border: '1px solid rgba(156, 163, 175, 0.3)',
+            borderRadius: '6px',
+            padding: '8px 12px',
+            marginBottom: '16px',
+            color: '#9ca3af',
+            fontSize: '0.85rem',
+          }}
+        >
+          <strong>Freshness Unknown:</strong> Index freshness has not been verified with GitHub. Flow trace results reflect the current indexed snapshot.
+        </div>
+      )}
 
       <form
         onSubmit={handleTrace}

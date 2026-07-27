@@ -351,9 +351,13 @@ export class ApiClient {
     )
   }
 
-  async getRepository(repositoryId: string): Promise<Repository> {
+  async getRepository(
+    repositoryId: string,
+    checkFreshness: boolean = false,
+  ): Promise<Repository> {
+    const query = checkFreshness ? '?check_freshness=true' : ''
     return this.request<Repository>(
-      `/repositories/${encodeURIComponent(repositoryId)}`,
+      `/repositories/${encodeURIComponent(repositoryId)}${query}`,
       { method: 'GET' },
       'protected',
     )

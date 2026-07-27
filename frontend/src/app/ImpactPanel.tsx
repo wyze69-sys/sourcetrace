@@ -14,6 +14,8 @@ export interface ImpactPanelProps {
   repositoryId: string
   repositoryName: string
   explainAvailable?: boolean
+  isStale?: boolean | null
+  sourceType?: string
 }
 
 const SAFE_IMPACT_ERROR_MESSAGE = 'Impact preview failed safely. Try again.'
@@ -179,6 +181,8 @@ export function ImpactPanel({
   repositoryId,
   repositoryName,
   explainAvailable = false,
+  isStale,
+  sourceType,
 }: ImpactPanelProps) {
   const [mode, setMode] = useState<'symbol' | 'diff'>('symbol')
   const [symbol, setSymbol] = useState('')
@@ -330,6 +334,40 @@ export function ImpactPanel({
         unified diff. Every item is cited from indexed source; unknowns are reported as
         gaps, never guessed.
       </p>
+
+      {sourceType === 'github' && isStale === true && (
+        <div
+          className="freshness-banner banner-stale"
+          style={{
+            background: 'rgba(245, 158, 11, 0.12)',
+            border: '1px solid rgba(245, 158, 11, 0.4)',
+            borderRadius: '6px',
+            padding: '8px 12px',
+            marginBottom: '12px',
+            color: '#f59e0b',
+            fontSize: '0.85rem',
+          }}
+        >
+          <strong>Index Out of Date:</strong> This repository has new remote commits. Impact analysis reflects the last indexed commit and remains fully usable.
+        </div>
+      )}
+
+      {sourceType === 'github' && (isStale === null || isStale === undefined) && (
+        <div
+          className="freshness-banner banner-unknown"
+          style={{
+            background: 'rgba(156, 163, 175, 0.12)',
+            border: '1px solid rgba(156, 163, 175, 0.3)',
+            borderRadius: '6px',
+            padding: '8px 12px',
+            marginBottom: '12px',
+            color: '#9ca3af',
+            fontSize: '0.85rem',
+          }}
+        >
+          <strong>Freshness Unknown:</strong> Index freshness has not been verified with GitHub. Impact analysis reflects the current indexed snapshot.
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }} role="group" aria-label="Impact input mode">
         <button

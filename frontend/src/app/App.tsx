@@ -50,6 +50,52 @@ function validateGitHubUrl(url: string): string | null {
   return null
 }
 
+export function formatRelativeTime(isoString?: string | null): string {
+  if (!isoString) return 'never'
+  try {
+    const date = new Date(isoString)
+    if (isNaN(date.getTime())) return 'never'
+    const diffSeconds = Math.floor((Date.now() - date.getTime()) / 1000)
+    if (diffSeconds < 0 || diffSeconds < 30) return 'just now'
+    if (diffSeconds < 60) return `${diffSeconds}s ago`
+    if (diffSeconds < 3600) {
+      const mins = Math.floor(diffSeconds / 60)
+      return `${mins}m ago`
+    }
+    if (diffSeconds < 86400) {
+      const hours = Math.floor(diffSeconds / 3600)
+      return `${hours}h ago`
+    }
+    const days = Math.floor(diffSeconds / 86400)
+    return `${days}d ago`
+  } catch {
+    return 'never'
+  }
+}
+
+export type FreshnessState = 'fresh' | 'stale' | 'unknown' | 'refreshing'
+
+export function getFreshnessState(repo: Repository, activeJob?: IndexingJob): FreshnessState {
+  if (
+    activeJob &&
+    activeJob.job_type === 'refresh' &&
+    activeJob.status !== 'ready' &&
+    activeJob.status !== 'failed'
+  ) {
+    return 'refreshing'
+  }
+  if (repo.source_type !== 'github') {
+    return 'unknown'
+  }
+  if (repo.is_stale === true) {
+    return 'stale'
+  }
+  if (repo.is_stale === false) {
+    return 'fresh'
+  }
+  return 'unknown'
+}
+
 function validateZipFile(file: File | null): string | null {
   if (!file) {
     return 'Please select a ZIP file to upload.'
@@ -186,6 +232,8 @@ export function App({ client = defaultApiClient }: AppProps) {
     checkHealth()
   }, [checkHealth])
 
+  const freshnessCheckedRepoRef = useRef<Set<string>>(new Set())
+
   // Polling for active jobs
   useEffect(() => {
     const unfinishedJobIds = Object.values(activeJobs)
@@ -211,6 +259,7 @@ export function App({ client = defaultApiClient }: AppProps) {
           if (updatedJob.status === 'ready' || updatedJob.status === 'failed') {
             statusChanged = true
             setAriaLiveMsg(`Indexing job ${jobId} finished with status ${updatedJob.status}.`)
+            freshnessCheckedRepoRef.current.delete(updatedJob.repository_id)
           }
         } catch {
           // Ignore transient polling errors
@@ -237,6 +286,31 @@ export function App({ client = defaultApiClient }: AppProps) {
       }
     }
   }, [repositories, selectedRepoId])
+
+  // Bounded opt-in freshness check once upon selecting a ready GitHub repository
+  useEffect(() => {
+    if (!selectedRepoId) return
+    const repo = repositories.find((r) => r.repository_id === selectedRepoId)
+    if (
+      repo &&
+      repo.status === 'ready' &&
+      repo.source_type === 'github' &&
+      !freshnessCheckedRepoRef.current.has(selectedRepoId) &&
+      typeof client.getRepository === 'function'
+    ) {
+      freshnessCheckedRepoRef.current.add(selectedRepoId)
+      client
+        .getRepository(selectedRepoId, true)
+        .then((updatedRepo) => {
+          setRepositories((prev) =>
+            prev.map((r) => (r.repository_id === updatedRepo.repository_id ? updatedRepo : r)),
+          )
+        })
+        .catch(() => {
+          // Ignore transient error; freshness status stays as-is
+        })
+    }
+  }, [selectedRepoId, repositories, client])
 
   const handleRefreshRepo = async (repo: Repository) => {
     try {
@@ -471,11 +545,6 @@ export function App({ client = defaultApiClient }: AppProps) {
                   )
                   const isSelected = selectedRepoId === repo.repository_id
                   const isReady = repo.status === 'ready'
-                  const isRefreshing =
-                    !!job &&
-                    job.job_type === 'refresh' &&
-                    job.status !== 'ready' &&
-                    job.status !== 'failed'
 
                   return (
                     <li key={repo.repository_id}>
@@ -487,29 +556,21 @@ export function App({ client = defaultApiClient }: AppProps) {
                         }}
                       >
                         <div className="repo-header">
-                          <span className="repo-title">
-                            {repo.name}
-                            {repo.is_stale && (
-                              <span
-                                title="Index may be out of date"
-                                style={{
-                                  marginLeft: '6px',
-                                  fontSize: '0.7rem',
-                                  fontWeight: 700,
-                                  color: '#f59e0b',
-                                  background: 'rgba(245,158,11,0.12)',
-                                  border: '1px solid rgba(245,158,11,0.4)',
-                                  borderRadius: '6px',
-                                  padding: '1px 6px',
-                                  verticalAlign: 'middle',
-                                }}
-                              >
-                                stale
-                              </span>
-                            )}
-                          </span>
-                          <span className={`repo-badge ${isRefreshing ? 'refreshing' : (job?.status || repo.status)}`}>
-                            {isRefreshing ? 'refreshing' : (job?.status || repo.status)}
+                          <span className="repo-title">{repo.name}</span>
+                          <span
+                            className={`repo-badge ${
+                              isReady
+                                ? repo.source_type === 'github'
+                                  ? getFreshnessState(repo, job)
+                                  : 'ready'
+                                : job?.status || repo.status
+                            }`}
+                          >
+                            {isReady
+                              ? repo.source_type === 'github'
+                                ? getFreshnessState(repo, job)
+                                : 'ready'
+                              : job?.status || repo.status}
                           </span>
                         </div>
                         <div className="repo-meta mono">
@@ -694,27 +755,56 @@ export function App({ client = defaultApiClient }: AppProps) {
                 </section>
               ) : selectedRepo && selectedRepo.status === 'ready' && selectedRepo.index_mode === 'static' ? (
                 <section className="card-panel search-panel">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <h2 className="panel-header" style={{ margin: 0 }}>
-                      Repository: <span className="mono">{selectedRepo.name}</span>
-                    </h2>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      {selectedRepo.source_type === 'github' && (
-                        <button
-                          id="btn-refresh-repo-static"
-                          type="button"
-                          className="btn-action"
-                          style={{ fontSize: '0.8rem', padding: '4px 12px' }}
-                          onClick={() => handleRefreshRepo(selectedRepo)}
-                          title={selectedRepo.indexed_commit_sha ? `Last indexed: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
-                        >
-                          ↻ Refresh
-                        </button>
-                      )}
-                      <span className="static-banner" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
-                        Static inspection — no AI token required.
-                      </span>
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <h2 className="panel-header" style={{ margin: 0 }}>
+                        Repository: <span className="mono">{selectedRepo.name}</span>
+                        {selectedRepo.source_type === 'github' && (
+                          <span
+                            className={`repo-badge ${getFreshnessState(
+                              selectedRepo,
+                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
+                            )}`}
+                            style={{ marginLeft: '10px', fontSize: '0.75rem', verticalAlign: 'middle' }}
+                          >
+                            {getFreshnessState(
+                              selectedRepo,
+                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
+                            )}
+                          </span>
+                        )}
+                      </h2>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {selectedRepo.source_type === 'github' && (
+                          <button
+                            id="btn-refresh-repo-static"
+                            type="button"
+                            className="btn-action"
+                            style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                            onClick={() => handleRefreshRepo(selectedRepo)}
+                            disabled={
+                              !!Object.values(activeJobs).find(
+                                (j) => j.repository_id === selectedRepo.repository_id && j.status !== 'ready' && j.status !== 'failed',
+                              )
+                            }
+                            title={selectedRepo.indexed_commit_sha ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
+                          >
+                            ↻ Refresh
+                          </button>
+                        )}
+                        <span className="static-banner" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
+                          Static inspection — no AI token required.
+                        </span>
+                      </div>
                     </div>
+                    {selectedRepo.source_type === 'github' && (
+                      <div className="repo-meta-bar mono" style={{ fontSize: '0.78rem', color: 'var(--color-muted)', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                        {selectedRepo.indexed_branch && <span>Branch: <strong>{selectedRepo.indexed_branch}</strong></span>}
+                        {selectedRepo.indexed_commit_sha && <span>SHA: <strong>{selectedRepo.indexed_commit_sha.slice(0, 7)}</strong></span>}
+                        {selectedRepo.last_indexed_at && <span>Indexed: <strong>{formatRelativeTime(selectedRepo.last_indexed_at)}</strong></span>}
+                        {selectedRepo.stale_checked_at && <span>Checked: <strong>{formatRelativeTime(selectedRepo.stale_checked_at)}</strong></span>}
+                      </div>
+                    )}
                   </div>
                   <p className="panel-text" style={{ marginBottom: '16px' }}>
                     Search code symbols, classes, functions, and relative file paths without AI tokens.
@@ -771,21 +861,50 @@ export function App({ client = defaultApiClient }: AppProps) {
                 </section>
               ) : selectedRepo && selectedRepo.status === 'ready' ? (
                 <section className="card-panel chat-panel">
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                    <h2 className="panel-header" style={{ margin: 0 }}>
-                      Repository: <span className="mono">{selectedRepo.name}</span>
-                    </h2>
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <h2 className="panel-header" style={{ margin: 0 }}>
+                        Repository: <span className="mono">{selectedRepo.name}</span>
+                        {selectedRepo.source_type === 'github' && (
+                          <span
+                            className={`repo-badge ${getFreshnessState(
+                              selectedRepo,
+                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
+                            )}`}
+                            style={{ marginLeft: '10px', fontSize: '0.75rem', verticalAlign: 'middle' }}
+                          >
+                            {getFreshnessState(
+                              selectedRepo,
+                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
+                            )}
+                          </span>
+                        )}
+                      </h2>
+                      {selectedRepo.source_type === 'github' && (
+                        <button
+                          id="btn-refresh-repo-ai"
+                          type="button"
+                          className="btn-action"
+                          style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                          onClick={() => handleRefreshRepo(selectedRepo)}
+                          disabled={
+                            !!Object.values(activeJobs).find(
+                              (j) => j.repository_id === selectedRepo.repository_id && j.status !== 'ready' && j.status !== 'failed',
+                            )
+                          }
+                          title={selectedRepo.indexed_commit_sha ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
+                        >
+                          ↻ Refresh
+                        </button>
+                      )}
+                    </div>
                     {selectedRepo.source_type === 'github' && (
-                      <button
-                        id="btn-refresh-repo-ai"
-                        type="button"
-                        className="btn-action"
-                        style={{ fontSize: '0.8rem', padding: '4px 12px' }}
-                        onClick={() => handleRefreshRepo(selectedRepo)}
-                        title={selectedRepo.indexed_commit_sha ? `Last indexed: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
-                      >
-                        ↻ Refresh
-                      </button>
+                      <div className="repo-meta-bar mono" style={{ fontSize: '0.78rem', color: 'var(--color-muted)', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                        {selectedRepo.indexed_branch && <span>Branch: <strong>{selectedRepo.indexed_branch}</strong></span>}
+                        {selectedRepo.indexed_commit_sha && <span>SHA: <strong>{selectedRepo.indexed_commit_sha.slice(0, 7)}</strong></span>}
+                        {selectedRepo.last_indexed_at && <span>Indexed: <strong>{formatRelativeTime(selectedRepo.last_indexed_at)}</strong></span>}
+                        {selectedRepo.stale_checked_at && <span>Checked: <strong>{formatRelativeTime(selectedRepo.stale_checked_at)}</strong></span>}
+                      </div>
                     )}
                   </div>
                   <p className="panel-text">
@@ -866,6 +985,8 @@ export function App({ client = defaultApiClient }: AppProps) {
                   repositoryId={selectedRepo.repository_id}
                   repositoryName={selectedRepo.name}
                   explainAvailable={capabilities?.generation_available ?? false}
+                  isStale={selectedRepo.is_stale}
+                  sourceType={selectedRepo.source_type}
                 />
               )}
 
@@ -875,6 +996,8 @@ export function App({ client = defaultApiClient }: AppProps) {
                   repositoryId={selectedRepo.repository_id}
                   repositoryName={selectedRepo.name}
                   explainAvailable={capabilities?.generation_available ?? false}
+                  isStale={selectedRepo.is_stale}
+                  sourceType={selectedRepo.source_type}
                 />
               )}
             </>

@@ -52,8 +52,10 @@ export interface Repository {
   indexed_commit_sha?: string | null
   /** Branch that was indexed (e.g. "main"). Null if unknown. */
   indexed_branch?: string | null
-  /** True when the backend detects the repo may be out of date. */
-  is_stale?: boolean
+  /** True when the backend detects the repo may be out of date. Null if unknown/unchecked. */
+  is_stale?: boolean | null
+  /** ISO-8601 UTC timestamp of last freshness check against remote GitHub. */
+  stale_checked_at?: string | null
   /** True when all indexed chunks support flow-evidence extraction. */
   flow_evidence_complete?: boolean
 }

@@ -650,6 +650,30 @@ describe('ApiClient', () => {
     expect(sessionStorage.getItem('sourcetrace.access_token')).toBe('jwt_valid_token')
   })
 
+  it('getRepository passes ?check_freshness=true query param when checkFreshness is true', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_valid_token')
+
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        repository_id: 'repo_fresh',
+        name: 'FreshRepo',
+        source_type: 'github',
+        status: 'ready',
+        is_stale: false,
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const repo = await client.getRepository('repo_fresh', true)
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/repositories/repo_fresh?check_freshness=true'),
+      expect.anything(),
+    )
+    expect(repo.is_stale).toBe(false)
+  })
+
   it('safely falls back to in-memory storage if sessionStorage throws SecurityError', async () => {
     const throwingStorage: TokenStorage = {
       getItem: () => {
