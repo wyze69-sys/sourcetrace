@@ -65,9 +65,7 @@ class FileSystemUploadStagingStore:
         self._chunk_size = chunk_size
 
         if staging_root is not None:
-            if isinstance(staging_root, bool) or not isinstance(
-                staging_root, (str, Path)
-            ):
+            if isinstance(staging_root, bool) or not isinstance(staging_root, (str, Path)):
                 raise UploadStagingError("Invalid staging configuration.")
             str_root = str(staging_root)
             if "\x00" in str_root:
@@ -94,12 +92,7 @@ class FileSystemUploadStagingStore:
             raise UploadStagingError("Invalid staging configuration.") from None
 
     def _validate_token(self, token: str) -> str:
-        if (
-            type(token) is not str
-            or isinstance(token, bool)
-            or not token
-            or not token.strip()
-        ):
+        if type(token) is not str or isinstance(token, bool) or not token or not token.strip():
             raise UploadValidationError("Staging token must be a non-empty string.")
         cleaned = token.strip()
         if (
@@ -126,9 +119,8 @@ class FileSystemUploadStagingStore:
             raise UploadStagingError("Invalid or malformed staging token.") from None
 
         try:
-            if (
-                resolved.parent != self._staging_root
-                and not resolved.is_relative_to(self._staging_root)
+            if resolved.parent != self._staging_root and not resolved.is_relative_to(
+                self._staging_root
             ):
                 raise UploadStagingError("Staging token resolves outside staging root.")
         except Exception:
@@ -154,15 +146,9 @@ class FileSystemUploadStagingStore:
         except Exception:  # noqa: BLE001
             pass
 
-    def cleanup_stale_uploads(
-        self, max_age_hours: int = 24, now: datetime | None = None
-    ) -> None:
+    def cleanup_stale_uploads(self, max_age_hours: int = 24, now: datetime | None = None) -> None:
         """Best-effort cleanup of staged files older than threshold."""
-        if (
-            type(max_age_hours) is not int
-            or isinstance(max_age_hours, bool)
-            or max_age_hours < 24
-        ):
+        if type(max_age_hours) is not int or isinstance(max_age_hours, bool) or max_age_hours < 24:
             return
 
         if now is not None:

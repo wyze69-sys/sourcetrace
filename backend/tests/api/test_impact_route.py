@@ -77,9 +77,7 @@ def _app(repo_record=None, chunks=None, lexical_hits=None, authed: bool = True):
 def test_impact_requires_bearer_authentication() -> None:
     app, _ = _app(authed=False)
     client = TestClient(app)
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"})
     assert response.status_code == 401
     assert response.headers.get("WWW-Authenticate") == "Bearer"
 
@@ -98,9 +96,7 @@ def test_impact_missing_or_cross_owner_repository_returns_uniform_404() -> None:
 def test_impact_not_ready_repository_returns_400() -> None:
     app, _ = _app(repo_record=_repo_record(status="processing"))
     client = TestClient(app)
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"})
     assert response.status_code == 400
 
 
@@ -114,14 +110,10 @@ def test_impact_empty_symbol_is_rejected() -> None:
 def test_impact_success_returns_upstream_citations_and_risk() -> None:
     target = _chunk("c_target", "compute")
     caller = _chunk("c_caller", "handler", references=[ReferenceEvidence("compute", "call", 4, 4)])
-    app, _ = _app(
-        repo_record=_repo_record(), chunks=[target, caller], lexical_hits=[target]
-    )
+    app, _ = _app(repo_record=_repo_record(), chunks=[target, caller], lexical_hits=[target])
     client = TestClient(app)
 
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"})
 
     assert response.status_code == 200
     data = response.json()
@@ -145,14 +137,10 @@ def test_impact_success_returns_upstream_citations_and_risk() -> None:
 
 
 def test_impact_unresolved_symbol_returns_200_with_unknown_risk() -> None:
-    app, _ = _app(
-        repo_record=_repo_record(), chunks=[_chunk("c_x", "unrelated")], lexical_hits=[]
-    )
+    app, _ = _app(repo_record=_repo_record(), chunks=[_chunk("c_x", "unrelated")], lexical_hits=[])
     client = TestClient(app)
 
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact", json={"symbol": "does_not_exist"}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact", json={"symbol": "does_not_exist"})
 
     assert response.status_code == 200
     data = response.json()
@@ -198,7 +186,7 @@ def _explain_app(outcome, chunks, lexical_hits):
 
     app, _ = _app(repo_record=_repo_record(), chunks=chunks, lexical_hits=lexical_hits)
     explainer = _FakeExplainer(outcome)
-    app.dependency_overrides[get_impact_explainer_factory] = lambda: (lambda: explainer)
+    app.dependency_overrides[get_impact_explainer_factory] = lambda: lambda: explainer
     app.dependency_overrides[get_settings] = lambda: Settings(
         llm_provider="gemini", gemini_api_key="test-gemini-key"
     )
@@ -207,9 +195,7 @@ def _explain_app(outcome, chunks, lexical_hits):
 
 def _impact_fixture():
     target = _chunk("c_target", "compute")
-    caller = _chunk(
-        "c_caller", "handler", references=[ReferenceEvidence("compute", "call", 4, 4)]
-    )
+    caller = _chunk("c_caller", "handler", references=[ReferenceEvidence("compute", "call", 4, 4)])
     return target, caller
 
 
@@ -307,21 +293,13 @@ def test_diff_impact_explain_without_llm_capability_returns_422() -> None:
     assert response.status_code == 422
 
 
-_VALID_DIFF = (
-    "--- a/src/app.py\n"
-    "+++ b/src/app.py\n"
-    "@@ -2,1 +2,1 @@\n"
-    "-old\n"
-    "+new\n"
-)
+_VALID_DIFF = "--- a/src/app.py\n+++ b/src/app.py\n@@ -2,1 +2,1 @@\n-old\n+new\n"
 
 
 def test_diff_impact_requires_bearer_authentication() -> None:
     app, _ = _app(authed=False)
     client = TestClient(app)
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF})
     assert response.status_code == 401
     assert response.headers.get("WWW-Authenticate") == "Bearer"
 
@@ -339,9 +317,7 @@ def test_diff_impact_missing_or_cross_owner_repository_returns_uniform_404() -> 
 def test_diff_impact_not_ready_repository_returns_400() -> None:
     app, _ = _app(repo_record=_repo_record(status="processing"))
     client = TestClient(app)
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF})
     assert response.status_code == 400
 
 
@@ -360,15 +336,11 @@ def test_diff_impact_rejects_non_diff_input_with_422() -> None:
 
 def test_diff_impact_success_returns_targets_and_aggregated_impact() -> None:
     target = _chunk("c_target", "compute")
-    caller = _chunk(
-        "c_caller", "handler", references=[ReferenceEvidence("compute", "call", 4, 4)]
-    )
+    caller = _chunk("c_caller", "handler", references=[ReferenceEvidence("compute", "call", 4, 4)])
     app, mock_chunk_repo = _app(repo_record=_repo_record(), chunks=[target, caller])
     client = TestClient(app)
 
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact/diff", json={"diff": _VALID_DIFF})
 
     assert response.status_code == 200
     data = response.json()
@@ -387,14 +359,10 @@ def test_diff_impact_success_returns_targets_and_aggregated_impact() -> None:
 
 def test_impact_makes_no_llm_or_provider_calls() -> None:
     target = _chunk("c_target", "compute")
-    app, mock_chunk_repo = _app(
-        repo_record=_repo_record(), chunks=[target], lexical_hits=[target]
-    )
+    app, mock_chunk_repo = _app(repo_record=_repo_record(), chunks=[target], lexical_hits=[target])
     client = TestClient(app)
 
-    response = client.post(
-        "/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"}
-    )
+    response = client.post("/api/v1/repositories/repo_i1/impact", json={"symbol": "compute"})
 
     assert response.status_code == 200
     # The chunk repository is the ONLY collaborator, and only its two

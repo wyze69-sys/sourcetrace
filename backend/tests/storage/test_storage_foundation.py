@@ -45,9 +45,7 @@ def test_configured_uri_and_database_passed_to_injected_factory() -> None:
     mock_client = MagicMock()
     mock_client_factory = MagicMock(return_value=mock_client)
 
-    manager = MongoStorageManager(
-        settings=settings, client_factory=mock_client_factory
-    )
+    manager = MongoStorageManager(settings=settings, client_factory=mock_client_factory)
     db = manager.get_database()
 
     mock_client_factory.assert_called_once_with("mongodb://localhost:27017")
@@ -126,4 +124,3 @@ def test_init_indexes_creation() -> None:
     # Call init_indexes a second time to verify idempotency
     init_indexes(mock_db)
     assert mock_collections["code_chunks"].create_index.call_count > 0
-

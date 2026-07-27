@@ -29,9 +29,7 @@ class FakeRetrievalService:
 
     def __init__(self, result: GroundedEvidenceResult | Exception | None = None) -> None:
         self.result = (
-            result
-            if result is not None
-            else GroundedEvidenceResult(items=(), total_retrieved=0)
+            result if result is not None else GroundedEvidenceResult(items=(), total_retrieved=0)
         )
         self.retrieve_calls: list[dict[str, Any]] = []
 
@@ -113,9 +111,7 @@ def _make_evidence(
 
 
 def test_no_evidence_does_not_call_generation_provider() -> None:
-    retrieval_service = FakeRetrievalService(
-        GroundedEvidenceResult(items=(), total_retrieved=0)
-    )
+    retrieval_service = FakeRetrievalService(GroundedEvidenceResult(items=(), total_retrieved=0))
     provider = FakeGenerationProvider()
     service = GroundedAnswerService(retrieval_service, provider)
 
@@ -148,9 +144,7 @@ def test_valid_answer_with_valid_citation_marker() -> None:
     retrieval_result = GroundedEvidenceResult(items=(ev1, ev2), total_retrieved=2)
 
     retrieval_service = FakeRetrievalService(retrieval_result)
-    provider = FakeGenerationProvider(
-        "Config is loaded in sourcetrace/core/config.py [E1]."
-    )
+    provider = FakeGenerationProvider("Config is loaded in sourcetrace/core/config.py [E1].")
     service = GroundedAnswerService(retrieval_service, provider)
 
     res = service.generate_answer("sess_001", "repo_001", "How does config work?")

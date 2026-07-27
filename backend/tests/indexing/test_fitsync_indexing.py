@@ -38,14 +38,16 @@ class _InMemoryCodeChunkRepository(CodeChunkRepository):
         self, repository_id: str, owner_session_id: str
     ) -> tuple[CodeChunk, ...]:
         return tuple(
-            c for c in self.saved_chunks
+            c
+            for c in self.saved_chunks
             if c.repository_id == repository_id and c.owner_session_id == owner_session_id
         )
 
     def delete_by_repository_id(self, repository_id: str, owner_session_id: str) -> int:
         prev_len = len(self.saved_chunks)
         self.saved_chunks = [
-            c for c in self.saved_chunks
+            c
+            for c in self.saved_chunks
             if not (c.repository_id == repository_id and c.owner_session_id == owner_session_id)
         ]
         return prev_len - len(self.saved_chunks)
@@ -272,4 +274,3 @@ export function App() {
     assert "WorkoutCard" in extracted_symbols
     assert "useWorkout" in extracted_symbols
     assert "fetchWorkouts" in extracted_symbols
-

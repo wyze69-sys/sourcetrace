@@ -18,8 +18,10 @@ from fastapi import (
 from sourcetrace.api.dependencies import (
     CurrentOwnerId,
     GitHubIndexingScheduler,
+    GitHubRefreshScheduler,
     ZipIndexingScheduler,
     get_github_indexing_scheduler,
+    get_github_refresh_scheduler,
     get_indexing_job_repository,
     get_ingestion_service,
     get_repository_repository,
@@ -31,6 +33,7 @@ from sourcetrace.api.schemas import (
     CreateGitHubRepositoryRequest,
     CreateRepositoryResponse,
     ErrorEnvelope,
+    IndexingJob,
     Repository,
     RepositoryListResponse,
     job_record_to_schema,
@@ -534,8 +537,7 @@ def create_github_repository(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
-                f"Requested index mode {requested_mode!r} "
-                "is not allowed by server configuration."
+                f"Requested index mode {requested_mode!r} is not allowed by server configuration."
             ),
         )
 
@@ -612,3 +614,142 @@ def create_github_repository(
         ) from None
 
     return response_payload
+
+
+@router.post(
+    "/repositories/{repository_id}/refresh",
+    response_model=IndexingJob,
+    status_code=status.HTTP_202_ACCEPTED,
+    operation_id="refreshRepository",
+    responses={
+        **UNAUTHORIZED_RESPONSE,
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Repository not found",
+        },
+        status.HTTP_409_CONFLICT: {
+            "model": ErrorEnvelope,
+            "description": "Repository refresh or indexing is already in progress",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": ErrorEnvelope,
+            "description": "Refresh is only supported for ready GitHub repositories",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
+)
+def refresh_repository(
+    repository_id: str,
+    background_tasks: BackgroundTasks,
+    owner_session_id: CurrentOwnerId,
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
+    job_repo: Annotated[IndexingJobRepository, Depends(get_indexing_job_repository)],
+    scheduler: Annotated[GitHubRefreshScheduler, Depends(get_github_refresh_scheduler)],
+) -> IndexingJob:
+    """Trigger a generation-safe refresh for an existing ready GitHub repository."""
+    clean_repo_id = repository_id.strip()
+
+    try:
+        repo = repository_repo.get_by_id(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    if repo is None or repo.owner_session_id != owner_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+
+    if repo.source_type != "github" or repo.status != "ready":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Repository refresh is only supported for ready GitHub repositories.",
+        )
+
+    try:
+        existing_job = job_repo.get_by_repository(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    if existing_job is not None and existing_job.status in (
+        "queued",
+        "acquiring",
+        "scanning",
+        "parsing",
+        "embedding",
+        "storing",
+        "processing",
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Repository refresh or indexing is already in progress.",
+        )
+
+    import uuid
+
+    job_id = f"job_ref_{uuid.uuid4().hex[:12]}"
+    now = datetime.now(UTC)
+    job_record = IndexingJobRecord(
+        job_id=job_id,
+        repository_id=clean_repo_id,
+        owner_session_id=owner_session_id,
+        status="queued",
+        job_type="refresh",
+        current_step="Queued repository refresh",
+        progress_percentage=0,
+        created_at=now,
+        updated_at=now,
+    )
+
+    try:
+        job_repo.save(job_record)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    try:
+        scheduler.schedule(
+            background_tasks=background_tasks,
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+            job_id=job_id,
+        )
+    except Exception:
+        try:
+            job_repo.transition_status(
+                owner_session_id=owner_session_id,
+                job_id=job_id,
+                repository_id=clean_repo_id,
+                expected_status="queued",
+                new_status="failed",
+                current_step="Refresh scheduling failed",
+                progress_percentage=None,
+                error_message="Could not schedule refresh task safely.",
+                updated_at=now,
+                completed_at=now,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from None
+
+    return job_record_to_schema(job_record)

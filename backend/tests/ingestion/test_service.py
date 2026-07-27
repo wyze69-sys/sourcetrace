@@ -79,17 +79,11 @@ class FakeRepositoryRepository:
         self.fail_on_save = fail_on_save
         self.deleted_keys: list[tuple[str, str]] = []
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         return self.repositories.get((owner_session_id, repository_id))
 
     def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]:
-        return [
-            r
-            for (owner_id, _), r in self.repositories.items()
-            if owner_id == owner_session_id
-        ]
+        return [r for (owner_id, _), r in self.repositories.items() if owner_id == owner_session_id]
 
     def count_by_owner(self, owner_session_id: str) -> int:
         return len(self.list_by_owner(owner_session_id))
@@ -119,9 +113,7 @@ class AmbiguousCleanupRepository(FakeRepositoryRepository):
             raise RuntimeError("Cleanup transport timeout (Simulated Mongo Error)")
         return super().delete(owner_session_id, repository_id)
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         if self.fail_on_cleanup:
             raise RuntimeError("Verification read timeout (Simulated Mongo Error)")
         return super().get_by_id(owner_session_id, repository_id)
@@ -132,9 +124,7 @@ class FakeIndexingJobRepository:
         self.jobs: dict[tuple[str, str], IndexingJobRecord] = {}
         self.fail_on_save = fail_on_save
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         return self.jobs.get((owner_session_id, job_id))
 
     def get_by_repository(
@@ -152,9 +142,7 @@ class FakeIndexingJobRepository:
         self.jobs[key] = job
         return job
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         keys_to_del = [
             k
             for k, j in self.jobs.items()
@@ -303,7 +291,9 @@ def test_pre_reservation_validation_rejection_consumes_no_quota(
     # 6. Non-string name (no coercion)
     with pytest.raises(RepositoryValidationError) as exc_info:
         service.create_pending_repository(
-            owner_id, "zip", name=12345  # type: ignore[arg-type]
+            owner_id,
+            "zip",
+            name=12345,  # type: ignore[arg-type]
         )
 
     # Confirm quota counter remains 0 and no records persisted
@@ -413,9 +403,7 @@ def test_uncertain_cleanup_retains_slot_conservatively(
     job_repo: FakeIndexingJobRepository,
     active_session: AnonymousSession,
 ) -> None:
-    ambiguous_repo = AmbiguousCleanupRepository(
-        fail_on_save=True, fail_on_cleanup=True
-    )
+    ambiguous_repo = AmbiguousCleanupRepository(fail_on_save=True, fail_on_cleanup=True)
     service = IngestionService(session_repo, ambiguous_repo, job_repo)
     owner_id = active_session.owner_session_id
 

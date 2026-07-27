@@ -197,9 +197,7 @@ def test_malformed_stored_evidence_fails_strictly(field: str, bad_value: Any) ->
 
 
 def test_chunk_with_default_evidence_serializes_to_empty_lists() -> None:
-    chunk = _make_chunk(
-        references=(), imports=(), endpoints=(), extraction_truncated=False
-    )
+    chunk = _make_chunk(references=(), imports=(), endpoints=(), extraction_truncated=False)
     doc = _chunk_to_doc(chunk)
     assert doc["references"] == []
     assert doc["imports"] == []

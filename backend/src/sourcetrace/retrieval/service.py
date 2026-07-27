@@ -94,7 +94,8 @@ class SemanticRetrievalService:
         self._validate_identifiers(owner_session_id, repository_id)
 
         # 3. Repository Readiness Validation
-        self._validate_repository_readiness(owner_session_id, repository_id)
+        repo_record = self._validate_repository_readiness(owner_session_id, repository_id)
+        active_gen = getattr(repo_record, "active_generation_id", None)
 
         # 4. Embed Query or Lexical Search
         is_static = (
@@ -110,6 +111,7 @@ class SemanticRetrievalService:
                     repository_id=repository_id,
                     query_text=query_text,
                     limit=valid_limit,
+                    generation_id=active_gen,
                 )
             else:
                 search_results = []
@@ -120,6 +122,7 @@ class SemanticRetrievalService:
                 repository_id=repository_id,
                 query_vector=query_vector,
                 limit=valid_limit,
+                generation_id=active_gen,
             )
             if not search_results and hasattr(self._code_chunk_repo, "search_lexical"):
                 search_results = self._code_chunk_repo.search_lexical(
@@ -127,6 +130,7 @@ class SemanticRetrievalService:
                     repository_id=repository_id,
                     query_text=query_text,
                     limit=valid_limit,
+                    generation_id=active_gen,
                 )
 
         if not search_results:
@@ -177,9 +181,7 @@ class SemanticRetrievalService:
 
         return limit
 
-    def _validate_identifiers(
-        self, owner_session_id: Any, repository_id: Any
-    ) -> None:
+    def _validate_identifiers(self, owner_session_id: Any, repository_id: Any) -> None:
         if type(owner_session_id) is not str or not owner_session_id.strip():
             raise RetrievalError("Retrieval failed safely.")
         if type(repository_id) is not str or not repository_id.strip():
@@ -189,9 +191,7 @@ class SemanticRetrievalService:
         self, owner_session_id: str, repository_id: str
     ) -> RepositoryRecord:
         try:
-            repo_record = self._repository_repo.get_by_id(
-                owner_session_id, repository_id
-            )
+            repo_record = self._repository_repo.get_by_id(owner_session_id, repository_id)
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception:
@@ -214,9 +214,7 @@ class SemanticRetrievalService:
     def _embed_query(self, query_text: str) -> tuple[float, ...]:
         try:
             model_id = getattr(self._embedding_provider, "model_identifier", None)
-            expected_dim = getattr(
-                self._embedding_provider, "embedding_dimensions", None
-            )
+            expected_dim = getattr(self._embedding_provider, "embedding_dimensions", None)
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception:
@@ -225,11 +223,7 @@ class SemanticRetrievalService:
         if type(model_id) is not str or not model_id.strip():
             raise RetrievalError("Retrieval failed safely.")
 
-        if (
-            type(expected_dim) is not int
-            or type(expected_dim) is bool
-            or expected_dim <= 0
-        ):
+        if type(expected_dim) is not int or type(expected_dim) is bool or expected_dim <= 0:
             raise RetrievalError("Retrieval failed safely.")
 
         try:
@@ -266,6 +260,7 @@ class SemanticRetrievalService:
         repository_id: str,
         query_vector: tuple[float, ...],
         limit: int,
+        generation_id: str | None = None,
     ) -> Sequence[Any]:
         try:
             results = self._code_chunk_repo.search_vectors(
@@ -273,6 +268,7 @@ class SemanticRetrievalService:
                 repository_id=repository_id,
                 query_vector=list(query_vector),
                 limit=limit,
+                generation_id=generation_id,
             )
         except (KeyboardInterrupt, SystemExit):
             raise
@@ -345,18 +341,10 @@ class SemanticRetrievalService:
 
             start_line = chunk.start_line
             end_line = chunk.end_line
-            if (
-                type(start_line) is not int
-                or type(start_line) is bool
-                or start_line < 1
-            ):
+            if type(start_line) is not int or type(start_line) is bool or start_line < 1:
                 raise RetrievalError("Retrieval failed safely.")
 
-            if (
-                type(end_line) is not int
-                or type(end_line) is bool
-                or end_line < start_line
-            ):
+            if type(end_line) is not int or type(end_line) is bool or end_line < start_line:
                 raise RetrievalError("Retrieval failed safely.")
 
             sym_name = chunk.symbol_name

@@ -285,13 +285,16 @@ class FlowTraceService:
         repository_id: str,
         entry_query: str,
         max_depth: int | None = None,
+        generation_id: str | None = None,
     ) -> FlowTraceResult:
         depth_cap = MAX_TRACE_DEPTH
         if max_depth is not None:
             depth_cap = max(1, min(max_depth, MAX_TRACE_DEPTH))
 
         all_chunks = sorted(
-            self._chunk_repo.list_by_repository(owner_session_id, repository_id),
+            self._chunk_repo.list_by_repository(
+                owner_session_id, repository_id, generation_id=generation_id
+            ),
             key=chunk_sort_key,
         )
 
@@ -309,7 +312,9 @@ class FlowTraceService:
                 )
             )
 
-        entry = self._resolve_entry(owner_session_id, repository_id, entry_query)
+        entry = self._resolve_entry(
+            owner_session_id, repository_id, entry_query, generation_id=generation_id
+        )
         if entry.resolved_node_id is None:
             state.gaps.append(
                 TraceGap(
@@ -359,13 +364,18 @@ class FlowTraceService:
     # ------------------------------------------------------------------
 
     def _resolve_entry(
-        self, owner_session_id: str, repository_id: str, entry_query: str
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        entry_query: str,
+        generation_id: str | None = None,
     ) -> TraceEntry:
         results = self._chunk_repo.search_lexical(
             owner_session_id=owner_session_id,
             repository_id=repository_id,
             query_text=entry_query,
             limit=MAX_ENTRY_CANDIDATES,
+            generation_id=generation_id,
         )
         ordered = sorted(results, key=lambda r: (-r.score,) + chunk_sort_key(r.chunk))
         candidates = tuple(r.chunk.chunk_id for r in ordered)

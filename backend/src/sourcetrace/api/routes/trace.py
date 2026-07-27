@@ -136,10 +136,7 @@ def _result_to_response(
             for e in result.edges
         ],
         steps=list(result.steps),
-        gaps=[
-            TraceGapSchema(kind=g.kind, detail=g.detail, node_id=g.node_id)
-            for g in result.gaps
-        ],
+        gaps=[TraceGapSchema(kind=g.kind, detail=g.detail, node_id=g.node_id) for g in result.gaps],
         explanation=explanation,
     )
 
@@ -239,6 +236,7 @@ def trace_feature_flow(
             repository_id=clean_repo_id,
             entry_query=body.entry,
             max_depth=body.max_depth,
+            generation_id=repo.active_generation_id,
         )
     except StorageDataError as err:
         raise HTTPException(
@@ -262,8 +260,6 @@ def trace_feature_flow(
         if explained is None:
             result = _with_explanation_failed_gap(result)
         else:
-            explanation = TraceExplanationSchema(
-                text=explained[0], cited_steps=list(explained[1])
-            )
+            explanation = TraceExplanationSchema(text=explained[0], cited_steps=list(explained[1]))
 
     return _result_to_response(clean_repo_id, result, explanation)

@@ -28,9 +28,7 @@ class FakeRepositoryRepository:
         self.record = record
         self.get_by_id_calls: list[tuple[str, str]] = []
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         self.get_by_id_calls.append((owner_session_id, repository_id))
         if isinstance(self.record, BaseException):
             raise self.record
@@ -50,6 +48,7 @@ class FakeCodeChunkRepository:
         repository_id: str,
         query_vector: list[float],
         limit: int = 5,
+        generation_id: str | None = None,
     ) -> list[RetrievalResult]:
         self.search_calls.append(
             {
@@ -97,7 +96,6 @@ class FakeEmbeddingProvider:
         if isinstance(self._vector, tuple) and self._vector and isinstance(self._vector[0], tuple):
             return self._vector
         return (self._vector,)
-
 
 
 def _make_ready_repo(
@@ -270,9 +268,7 @@ def test_readiness_missing_repository() -> None:
 
 
 def test_readiness_wrong_owner() -> None:
-    repo_repo = FakeRepositoryRepository(
-        _make_ready_repo(owner_session_id="other_owner")
-    )
+    repo_repo = FakeRepositoryRepository(_make_ready_repo(owner_session_id="other_owner"))
     chunk_repo = FakeCodeChunkRepository([])
     provider = FakeEmbeddingProvider()
     service = SemanticRetrievalService(repo_repo, chunk_repo, provider)
@@ -488,9 +484,7 @@ def test_vector_search_invalid_limit(invalid_limit: Any) -> None:
     repo_repo = FakeRepositoryRepository(_make_ready_repo())
     chunk_repo = FakeCodeChunkRepository([])
     provider = FakeEmbeddingProvider()
-    service = SemanticRetrievalService(
-        repo_repo, chunk_repo, provider, vector_search_max_limit=50
-    )
+    service = SemanticRetrievalService(repo_repo, chunk_repo, provider, vector_search_max_limit=50)
 
     with pytest.raises(RetrievalValidationError) as exc_info:
         service.retrieve("sess_001", "repo_001", "valid query", limit=invalid_limit)
@@ -825,9 +819,7 @@ def test_evidence_snippet_truncation() -> None:
     repo_repo = FakeRepositoryRepository(_make_ready_repo())
     chunk_repo = FakeCodeChunkRepository([res])
     provider = FakeEmbeddingProvider()
-    service = SemanticRetrievalService(
-        repo_repo, chunk_repo, provider, max_snippet_chars=100
-    )
+    service = SemanticRetrievalService(repo_repo, chunk_repo, provider, max_snippet_chars=100)
 
     evidence = service.retrieve("sess_001", "repo_001", "query")
 

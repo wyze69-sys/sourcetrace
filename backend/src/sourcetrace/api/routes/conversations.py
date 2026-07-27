@@ -94,10 +94,7 @@ def _refresh_session_activity_quietly(
     """Best-effort session activity update after exchange persistence."""
     try:
         existing_session = session_repo.get_by_id(owner_session_id)
-        if (
-            existing_session is not None
-            and existing_session.owner_session_id == owner_session_id
-        ):
+        if existing_session is not None and existing_session.owner_session_id == owner_session_id:
             now_session = datetime.now(UTC)
             updated_session = AnonymousSession(
                 owner_session_id=owner_session_id,
@@ -133,23 +130,15 @@ def create_conversation(
     repository_id: str,
     body: CreateConversationRequest,
     owner_session_id: CurrentOwnerId,
-    repository_repo: Annotated[
-        RepositoryRepository, Depends(get_repository_repository)
-    ],
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
     exchange_repo: Annotated[
         ConversationExchangeRepository, Depends(get_conversation_exchange_repository)
     ],
-    session_repo: Annotated[
-        AnonymousSessionRepository, Depends(get_session_repository)
-    ],
-    answer_service: Annotated[
-        GroundedAnswerService, Depends(get_grounded_answer_service)
-    ],
+    session_repo: Annotated[AnonymousSessionRepository, Depends(get_session_repository)],
+    answer_service: Annotated[GroundedAnswerService, Depends(get_grounded_answer_service)],
 ) -> CreateConversationResponse:
     """Create a new conversation and generate a grounded answer."""
-    repo = repository_repo.get_by_id(
-        owner_session_id=owner_session_id, repository_id=repository_id
-    )
+    repo = repository_repo.get_by_id(owner_session_id=owner_session_id, repository_id=repository_id)
     if repo is None or repo.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -257,18 +246,12 @@ def get_conversation(
     repository_id: str,
     conversation_id: str,
     owner_session_id: CurrentOwnerId,
-    repository_repo: Annotated[
-        RepositoryRepository, Depends(get_repository_repository)
-    ],
-    conversation_repo: Annotated[
-        ConversationRepository, Depends(get_conversation_repository)
-    ],
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
+    conversation_repo: Annotated[ConversationRepository, Depends(get_conversation_repository)],
     message_repo: Annotated[MessageRepository, Depends(get_message_repository)],
 ) -> ConversationDetailResponse:
     """Returns conversation details and full message history. Excluded from session activity."""
-    repo = repository_repo.get_by_id(
-        owner_session_id=owner_session_id, repository_id=repository_id
-    )
+    repo = repository_repo.get_by_id(owner_session_id=owner_session_id, repository_id=repository_id)
     if repo is None or repo.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -317,27 +300,17 @@ def send_message(
     conversation_id: str,
     body: SendMessageRequest,
     owner_session_id: CurrentOwnerId,
-    repository_repo: Annotated[
-        RepositoryRepository, Depends(get_repository_repository)
-    ],
-    conversation_repo: Annotated[
-        ConversationRepository, Depends(get_conversation_repository)
-    ],
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
+    conversation_repo: Annotated[ConversationRepository, Depends(get_conversation_repository)],
     message_repo: Annotated[MessageRepository, Depends(get_message_repository)],
     exchange_repo: Annotated[
         ConversationExchangeRepository, Depends(get_conversation_exchange_repository)
     ],
-    session_repo: Annotated[
-        AnonymousSessionRepository, Depends(get_session_repository)
-    ],
-    answer_service: Annotated[
-        GroundedAnswerService, Depends(get_grounded_answer_service)
-    ],
+    session_repo: Annotated[AnonymousSessionRepository, Depends(get_session_repository)],
+    answer_service: Annotated[GroundedAnswerService, Depends(get_grounded_answer_service)],
 ) -> SendMessageResponse:
     """Send message in existing conversation and generate a grounded answer."""
-    repo = repository_repo.get_by_id(
-        owner_session_id=owner_session_id, repository_id=repository_id
-    )
+    repo = repository_repo.get_by_id(owner_session_id=owner_session_id, repository_id=repository_id)
     if repo is None or repo.status != "ready":
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

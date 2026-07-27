@@ -323,5 +323,3 @@ def validate_question(question: Any) -> str:
     if len(cleaned) > MAX_QUESTION_LENGTH:
         raise ValueError("Question exceeds maximum length.")
     return cleaned
-
-

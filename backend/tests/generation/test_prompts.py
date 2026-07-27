@@ -89,9 +89,7 @@ def test_evidence_truncation_on_prompt_budget() -> None:
     ev1 = _make_evidence(chunk_id="c1", snippet_content=long_snippet)
     ev2 = _make_evidence(chunk_id="c2", snippet_content=long_snippet)
 
-    messages = build_grounded_prompt(
-        "Question", [ev1, ev2], max_prompt_chars=2000
-    )
+    messages = build_grounded_prompt("Question", [ev1, ev2], max_prompt_chars=2000)
 
     total_chars = sum(len(m.content) for m in messages)
     user_text = messages[-1].content
@@ -102,7 +100,6 @@ def test_evidence_truncation_on_prompt_budget() -> None:
     # Citation metadata line remains intact
     assert "path: sourcetrace/core/security.py" in user_text
     assert "lines: 15-42" in user_text
-
 
 
 def test_bounded_conversation_context() -> None:

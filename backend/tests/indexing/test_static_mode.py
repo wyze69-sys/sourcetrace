@@ -24,9 +24,12 @@ class InMemoryCodeChunkRepository:
             self.chunks.append(chunk)
         return len(chunks)
 
-    def list_by_repository(self, owner_session_id: str, repository_id: str) -> list[CodeChunk]:
+    def list_by_repository(
+        self, owner_session_id: str, repository_id: str, generation_id: str | None = None
+    ) -> list[CodeChunk]:
         return [
-            c for c in self.chunks
+            c
+            for c in self.chunks
             if c.owner_session_id == owner_session_id and c.repository_id == repository_id
         ]
 
@@ -36,9 +39,11 @@ class InMemoryCodeChunkRepository:
         return []
 
     def search_lexical(
-        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5
+        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5,
+        generation_id: str | None = None,
     ):
         from sourcetrace.models.domain import RetrievalResult
+
         results = []
         term = query_text.lower()
         for c in self.chunks:
@@ -54,7 +59,8 @@ class InMemoryCodeChunkRepository:
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         initial = len(self.chunks)
         self.chunks = [
-            c for c in self.chunks
+            c
+            for c in self.chunks
             if not (c.owner_session_id == owner_session_id and c.repository_id == repository_id)
         ]
         return initial - len(self.chunks)

@@ -35,4 +35,3 @@ def get_capabilities(
         semantic_search_available=caps.semantic_search_available,
         generation_available=caps.generation_available,
     )
-

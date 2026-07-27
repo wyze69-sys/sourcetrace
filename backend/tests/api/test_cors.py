@@ -6,7 +6,9 @@ from sourcetrace.api.app import create_app
 
 
 def test_cors_preflight_request_allowed_origin(monkeypatch):
-    monkeypatch.setenv("SOURCETRACE_CORS_ORIGINS", "https://sourcetrace-frontend.vercel.app,http://localhost:5173")
+    monkeypatch.setenv(
+        "SOURCETRACE_CORS_ORIGINS", "https://sourcetrace-frontend.vercel.app,http://localhost:5173"
+    )
     app = create_app()
     client = TestClient(app)
 
@@ -19,7 +21,10 @@ def test_cors_preflight_request_allowed_origin(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "https://sourcetrace-frontend.vercel.app"
+    assert (
+        response.headers.get("access-control-allow-origin")
+        == "https://sourcetrace-frontend.vercel.app"
+    )
     assert response.headers.get("access-control-allow-credentials") == "true"
 
 
@@ -37,5 +42,8 @@ def test_cors_preflight_request_vercel_regex_match(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.headers.get("access-control-allow-origin") == "https://sourcetrace-preview-xyz.vercel.app"
+    assert (
+        response.headers.get("access-control-allow-origin")
+        == "https://sourcetrace-preview-xyz.vercel.app"
+    )
     assert response.headers.get("access-control-allow-credentials") == "true"

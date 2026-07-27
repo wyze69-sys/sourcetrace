@@ -331,6 +331,7 @@ def test_16_direct_manager_close_invalidates_target_and_forces_reinitialization(
     mock_client.__getitem__.return_value = mock_db
 
     import sourcetrace.storage.mongodb as mongodb_mod
+
     monkeypatch.setattr(mongodb_mod, "MongoClient", lambda uri: mock_client)
 
     custom_settings = Settings(
@@ -392,6 +393,7 @@ def test_18_custom_settings_without_manager_or_db_creates_isolated_manager(monke
     mock_client.__getitem__.return_value = mock_db
 
     import sourcetrace.storage.mongodb as mongodb_mod
+
     monkeypatch.setattr(mongodb_mod, "MongoClient", lambda uri: mock_client)
 
     custom_settings = Settings(
@@ -473,6 +475,7 @@ def test_22_genuine_default_target_classification(monkeypatch):
     mock_client.__getitem__.return_value = mock_db
 
     import sourcetrace.storage.mongodb as mongodb_mod
+
     monkeypatch.setattr(mongodb_mod, "MongoClient", lambda uri: mock_client)
 
     default_mgr = get_default_storage_manager()

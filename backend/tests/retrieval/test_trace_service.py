@@ -70,16 +70,17 @@ class _FakeChunkRepo:
     def __init__(self, chunks: list[CodeChunk]) -> None:
         self._chunks = chunks
 
-    def list_by_repository(self, owner_session_id: str, repository_id: str) -> list[CodeChunk]:
+    def list_by_repository(
+        self, owner_session_id: str, repository_id: str, generation_id: str | None = None
+    ) -> list[CodeChunk]:
         assert owner_session_id == _OWNER and repository_id == _REPO
         return list(self._chunks)
 
     def search_lexical(
-        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5
+        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5,
+        generation_id: str | None = None,
     ) -> list[RetrievalResult]:
-        matches = [
-            c for c in self._chunks if query_text.casefold() in c.symbol_name.casefold()
-        ]
+        matches = [c for c in self._chunks if query_text.casefold() in c.symbol_name.casefold()]
         return [RetrievalResult(chunk=c, score=1.0) for c in matches[:limit]]
 
 
@@ -115,9 +116,7 @@ def test_same_file_unique_call_yields_medium_edge_with_citation() -> None:
 
 
 def test_import_resolved_cross_file_call_is_high_confidence() -> None:
-    imports = (
-        ImportEvidence("get_stats", "services.stats", "get_stats", 1, 1),
-    )
+    imports = (ImportEvidence("get_stats", "services.stats", "get_stats", 1, 1),)
     chunks = [
         _chunk(
             "c_api",
@@ -151,9 +150,7 @@ def test_http_edge_links_full_stack_flow() -> None:
             "c_client",
             "client/src/api.js",
             "fetchStats",
-            endpoints=(
-                EndpointEvidence("calls", "GET", "/api/v1/stats", "/api/v1/stats", 9, 9),
-            ),
+            endpoints=(EndpointEvidence("calls", "GET", "/api/v1/stats", "/api/v1/stats", 9, 9),),
             parser_version="js-ts-treesitter-v2",
         ),
         _chunk(
@@ -235,9 +232,7 @@ def test_endpoint_unmatched_reports_gap() -> None:
             "c_client",
             "client/src/api.js",
             "pushLog",
-            endpoints=(
-                EndpointEvidence("calls", "POST", "/api/v1/logs", "/api/v1/logs", 3, 3),
-            ),
+            endpoints=(EndpointEvidence("calls", "POST", "/api/v1/logs", "/api/v1/logs", 3, 3),),
             parser_version="js-ts-treesitter-v2",
         ),
     ]
@@ -321,9 +316,7 @@ def test_fanout_is_capped_with_gap() -> None:
     fanout = MAX_EDGES_PER_NODE + 3
     refs = tuple(_ref(f"target_{i}", line=i + 2) for i in range(fanout))
     chunks = [_chunk("c_hub", "src/hub.py", "hub", references=refs)]
-    chunks += [
-        _chunk(f"c_t{i}", f"src/t{i}.py", f"target_{i}") for i in range(fanout)
-    ]
+    chunks += [_chunk(f"c_t{i}", f"src/t{i}.py", f"target_{i}") for i in range(fanout)]
     result = _trace(chunks, "hub")
 
     hub_edges = [e for e in result.edges if e.from_node_id == "c_hub"]

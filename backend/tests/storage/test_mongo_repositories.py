@@ -177,9 +177,7 @@ def test_repository_repository_list_and_count_scoping(
     # Count by owner
     mock_collection.count_documents.return_value = 1
     count = repo.count_by_owner("sess_abc123")
-    mock_collection.count_documents.assert_called_with(
-        {"owner_session_id": "sess_abc123"}
-    )
+    mock_collection.count_documents.assert_called_with({"owner_session_id": "sess_abc123"})
     assert count == 1
 
 
@@ -346,9 +344,7 @@ def test_malformed_repository_id_rejection(
     "invalid_job_id",
     [True, False, 789, ["job1"], {"job": "1"}, ""],
 )
-def test_malformed_job_id_rejection(
-    mock_collection: MagicMock, invalid_job_id: object
-) -> None:
+def test_malformed_job_id_rejection(mock_collection: MagicMock, invalid_job_id: object) -> None:
     now = datetime.now(UTC)
     mock_collection.find_one.return_value = {
         "job_id": invalid_job_id,
@@ -881,6 +877,3 @@ def test_job_transition_status_optional_progress(mock_collection: MagicMock) -> 
                 progress_percentage=bad_p,  # type: ignore
                 updated_at=now,
             )
-
-
-

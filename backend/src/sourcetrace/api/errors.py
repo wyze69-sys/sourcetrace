@@ -11,6 +11,7 @@ CODE_MAPPING = {
     status.HTTP_400_BAD_REQUEST: "BAD_REQUEST",
     status.HTTP_401_UNAUTHORIZED: "UNAUTHORIZED",
     status.HTTP_404_NOT_FOUND: "RESOURCE_NOT_FOUND",
+    status.HTTP_409_CONFLICT: "CONFLICT",
     status.HTTP_413_CONTENT_TOO_LARGE: "PAYLOAD_TOO_LARGE",
     status.HTTP_422_UNPROCESSABLE_CONTENT: "VALIDATION_ERROR",
     status.HTTP_429_TOO_MANY_REQUESTS: "QUOTA_EXCEEDED",
@@ -20,6 +21,7 @@ MESSAGE_MAPPING = {
     status.HTTP_400_BAD_REQUEST: "Invalid request.",
     status.HTTP_401_UNAUTHORIZED: "Authentication credentials are missing or invalid.",
     status.HTTP_404_NOT_FOUND: "The requested resource was not found.",
+    status.HTTP_409_CONFLICT: "The request conflicts with the current state of the resource.",
     status.HTTP_413_CONTENT_TOO_LARGE: "The submitted content is too large.",
     status.HTTP_422_UNPROCESSABLE_CONTENT: "Request validation failed.",
     status.HTTP_429_TOO_MANY_REQUESTS: "The request cannot be processed at this time.",
@@ -30,9 +32,7 @@ def register_error_handlers(app: FastAPI) -> None:
     """Register global exception handlers on the FastAPI application."""
 
     @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(
-        request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         error_code = CODE_MAPPING.get(exc.status_code, "INTERNAL_ERROR")
         if (
             exc.status_code == status.HTTP_400_BAD_REQUEST

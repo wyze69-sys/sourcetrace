@@ -59,9 +59,7 @@ class RecordingZipIndexingScheduler:
     ) -> None:
         if self.should_fail:
             raise RuntimeError("Scheduler error")
-        self.scheduled_calls.append(
-            (owner_session_id, repository_id, job_id, staging_token)
-        )
+        self.scheduled_calls.append((owner_session_id, repository_id, job_id, staging_token))
 
 
 class InMemoryAnonymousSessionRepository:
@@ -185,7 +183,8 @@ class InMemoryRepositoryRepository:
     def delete(self, owner_session_id: str, repository_id: str) -> bool:
         initial = len(self.records)
         self.records = [
-            r for r in self.records
+            r
+            for r in self.records
             if not (r.owner_session_id == owner_session_id and r.repository_id == repository_id)
         ]
         return len(self.records) < initial
@@ -255,7 +254,8 @@ class InMemoryIndexingJobRepository:
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         initial = len(self.records)
         self.records = [
-            j for j in self.records
+            j
+            for j in self.records
             if not (j.owner_session_id == owner_session_id and j.repository_id == repository_id)
         ]
         return initial - len(self.records)
@@ -298,15 +298,17 @@ def test_upload_zip_repository_success(tmp_path: Path) -> None:
     exp = now + timedelta(days=7)
     owner_id = "sess_upload_user"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -407,15 +409,17 @@ def test_upload_incompatible_media_type_returns_422(tmp_path: Path, incompatible
 
 def test_upload_missing_content_type_accepted(tmp_path: Path) -> None:
     now = datetime.now(UTC)
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id="sess_no_type",
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=now + timedelta(days=7),
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id="sess_no_type",
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=now + timedelta(days=7),
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -433,15 +437,17 @@ def test_upload_missing_content_type_accepted(tmp_path: Path) -> None:
 
 def test_upload_malformed_ingestion_service_result_does_not_schedule(tmp_path: Path) -> None:
     now = datetime.now(UTC)
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id="sess_malformed",
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=now + timedelta(days=7),
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id="sess_malformed",
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=now + timedelta(days=7),
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -487,15 +493,17 @@ def test_upload_malformed_ingestion_service_result_does_not_schedule(tmp_path: P
 
 def test_upload_schema_conversion_failure_does_not_schedule(tmp_path: Path) -> None:
     now = datetime.now(UTC)
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id="sess_schema_fail",
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=now + timedelta(days=7),
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id="sess_schema_fail",
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=now + timedelta(days=7),
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -572,15 +580,17 @@ def test_upload_invalid_creation_result_types_fail_safe(
     tmp_path: Path, bad_creation_result: Any
 ) -> None:
     now = datetime.now(UTC)
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id="sess_bad_result",
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=now + timedelta(days=7),
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id="sess_bad_result",
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=now + timedelta(days=7),
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -604,15 +614,17 @@ def test_upload_invalid_creation_result_types_fail_safe(
 
 def test_upload_subclass_creation_result_rejected(tmp_path: Path) -> None:
     now = datetime.now(UTC)
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id="sess_subclass",
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=now + timedelta(days=7),
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id="sess_subclass",
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=now + timedelta(days=7),
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -658,4 +670,3 @@ def test_upload_subclass_creation_result_rejected(tmp_path: Path) -> None:
     assert res.status_code == 500
     assert len(scheduler.scheduled_calls) == 0
     assert len(list(tmp_path.glob("*.staged"))) == 0
-

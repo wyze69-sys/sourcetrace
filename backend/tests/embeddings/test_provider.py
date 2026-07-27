@@ -174,9 +174,7 @@ def test_out_of_order_response_items_restored() -> None:
 def test_missing_response_index_rejected() -> None:
     batch_data = [[_FakeEmbeddingItem(None, [0.1, 0.2, 0.3])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError) as exc_info:
         adapter.embed(["text"])
     assert str(exc_info.value) == "Embedding failed safely."
@@ -190,9 +188,7 @@ def test_duplicate_response_index_rejected() -> None:
         ]
     ]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1", "text2"])
 
@@ -201,9 +197,7 @@ def test_duplicate_response_index_rejected() -> None:
 def test_negative_or_out_of_range_index_rejected(bad_idx: int) -> None:
     batch_data = [[_FakeEmbeddingItem(bad_idx, [0.1, 0.2, 0.3])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1"])
 
@@ -212,9 +206,7 @@ def test_negative_or_out_of_range_index_rejected(bad_idx: int) -> None:
 def test_boolean_and_non_integer_index_rejected(bool_idx: Any) -> None:
     batch_data = [[_FakeEmbeddingItem(bool_idx, [0.1, 0.2, 0.3])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1"])
 
@@ -223,9 +215,7 @@ def test_response_count_mismatch_rejected() -> None:
     # 2 inputs sent, only 1 item returned
     batch_data = [[_FakeEmbeddingItem(0, [0.1, 0.2, 0.3])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1", "text2"])
 
@@ -238,9 +228,7 @@ def test_response_count_mismatch_rejected() -> None:
 def test_empty_vector_rejected() -> None:
     batch_data = [[_FakeEmbeddingItem(0, [])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1"])
 
@@ -249,9 +237,7 @@ def test_wrong_vector_dimension_rejected() -> None:
     # Expected dim 3, returned 2
     batch_data = [[_FakeEmbeddingItem(0, [0.1, 0.2])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1"])
 
@@ -264,9 +250,7 @@ def test_inconsistent_vector_dimensions_rejected() -> None:
         ]
     ]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1", "text2"])
 
@@ -287,9 +271,7 @@ def test_inconsistent_vector_dimensions_rejected() -> None:
 def test_invalid_numeric_values_rejected(bad_val: Any) -> None:
     batch_data = [[_FakeEmbeddingItem(0, [0.1, bad_val, 0.3])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     with pytest.raises(EmbeddingError):
         adapter.embed(["text1"])
 
@@ -298,9 +280,7 @@ def test_valid_numeric_values_converted_to_floats() -> None:
     # Integers and floats allowed
     batch_data = [[_FakeEmbeddingItem(0, [1, 2.5, -3])]]
     client = _FakeClient(response_data_list=batch_data)
-    adapter = OpenAIEmbeddingAdapter(
-        model_identifier="test", expected_dimensions=3, client=client
-    )
+    adapter = OpenAIEmbeddingAdapter(model_identifier="test", expected_dimensions=3, client=client)
     res = adapter.embed(["text1"])
     assert res == ((1.0, 2.5, -3.0),)
     assert isinstance(res[0][0], float)
@@ -470,4 +450,3 @@ def test_empty_list_and_empty_tuple_return_empty_tuple_without_client_creation()
     assert adapter.embed([]) == ()
     assert adapter.embed(()) == ()
     assert client.call_count == 0
-

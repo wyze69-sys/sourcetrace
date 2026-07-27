@@ -39,11 +39,7 @@ def embed_chunks(
         raise EmbeddingError("Embedding failed safely.")
     model_id = raw_model.strip()
 
-    if (
-        not isinstance(raw_dim, int)
-        or isinstance(raw_dim, bool)
-        or raw_dim <= 0
-    ):
+    if not isinstance(raw_dim, int) or isinstance(raw_dim, bool) or raw_dim <= 0:
         raise EmbeddingError("Embedding failed safely.")
     expected_dim = raw_dim
 

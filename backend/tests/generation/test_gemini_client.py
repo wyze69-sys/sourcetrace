@@ -124,13 +124,13 @@ def test_whitespace_only_model_fails_on_construction() -> None:
         GeminiGenerationAdapter(model_identifier="   ")
     assert str(exc_info.value) == "Generation failed safely."
 
+
 def test_none_model_with_blank_config_fails_on_construction() -> None:
     """When model_identifier=None and settings.gemini_model is blank, it fails."""
     settings = Settings(gemini_model="")
     with pytest.raises(GenerationError) as exc_info:
         GeminiGenerationAdapter(model_identifier=None, settings=settings)
     assert str(exc_info.value) == "Generation failed safely."
-
 
 
 # ---------------------------------------------------------------------------
@@ -153,9 +153,7 @@ def test_missing_gemini_api_key_fails_on_generate() -> None:
 
 
 def test_successful_generation_returns_text() -> None:
-    fake_client = _FakeGeminiClient(
-        response_queue=[_FakeGeminiResponse("The answer is 42.")]
-    )
+    fake_client = _FakeGeminiClient(response_queue=[_FakeGeminiResponse("The answer is 42.")])
     adapter = GeminiGenerationAdapter(
         model_identifier="gemini-2.5-flash",
         client=fake_client,
@@ -166,9 +164,7 @@ def test_successful_generation_returns_text() -> None:
 
 
 def test_whitespace_stripped_from_answer() -> None:
-    fake_client = _FakeGeminiClient(
-        response_queue=[_FakeGeminiResponse("  padded answer  ")]
-    )
+    fake_client = _FakeGeminiClient(response_queue=[_FakeGeminiResponse("  padded answer  ")])
     adapter = GeminiGenerationAdapter(
         model_identifier="gemini-2.5-flash",
         client=fake_client,
@@ -294,12 +290,8 @@ def test_correct_model_passed_to_api() -> None:
 
 
 def test_evidence_markers_preserved_in_response() -> None:
-    answer_with_markers = (
-        "The function is defined on line 42 [E1] and uses the config [E2]."
-    )
-    fake_client = _FakeGeminiClient(
-        response_queue=[_FakeGeminiResponse(answer_with_markers)]
-    )
+    answer_with_markers = "The function is defined on line 42 [E1] and uses the config [E2]."
+    fake_client = _FakeGeminiClient(response_queue=[_FakeGeminiResponse(answer_with_markers)])
     adapter = GeminiGenerationAdapter(
         model_identifier="gemini-2.5-flash",
         client=fake_client,
@@ -324,9 +316,7 @@ def test_evidence_markers_preserved_in_response() -> None:
     ],
 )
 def test_empty_or_none_response_text_rejected(bad_text: Any) -> None:
-    fake_client = _FakeGeminiClient(
-        response_queue=[_FakeGeminiResponse(bad_text)]
-    )
+    fake_client = _FakeGeminiClient(response_queue=[_FakeGeminiResponse(bad_text)])
     adapter = GeminiGenerationAdapter(
         model_identifier="gemini-2.5-flash",
         client=fake_client,
@@ -339,9 +329,7 @@ def test_empty_or_none_response_text_rejected(bad_text: Any) -> None:
 
 def test_oversized_response_rejected() -> None:
     large_text = "A" * 10000
-    fake_client = _FakeGeminiClient(
-        response_queue=[_FakeGeminiResponse(large_text)]
-    )
+    fake_client = _FakeGeminiClient(response_queue=[_FakeGeminiResponse(large_text)])
     adapter = GeminiGenerationAdapter(
         model_identifier="gemini-2.5-flash",
         max_output_chars=100,

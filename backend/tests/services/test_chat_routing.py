@@ -37,18 +37,12 @@ class InMemoryConversationRepository:
         self.items[key] = conversation
         return conversation
 
-    def delete(
-        self, owner_session_id: str, repository_id: str, conversation_id: str
-    ) -> bool:
+    def delete(self, owner_session_id: str, repository_id: str, conversation_id: str) -> bool:
         key = (owner_session_id, repository_id, conversation_id)
         return self.items.pop(key, None) is not None
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
-        keys = [
-            k
-            for k in self.items
-            if k[0] == owner_session_id and k[1] == repository_id
-        ]
+        keys = [k for k in self.items if k[0] == owner_session_id and k[1] == repository_id]
         for k in keys:
             del self.items[k]
         return len(keys)
@@ -91,11 +85,7 @@ class InMemoryMessageRepository:
         return len(keys)
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
-        keys = [
-            k
-            for k in self.items
-            if k[0] == owner_session_id and k[1] == repository_id
-        ]
+        keys = [k for k in self.items if k[0] == owner_session_id and k[1] == repository_id]
         for k in keys:
             del self.items[k]
         return len(keys)

@@ -42,9 +42,7 @@ MAX_IMPACT_DEPTH: int = 6
 MAX_IMPACT_NODES_PER_DIRECTION: int = 50
 
 _COMPONENT_SYMBOL_TYPES: frozenset[str] = frozenset({"react_component", "hook"})
-_TEST_DIR_SEGMENTS: frozenset[str] = frozenset(
-    {"test", "tests", "__tests__", "spec", "specs"}
-)
+_TEST_DIR_SEGMENTS: frozenset[str] = frozenset({"test", "tests", "__tests__", "spec", "specs"})
 
 _CONFIDENCE_RANK: dict[str, int] = {"low": 1, "medium": 2, "high": 3}
 _RANK_CONFIDENCE: dict[int, str] = {v: k for k, v in _CONFIDENCE_RANK.items()}
@@ -164,10 +162,7 @@ def _is_test_path(relative_path: str) -> bool:
     name = segments[-1]
     stem = name.rsplit(".", 1)[0]
     return (
-        name.startswith("test_")
-        or stem.endswith("_test")
-        or ".test." in name
-        or ".spec." in name
+        name.startswith("test_") or stem.endswith("_test") or ".test." in name or ".spec." in name
     )
 
 
@@ -181,27 +176,27 @@ class ChangeImpactService:
     def __init__(self, code_chunk_repo: CodeChunkRepository) -> None:
         self._chunk_repo = code_chunk_repo
 
-    def preview(
+    def impact(
         self,
         owner_session_id: str,
         repository_id: str,
         symbol_query: str,
         max_depth: int | None = None,
+        generation_id: str | None = None,
     ) -> ChangeImpactResult:
         depth_cap = MAX_IMPACT_DEPTH
         if max_depth is not None:
             depth_cap = max(1, min(max_depth, MAX_IMPACT_DEPTH))
 
         all_chunks = sorted(
-            self._chunk_repo.list_by_repository(owner_session_id, repository_id),
+            self._chunk_repo.list_by_repository(
+                owner_session_id, repository_id, generation_id=generation_id
+            ),
             key=chunk_sort_key,
         )
 
         gaps: list[ImpactGap] = []
-
-        stale_count = sum(
-            1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS
-        )
+        stale_count = sum(1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS)
         if stale_count:
             gaps.append(
                 ImpactGap(
@@ -213,12 +208,12 @@ class ChangeImpactService:
                 )
             )
 
-        target = self._resolve_target(owner_session_id, repository_id, symbol_query)
+        target = self._resolve_target(
+            owner_session_id, repository_id, symbol_query, generation_id=generation_id
+        )
         by_id = {c.chunk_id: c for c in all_chunks}
         target_chunk = (
-            by_id.get(target.resolved_node_id)
-            if target.resolved_node_id is not None
-            else None
+            by_id.get(target.resolved_node_id) if target.resolved_node_id is not None else None
         )
         if target_chunk is None:
             gaps.append(
@@ -234,9 +229,7 @@ class ChangeImpactService:
             )
 
         indexes = build_flow_indexes(all_chunks)
-        edges, unresolved_names, unmatched_calls = self._build_edges(
-            all_chunks, indexes
-        )
+        edges, unresolved_names, unmatched_calls = self._build_edges(all_chunks, indexes)
 
         downstream_adjacency: dict[str, list[_Edge]] = {}
         upstream_adjacency: dict[str, list[_Edge]] = {}
@@ -272,17 +265,13 @@ class ChangeImpactService:
 
         affected_endpoints = self._affected_endpoints([target_chunk], upstream, by_id)
         affected_components = tuple(
-            item.node_id
-            for item in upstream
-            if item.symbol_type in _COMPONENT_SYMBOL_TYPES
+            item.node_id for item in upstream if item.symbol_type in _COMPONENT_SYMBOL_TYPES
         )
         affected_tests = tuple(
             item.node_id for item in upstream if _is_test_path(item.relative_path)
         )
 
-        truncated = any(
-            g.kind in ("depth_truncated", "nodes_truncated") for g in gaps
-        )
+        truncated = any(g.kind in ("depth_truncated", "nodes_truncated") for g in gaps)
         risk_level, risk_factors = self._assess_risk(
             upstream, affected_endpoints, affected_tests, truncated
         )
@@ -305,6 +294,7 @@ class ChangeImpactService:
         repository_id: str,
         diff_text: str,
         max_depth: int | None = None,
+        generation_id: str | None = None,
     ) -> DiffImpactResult:
         """Aggregate impact preview for a pasted unified diff.
 
@@ -322,15 +312,15 @@ class ChangeImpactService:
         diff_files = parse_unified_diff(diff_text)
 
         all_chunks = sorted(
-            self._chunk_repo.list_by_repository(owner_session_id, repository_id),
+            self._chunk_repo.list_by_repository(
+                owner_session_id, repository_id, generation_id=generation_id
+            ),
             key=chunk_sort_key,
         )
         by_id = {c.chunk_id: c for c in all_chunks}
         gaps: list[ImpactGap] = []
 
-        stale_count = sum(
-            1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS
-        )
+        stale_count = sum(1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS)
         if stale_count:
             gaps.append(
                 ImpactGap(
@@ -405,17 +395,13 @@ class ChangeImpactService:
                 end_line=by_id[chunk_id].end_line,
                 changed_lines=tuple(sorted(target_hits[chunk_id])),
             )
-            for chunk_id in sorted(
-                target_hits, key=lambda i: chunk_sort_key(by_id[i])
-            )
+            for chunk_id in sorted(target_hits, key=lambda i: chunk_sort_key(by_id[i]))
         )
         if not targets:
             return DiffImpactResult(risk_level="unknown", gaps=_sorted_gaps(gaps))
 
         indexes = build_flow_indexes(all_chunks)
-        edges, unresolved_names, unmatched_calls = self._build_edges(
-            all_chunks, indexes
-        )
+        edges, unresolved_names, unmatched_calls = self._build_edges(all_chunks, indexes)
         downstream_adjacency: dict[str, list[_Edge]] = {}
         upstream_adjacency: dict[str, list[_Edge]] = {}
         for edge in edges:
@@ -442,26 +428,20 @@ class ChangeImpactService:
 
         self._append_evidence_gaps(unresolved_names, unmatched_calls, gaps)
         involved_ids = (
-            set(seeds)
-            | {item.node_id for item in upstream}
-            | {item.node_id for item in downstream}
+            set(seeds) | {item.node_id for item in upstream} | {item.node_id for item in downstream}
         )
         self._append_extraction_gaps(involved_ids, by_id, gaps)
 
         target_chunks = [by_id[target.node_id] for target in targets]
         affected_endpoints = self._affected_endpoints(target_chunks, upstream, by_id)
         affected_components = tuple(
-            item.node_id
-            for item in upstream
-            if item.symbol_type in _COMPONENT_SYMBOL_TYPES
+            item.node_id for item in upstream if item.symbol_type in _COMPONENT_SYMBOL_TYPES
         )
         affected_tests = tuple(
             item.node_id for item in upstream if _is_test_path(item.relative_path)
         )
 
-        truncated = any(
-            g.kind in ("depth_truncated", "nodes_truncated") for g in gaps
-        )
+        truncated = any(g.kind in ("depth_truncated", "nodes_truncated") for g in gaps)
         risk_level, risk_factors = self._assess_risk(
             upstream, affected_endpoints, affected_tests, truncated
         )
@@ -530,9 +510,7 @@ class ChangeImpactService:
         return None
 
     @staticmethod
-    def _first_stale_line(
-        diff_file: DiffFile, file_chunks: list[CodeChunk]
-    ) -> int | None:
+    def _first_stale_line(diff_file: DiffFile, file_chunks: list[CodeChunk]) -> int | None:
         """Return the first old line whose diff text disagrees with the index.
 
         Compares the diff's context/deleted line samples against the stored
@@ -556,13 +534,18 @@ class ChangeImpactService:
     # ------------------------------------------------------------------
 
     def _resolve_target(
-        self, owner_session_id: str, repository_id: str, symbol_query: str
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        symbol_query: str,
+        generation_id: str | None = None,
     ) -> ImpactTarget:
         results = self._chunk_repo.search_lexical(
             owner_session_id=owner_session_id,
             repository_id=repository_id,
             query_text=symbol_query,
             limit=MAX_ENTRY_CANDIDATES,
+            generation_id=generation_id,
         )
         ordered = sorted(results, key=lambda r: (-r.score,) + chunk_sort_key(r.chunk))
         candidates = tuple(r.chunk.chunk_id for r in ordered)
@@ -624,9 +607,7 @@ class ChangeImpactService:
                 resolution = resolve_endpoint_call(chunk, endpoint, indexes)
                 label = f"{endpoint.http_method} {endpoint.path_literal}"
                 if resolution.target is None:
-                    unmatched_calls.append(
-                        f"{endpoint.http_method} {endpoint.normalized_path}"
-                    )
+                    unmatched_calls.append(f"{endpoint.http_method} {endpoint.normalized_path}")
                     continue
                 edges.append(
                     _Edge(
@@ -682,9 +663,7 @@ class ChangeImpactService:
 
         visited: dict[str, tuple[int, int, _Edge]] = {}
         seen: set[str] = set(seeds)
-        frontier: dict[str, int] = {
-            seed: _CONFIDENCE_RANK["high"] for seed in seeds
-        }
+        frontier: dict[str, int] = {seed: _CONFIDENCE_RANK["high"] for seed in seeds}
         depth = 0
         nodes_truncated = False
 
@@ -703,9 +682,7 @@ class ChangeImpactService:
                         discoveries[neighbor] = (combined, edge)
 
             admitted: dict[str, int] = {}
-            for neighbor in sorted(
-                discoveries, key=lambda i: chunk_sort_key(by_id[i])
-            ):
+            for neighbor in sorted(discoveries, key=lambda i: chunk_sort_key(by_id[i])):
                 if len(visited) >= MAX_IMPACT_NODES_PER_DIRECTION:
                     gaps.append(
                         ImpactGap(
@@ -745,9 +722,7 @@ class ChangeImpactService:
         items: list[ImpactItem] = []
         for node_id, (distance, rank, edge) in visited.items():
             chunk = by_id[node_id]
-            via_node_id = (
-                edge.target_id if direction == "upstream" else edge.source_id
-            )
+            via_node_id = edge.target_id if direction == "upstream" else edge.source_id
             items.append(
                 ImpactItem(
                     node_id=node_id,
@@ -907,9 +882,7 @@ class ChangeImpactService:
                 )
             )
 
-        low_confidence_count = sum(
-            1 for item in upstream if item.confidence == "low"
-        )
+        low_confidence_count = sum(1 for item in upstream if item.confidence == "low")
         if low_confidence_count:
             factors.append(
                 RiskFactor(
@@ -927,9 +900,7 @@ class ChangeImpactService:
                 RiskFactor(
                     kind="impact_truncated",
                     severity="medium",
-                    detail=(
-                        "Traversal limits were reached; the true impact may be larger."
-                    ),
+                    detail=("Traversal limits were reached; the true impact may be larger."),
                 )
             )
 

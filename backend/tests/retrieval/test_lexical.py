@@ -93,6 +93,7 @@ def test_semantic_retrieval_service_static_integration():
 
     mock_chunk_repo = MagicMock()
     from sourcetrace.models.domain import RetrievalResult
+
     mock_chunk_repo.search_lexical.return_value = [RetrievalResult(chunk=chunk1, score=1.0)]
 
     mock_repo_repo = MagicMock()
@@ -124,6 +125,7 @@ def test_semantic_retrieval_service_static_integration():
         repository_id="repo_1",
         query_text="format_user_name",
         limit=5,
+        generation_id=None,
     )
     assert result.total_retrieved == 1
     assert result.items[0].citation.symbol_name == "format_user_name"
@@ -220,6 +222,7 @@ def test_search_lexical_query_and_limit_bounds():
     # 201 characters rejected
     query_201 = "a" * 201
     import pytest
+
     with pytest.raises(StorageDataError) as exc_info:
         repo.search_lexical("owner_1", "repo_1", query_201, limit=5)
     assert "200 characters" in str(exc_info.value)
@@ -233,5 +236,3 @@ def test_search_lexical_query_and_limit_bounds():
     with pytest.raises(StorageDataError) as exc_info:
         repo.search_lexical("owner_1", "repo_1", "workout", limit=51)
     assert "between 1 and 50" in str(exc_info.value)
-
-

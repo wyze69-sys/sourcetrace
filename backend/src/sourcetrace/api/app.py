@@ -47,4 +47,3 @@ def create_app() -> FastAPI:
     app.include_router(indexing_jobs_router, prefix="/api/v1")
     app.include_router(conversations_router, prefix="/api/v1")
     return app
-

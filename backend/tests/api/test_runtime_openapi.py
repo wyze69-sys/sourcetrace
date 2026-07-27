@@ -25,9 +25,7 @@ class InMemoryIndexingJobRepoForValidation:
     def __init__(self, job: IndexingJobRecord) -> None:
         self.job = job
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         if self.job.owner_session_id == owner_session_id and self.job.job_id == job_id:
             return self.job
         return None
@@ -238,9 +236,7 @@ def test_out_of_range_persisted_progress_returns_500_internal_error() -> None:
 
     for bad_job in bad_jobs:
         app = create_app()
-        settings_obj = Settings(
-            env="development", session_signing_secret=SecretStr(TEST_SECRET)
-        )
+        settings_obj = Settings(env="development", session_signing_secret=SecretStr(TEST_SECRET))
 
         mock_session_repo = MagicMock()
         mock_session_repo.get_by_id.return_value = session

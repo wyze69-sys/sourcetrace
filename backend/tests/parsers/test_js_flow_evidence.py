@@ -58,8 +58,7 @@ export function second() { return plain(); }
     }
     for name in ("first", "second"):
         entries = {
-            (i.local_name, i.source_module, i.imported_name)
-            for i in _chunk(chunks, name).imports
+            (i.local_name, i.source_module, i.imported_name) for i in _chunk(chunks, name).imports
         }
         assert expected <= entries
 
@@ -193,9 +192,7 @@ def test_class_chunk_does_not_absorb_method_body_calls() -> None:
     cls = _chunk(chunks, "Service")
     method = _chunk(chunks, "Service.run")
     assert {r.local_name for r in cls.references} == set()
-    assert ("this.execute", "attribute_call") in {
-        (r.local_name, r.kind) for r in method.references
-    }
+    assert ("this.execute", "attribute_call") in {(r.local_name, r.kind) for r in method.references}
 
 
 # ---------------------------------------------------------------------------
@@ -320,9 +317,7 @@ app.get('/api/v1/users', listUsers);
     chunks = _parse(source)
     handler = _chunk(chunks, "listUsers")
     declared = [e for e in handler.endpoints if e.kind == "declares"]
-    assert [(e.http_method, e.normalized_path) for e in declared] == [
-        ("GET", "/api/v1/users")
-    ]
+    assert [(e.http_method, e.normalized_path) for e in declared] == [("GET", "/api/v1/users")]
     # No synthetic chunk when a named same-file handler owns the route.
     assert not any(c.symbol_type == "route_handler" for c in chunks)
 
@@ -342,9 +337,7 @@ app.post('/api/v1/logs', (req, res) => {
     assert handler.start_line == 4 and handler.end_line == 7
     assert "recordLog" in handler.content
     declared = [e for e in handler.endpoints if e.kind == "declares"]
-    assert [(e.http_method, e.normalized_path) for e in declared] == [
-        ("POST", "/api/v1/logs")
-    ]
+    assert [(e.http_method, e.normalized_path) for e in declared] == [("POST", "/api/v1/logs")]
     # The handler body's own references are owned by the synthetic chunk.
     assert any(r.local_name == "recordLog" for r in handler.references)
 
@@ -364,9 +357,7 @@ function setup() {
     chunks = _parse(source)
     setup = _chunk(chunks, "setup")
     declared = [e for e in setup.endpoints if e.kind == "declares"]
-    assert [(e.http_method, e.normalized_path) for e in declared] == [
-        ("GET", "/health")
-    ]
+    assert [(e.http_method, e.normalized_path) for e in declared] == [("GET", "/health")]
 
 
 def test_conflicting_mounts_never_fold_a_prefix() -> None:
@@ -430,9 +421,7 @@ app.use('/api/v1/reports', router);
   return res.json();
 }
 """
-    parsed = _parse(server_source, "server/routes.js") + _parse(
-        client_source, "client/api.js"
-    )
+    parsed = _parse(server_source, "server/routes.js") + _parse(client_source, "client/api.js")
     now = datetime(2026, 7, 26, tzinfo=UTC)
     chunks = [
         CodeChunk(
@@ -457,16 +446,16 @@ app.use('/api/v1/reports', router);
     ]
 
     class _Repo:
-        def list_by_repository(self, owner_session_id, repository_id):
+        def list_by_repository(self, owner_session_id, repository_id, generation_id=None):
             return list(chunks)
 
-        def search_lexical(self, owner_session_id, repository_id, query_text, limit=5):
+        def search_lexical(
+            self, owner_session_id, repository_id, query_text, limit=5, generation_id=None
+        ):
             hits = [c for c in chunks if query_text in c.symbol_name]
             return [RetrievalResult(chunk=c, score=1.0) for c in hits[:limit]]
 
-    result = FlowTraceService(_Repo()).trace(
-        "sess_flow", "repo_flow", "fetchReportSummary"
-    )
+    result = FlowTraceService(_Repo()).trace("sess_flow", "repo_flow", "fetchReportSummary")
 
     http_edges = [e for e in result.edges if e.kind == "http"]
     assert len(http_edges) == 1

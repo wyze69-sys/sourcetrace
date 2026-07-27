@@ -181,7 +181,6 @@ def _open_and_validate_compressed_archive(
     )
 
     if isinstance(archive_source, (str, Path)):
-
         path = Path(archive_source)
         if not path.exists() or not path.is_file():
             raise InvalidArchiveError("Archive source is unavailable.")
@@ -234,9 +233,7 @@ def _perform_safe_extraction(
         try:
             safe_relpath = validate_archive_member_path(member.filename)
         except UnsafeArchiveMemberPathError as err:
-            raise UnsafeArchiveMemberPathError(
-                "Archive member violates safety policy."
-            ) from err
+            raise UnsafeArchiveMemberPathError("Archive member violates safety policy.") from err
 
         if _is_dir_entry(member):
             dir_members.append((member, safe_relpath))
@@ -260,9 +257,7 @@ def _perform_safe_extraction(
         try:
             target_dir.relative_to(target_root)
         except ValueError as err:
-            raise UnsafeArchiveMemberPathError(
-                "Archive member violates safety policy."
-            ) from err
+            raise UnsafeArchiveMemberPathError("Archive member violates safety policy.") from err
         target_dir.mkdir(parents=True, exist_ok=True)
 
     extracted_paths: list[str] = []
@@ -273,9 +268,7 @@ def _perform_safe_extraction(
         try:
             target_file.relative_to(target_root)
         except ValueError as err:
-            raise UnsafeArchiveMemberPathError(
-                "Archive member violates safety policy."
-            ) from err
+            raise UnsafeArchiveMemberPathError("Archive member violates safety policy.") from err
 
         target_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -302,9 +295,7 @@ def _perform_safe_extraction(
         except (IngestionLimitError, UnsafeArchiveMemberPathError):
             raise
         except Exception as err:
-            raise InvalidArchiveError(
-                "Archive extraction failed safely."
-            ) from err
+            raise InvalidArchiveError("Archive extraction failed safely.") from err
 
         extracted_paths.append(safe_relpath)
 

@@ -175,9 +175,7 @@ def _string_literal_value(node: tree_sitter.Node | None, source_bytes: bytes) ->
     return text
 
 
-def _js_callable_name(
-    node: tree_sitter.Node, source_bytes: bytes
-) -> tuple[str, str] | None:
+def _js_callable_name(node: tree_sitter.Node, source_bytes: bytes) -> tuple[str, str] | None:
     """Return (local_name, kind) for a call/new target, or None when underivable."""
     if node.type == "identifier":
         return _get_node_text(node, source_bytes), "call"
@@ -209,9 +207,7 @@ def _call_arguments(call_node: tree_sitter.Node) -> list[tree_sitter.Node]:
     return [c for c in args_node.children if c.type not in ("(", ")", ",", "comment")]
 
 
-def _object_string_prop(
-    obj_node: tree_sitter.Node, key: str, source_bytes: bytes
-) -> str | None:
+def _object_string_prop(obj_node: tree_sitter.Node, key: str, source_bytes: bytes) -> str | None:
     for child in obj_node.children:
         if child.type != "pair":
             continue
@@ -255,9 +251,7 @@ def _identifier_text(node: tree_sitter.Node | None, source_bytes: bytes) -> str 
     return None
 
 
-def collect_express_context(
-    root: tree_sitter.Node, source_bytes: bytes
-) -> _ExpressContext:
+def collect_express_context(root: tree_sitter.Node, source_bytes: bytes) -> _ExpressContext:
     """One deterministic pass over the whole file for Express server facts."""
     server_objects: set[str] = set()
     mounts: dict[str, str | None] = {}  # None = conflicting, never fold
@@ -270,15 +264,9 @@ def collect_express_context(
         if node.type == "variable_declarator":
             name = _identifier_text(node.child_by_field_name("name"), source_bytes)
             value = node.child_by_field_name("value")
-            if (
-                name
-                and value is not None
-                and value.type == "call_expression"
-            ):
+            if name and value is not None and value.type == "call_expression":
                 callee = value.child_by_field_name("function")
-                callee_text = (
-                    _get_node_text(callee, source_bytes) if callee is not None else ""
-                )
+                callee_text = _get_node_text(callee, source_bytes) if callee is not None else ""
                 if callee_text in _EXPRESS_FACTORY_CALLS:
                     server_objects.add(name)
             continue
@@ -358,14 +346,10 @@ def _js_call_endpoint(
         # Express-style declarations pass a handler (inline function, or any
         # second argument when the receiver is a known same-file server or
         # mounted router object); client calls do not.
-        has_inline_handler = any(
-            a.type in _FUNCTION_VALUED_NODE_TYPES for a in args[1:]
-        )
+        has_inline_handler = any(a.type in _FUNCTION_VALUED_NODE_TYPES for a in args[1:])
         is_declaration = has_inline_handler or (is_server_object and len(args) > 1)
         if is_declaration:
-            prefix = (
-                express.mount_prefixes.get(base) if base is not None else None
-            )
+            prefix = express.mount_prefixes.get(base) if base is not None else None
             return EndpointEvidence(
                 "declares",
                 verb.upper(),
@@ -380,9 +364,7 @@ def _js_call_endpoint(
     return None
 
 
-def _es_import_evidence(
-    node: tree_sitter.Node, source_bytes: bytes
-) -> list[ImportEvidence]:
+def _es_import_evidence(node: tree_sitter.Node, source_bytes: bytes) -> list[ImportEvidence]:
     module = _string_literal_value(node.child_by_field_name("source"), source_bytes)
     if not module:
         return []
@@ -428,9 +410,7 @@ def _es_import_evidence(
                         if alias_node is not None
                         else imported
                     )
-                    out.append(
-                        ImportEvidence(local, module, imported, line_start, line_end)
-                    )
+                    out.append(ImportEvidence(local, module, imported, line_start, line_end))
     return out
 
 
@@ -441,11 +421,7 @@ def _require_import_evidence(
     if value is None or value.type != "call_expression":
         return []
     fn = value.child_by_field_name("function")
-    if (
-        fn is None
-        or fn.type != "identifier"
-        or _get_node_text(fn, source_bytes) != "require"
-    ):
+    if fn is None or fn.type != "identifier" or _get_node_text(fn, source_bytes) != "require":
         return []
     args = _call_arguments(value)
     if not args:
@@ -493,9 +469,7 @@ def _require_import_evidence(
     return out
 
 
-def _module_import_evidence(
-    root: tree_sitter.Node, source_bytes: bytes
-) -> list[ImportEvidence]:
+def _module_import_evidence(root: tree_sitter.Node, source_bytes: bytes) -> list[ImportEvidence]:
     """Collect top-level ES import and CommonJS require bindings for a file."""
     out: list[ImportEvidence] = []
     for child in root.children:
@@ -569,9 +543,7 @@ def _extract_js_flow_evidence(
                 named = _js_callable_name(fn_node, source_bytes)
                 if named is not None:
                     line_start, line_end = _calc_line_bounds(node)
-                    references.append(
-                        ReferenceEvidence(named[0], named[1], line_start, line_end)
-                    )
+                    references.append(ReferenceEvidence(named[0], named[1], line_start, line_end))
                 if node_type == "call_expression":
                     endpoint = _js_call_endpoint(node, fn_node, source_bytes, express)
                     if endpoint is not None:
@@ -583,9 +555,7 @@ def _extract_js_flow_evidence(
             if component_ref is not None:
                 references.append(component_ref)
 
-    final_refs, refs_truncated = finalize_evidence(
-        references, lambda r: (r.local_name, r.kind)
-    )
+    final_refs, refs_truncated = finalize_evidence(references, lambda r: (r.local_name, r.kind))
     final_imports, imports_truncated = finalize_evidence(
         imports, lambda i: (i.local_name, i.source_module, i.imported_name)
     )
@@ -648,9 +618,7 @@ def _extract_declarations_from_node(
         else:
             sym_type = "function"
 
-        symbols.append(
-            _RawSymbol(func_name, sym_type, start_line, end_line, content, node=node)
-        )
+        symbols.append(_RawSymbol(func_name, sym_type, start_line, end_line, content, node=node))
 
     elif node_type == "class_declaration":
         class_name = _find_child_text(target_node, {"type_identifier", "identifier"}, source_bytes)
@@ -725,8 +693,8 @@ def _extract_declarations_from_node(
                     elif _is_react_component_name(var_name) and is_react:
                         sym_type = "react_component"
                     elif (
-                        b"async" in source_bytes[v_start : v_end]
-                        or b"async" in source_bytes[decl_start_byte : decl_end_byte]
+                        b"async" in source_bytes[v_start:v_end]
+                        or b"async" in source_bytes[decl_start_byte:decl_end_byte]
                     ):
                         sym_type = "async_function"
                     else:
@@ -735,36 +703,28 @@ def _extract_declarations_from_node(
                     sym_type = "constant"
 
                 symbols.append(
-                    _RawSymbol(
-                        var_name, sym_type, start_line, end_line, content, node=decl
-                    )
+                    _RawSymbol(var_name, sym_type, start_line, end_line, content, node=decl)
                 )
 
     elif node_type == "interface_declaration":
         if_name = _find_child_text(target_node, {"type_identifier", "identifier"}, source_bytes)
         if if_name:
             symbols.append(
-                _RawSymbol(
-                    if_name, "interface", start_line, end_line, content, node=target_node
-                )
+                _RawSymbol(if_name, "interface", start_line, end_line, content, node=target_node)
             )
 
     elif node_type == "type_alias_declaration":
         type_name = _find_child_text(target_node, {"type_identifier", "identifier"}, source_bytes)
         if type_name:
             symbols.append(
-                _RawSymbol(
-                    type_name, "type_alias", start_line, end_line, content, node=target_node
-                )
+                _RawSymbol(type_name, "type_alias", start_line, end_line, content, node=target_node)
             )
 
     elif node_type == "enum_declaration":
         enum_name = _find_child_text(target_node, {"type_identifier", "identifier"}, source_bytes)
         if enum_name:
             symbols.append(
-                _RawSymbol(
-                    enum_name, "enum", start_line, end_line, content, node=target_node
-                )
+                _RawSymbol(enum_name, "enum", start_line, end_line, content, node=target_node)
             )
 
     return symbols
@@ -1158,15 +1118,9 @@ def _parsed_chunk_from_dict(data: dict) -> ParsedCodeChunk:
     """Rebuild a ParsedCodeChunk from the worker's JSON dict, restoring the
     nested evidence dataclasses that dataclasses.asdict flattened to dicts."""
     plain = dict(data)
-    references = tuple(
-        ReferenceEvidence(**item) for item in (plain.pop("references", None) or ())
-    )
-    imports = tuple(
-        ImportEvidence(**item) for item in (plain.pop("imports", None) or ())
-    )
-    endpoints = tuple(
-        EndpointEvidence(**item) for item in (plain.pop("endpoints", None) or ())
-    )
+    references = tuple(ReferenceEvidence(**item) for item in (plain.pop("references", None) or ()))
+    imports = tuple(ImportEvidence(**item) for item in (plain.pop("imports", None) or ()))
+    endpoints = tuple(EndpointEvidence(**item) for item in (plain.pop("endpoints", None) or ()))
     return ParsedCodeChunk(
         **plain,
         references=references,

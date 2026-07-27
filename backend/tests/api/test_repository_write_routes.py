@@ -98,9 +98,7 @@ class InMemoryRepositoryRepository:
     def __init__(self, records: list[RepositoryRecord] | None = None) -> None:
         self.records: list[RepositoryRecord] = records or []
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         for r in self.records:
             if r.owner_session_id == owner_session_id and r.repository_id == repository_id:
                 return r
@@ -129,11 +127,7 @@ class InMemoryRepositoryRepository:
         rec = self.get_by_id(owner_session_id, repository_id)
         if rec is None:
             return None
-        allowed = (
-            (expected_status,)
-            if isinstance(expected_status, str)
-            else expected_status
-        )
+        allowed = (expected_status,) if isinstance(expected_status, str) else expected_status
         if rec.status not in allowed:
             return None
         updated_rec = RepositoryRecord(
@@ -151,8 +145,7 @@ class InMemoryRepositoryRepository:
         self.records = [
             (
                 updated_rec
-                if r.repository_id == repository_id
-                and r.owner_session_id == owner_session_id
+                if r.repository_id == repository_id and r.owner_session_id == owner_session_id
                 else r
             )
             for r in self.records
@@ -162,7 +155,8 @@ class InMemoryRepositoryRepository:
     def delete(self, owner_session_id: str, repository_id: str) -> bool:
         initial = len(self.records)
         self.records = [
-            r for r in self.records
+            r
+            for r in self.records
             if not (r.owner_session_id == owner_session_id and r.repository_id == repository_id)
         ]
         return len(self.records) < initial
@@ -172,9 +166,7 @@ class InMemoryIndexingJobRepository:
     def __init__(self, records: list[IndexingJobRecord] | None = None) -> None:
         self.records: list[IndexingJobRecord] = records or []
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         for j in self.records:
             if j.owner_session_id == owner_session_id and j.job_id == job_id:
                 return j
@@ -208,11 +200,7 @@ class InMemoryIndexingJobRepository:
         job = self.get_by_id(owner_session_id, job_id)
         if job is None or job.repository_id != repository_id:
             return None
-        allowed = (
-            (expected_status,)
-            if isinstance(expected_status, str)
-            else expected_status
-        )
+        allowed = (expected_status,) if isinstance(expected_status, str) else expected_status
         if job.status not in allowed:
             return None
         updated_job = IndexingJobRecord(
@@ -222,9 +210,7 @@ class InMemoryIndexingJobRepository:
             status=new_status,  # type: ignore[arg-type]
             current_step=current_step if current_step is not None else job.current_step,
             progress_percentage=(
-                progress_percentage
-                if progress_percentage is not None
-                else job.progress_percentage
+                progress_percentage if progress_percentage is not None else job.progress_percentage
             ),
             error_message=error_message if error_message is not None else job.error_message,
             completed_at=completed_at if completed_at is not None else job.completed_at,
@@ -240,7 +226,8 @@ class InMemoryIndexingJobRepository:
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         initial = len(self.records)
         self.records = [
-            j for j in self.records
+            j
+            for j in self.records
             if not (j.owner_session_id == owner_session_id and j.repository_id == repository_id)
         ]
         return initial - len(self.records)
@@ -271,9 +258,7 @@ def setup_write_test_app(
     active_owner_id: str | None = None,
 ) -> tuple[FastAPI, RecordingGitHubIndexingScheduler]:
     app = create_app()
-    settings = Settings(
-        env="development", session_signing_secret=SecretStr(TEST_SECRET)
-    )
+    settings = Settings(env="development", session_signing_secret=SecretStr(TEST_SECRET))
     actual_scheduler = scheduler or RecordingGitHubIndexingScheduler()
     ingestion_service = IngestionService(
         session_repo=session_repo,
@@ -302,15 +287,17 @@ def test_post_github_repository_success_returns_202() -> None:
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -398,15 +385,17 @@ def test_post_github_repository_validation_failures_return_422(invalid_url: str)
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -454,16 +443,18 @@ def test_post_github_repository_quota_exceeded_returns_429() -> None:
     exp = now + timedelta(days=7)
     owner_id = "sess_quota_full"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-            active_repository_count=3,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+                active_repository_count=3,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -495,15 +486,17 @@ def test_post_github_repository_persistence_failure_returns_500() -> None:
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     failing_repo = MagicMock()
     failing_repo.save.side_effect = RuntimeError("Database down")
     failing_repo.get_by_id.return_value = None
@@ -534,22 +527,22 @@ def test_post_github_repository_scheduling_failure_performs_compensation_and_ret
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
     failing_scheduler = RecordingGitHubIndexingScheduler(should_fail=True)
 
-    app, _ = setup_write_test_app(
-        session_repo, repo_repo, job_repo, scheduler=failing_scheduler
-    )
+    app, _ = setup_write_test_app(session_repo, repo_repo, job_repo, scheduler=failing_scheduler)
     client = TestClient(app, raise_server_exceptions=False)
 
     token = SessionSigner(TEST_SECRET).create_cookie_token(owner_id, exp)
@@ -586,15 +579,17 @@ def test_post_github_repository_ignores_cross_session_injection() -> None:
     exp = now + timedelta(days=7)
     owner_id = "sess_legit"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
 
@@ -624,15 +619,17 @@ def test_post_github_repository_scheduling_failure_exact_signature_and_gating() 
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
     failing_scheduler = RecordingGitHubIndexingScheduler(should_fail=True)
@@ -646,9 +643,7 @@ def test_post_github_repository_scheduling_failure_exact_signature_and_gating() 
 
     job_repo.transition_status = spy_job_transition  # type: ignore[assignment]
 
-    app, _ = setup_write_test_app(
-        session_repo, repo_repo, job_repo, scheduler=failing_scheduler
-    )
+    app, _ = setup_write_test_app(session_repo, repo_repo, job_repo, scheduler=failing_scheduler)
     client = TestClient(app, raise_server_exceptions=False)
 
     token = SessionSigner(TEST_SECRET).create_cookie_token(owner_id, exp)
@@ -680,15 +675,17 @@ def test_post_github_repository_scheduling_failure_lost_race_prevents_repo_compe
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
     failing_scheduler = RecordingGitHubIndexingScheduler(should_fail=True)
@@ -697,9 +694,7 @@ def test_post_github_repository_scheduling_failure_lost_race_prevents_repo_compe
     job_repo.transition_status = MagicMock(return_value=None)
     repo_repo.transition_status = MagicMock()
 
-    app, _ = setup_write_test_app(
-        session_repo, repo_repo, job_repo, scheduler=failing_scheduler
-    )
+    app, _ = setup_write_test_app(session_repo, repo_repo, job_repo, scheduler=failing_scheduler)
     client = TestClient(app, raise_server_exceptions=False)
 
     token = SessionSigner(TEST_SECRET).create_cookie_token(owner_id, exp)
@@ -720,15 +715,17 @@ def test_post_github_repository_scheduling_failure_job_exception_masks_secrets()
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
     failing_scheduler = RecordingGitHubIndexingScheduler(should_fail=True)
@@ -737,9 +734,7 @@ def test_post_github_repository_scheduling_failure_job_exception_masks_secrets()
     job_repo.transition_status = MagicMock(side_effect=RuntimeError(secret_msg))
     repo_repo.transition_status = MagicMock()
 
-    app, _ = setup_write_test_app(
-        session_repo, repo_repo, job_repo, scheduler=failing_scheduler
-    )
+    app, _ = setup_write_test_app(session_repo, repo_repo, job_repo, scheduler=failing_scheduler)
     client = TestClient(app, raise_server_exceptions=False)
 
     token = SessionSigner(TEST_SECRET).create_cookie_token(owner_id, exp)
@@ -794,15 +789,17 @@ def test_post_github_repository_scheduling_failure_malformed_job_result_prevents
     exp = now + timedelta(days=7)
     owner_id = "sess_owner123"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner_id,
-            created_at=now,
-            updated_at=now,
-            last_active_at=now,
-            expires_at=exp,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner_id,
+                created_at=now,
+                updated_at=now,
+                last_active_at=now,
+                expires_at=exp,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
     job_repo = InMemoryIndexingJobRepository()
     failing_scheduler = RecordingGitHubIndexingScheduler(should_fail=True)
@@ -810,9 +807,7 @@ def test_post_github_repository_scheduling_failure_malformed_job_result_prevents
     job_repo.transition_status = MagicMock(return_value=malformed_result)
     repo_repo.transition_status = MagicMock()
 
-    app, _ = setup_write_test_app(
-        session_repo, repo_repo, job_repo, scheduler=failing_scheduler
-    )
+    app, _ = setup_write_test_app(session_repo, repo_repo, job_repo, scheduler=failing_scheduler)
     client = TestClient(app, raise_server_exceptions=False)
 
     token = SessionSigner(TEST_SECRET).create_cookie_token(owner_id, exp)
@@ -869,5 +864,3 @@ def test_create_github_repository_invalid_index_mode_returns_422() -> None:
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
-
-

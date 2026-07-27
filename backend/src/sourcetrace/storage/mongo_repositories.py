@@ -504,6 +504,16 @@ class MongoRepositoryRepository:
         repository_id: str,
         active_generation_id: str,
         updated_at: datetime,
+        indexed_branch: str | None = None,
+        indexed_commit_sha: str | None = None,
+        file_count: int | None = None,
+        chunk_count: int | None = None,
+        indexed_file_count: int | None = None,
+        indexed_chunk_count: int | None = None,
+        parser_versions: tuple[str, ...] | list[str] | None = None,
+        flow_evidence_complete: bool | None = None,
+        consecutive_refresh_failures: int | None = None,
+        is_stale: bool | None = None,
     ) -> RepositoryRecord | None:
         owner_id = _validate_non_empty_string(owner_session_id)
         repo_id = _validate_non_empty_string(repository_id)
@@ -513,11 +523,31 @@ class MongoRepositoryRepository:
             "owner_session_id": owner_id,
             "repository_id": repo_id,
         }
-        set_doc = {
+        set_doc: dict[str, Any] = {
             "active_generation_id": gen_id,
             "last_indexed_at": _ensure_utc(updated_at),
             "updated_at": _ensure_utc(updated_at),
         }
+        if indexed_branch is not None:
+            set_doc["indexed_branch"] = indexed_branch
+        if indexed_commit_sha is not None:
+            set_doc["indexed_commit_sha"] = indexed_commit_sha
+        if file_count is not None:
+            set_doc["file_count"] = file_count
+        if chunk_count is not None:
+            set_doc["chunk_count"] = chunk_count
+        if indexed_file_count is not None:
+            set_doc["indexed_file_count"] = indexed_file_count
+        if indexed_chunk_count is not None:
+            set_doc["indexed_chunk_count"] = indexed_chunk_count
+        if parser_versions is not None:
+            set_doc["parser_versions"] = list(parser_versions)
+        if flow_evidence_complete is not None:
+            set_doc["flow_evidence_complete"] = flow_evidence_complete
+        if consecutive_refresh_failures is not None:
+            set_doc["consecutive_refresh_failures"] = consecutive_refresh_failures
+        if is_stale is not None:
+            set_doc["is_stale"] = is_stale
 
         doc = self._collection.find_one_and_update(
             query_filter,

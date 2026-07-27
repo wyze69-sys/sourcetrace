@@ -17,9 +17,7 @@ SESSION_MAX_AGE_SECONDS = SESSION_INACTIVITY_DAYS * 24 * 60 * 60  # 604,800 seco
 MIN_SECRET_LENGTH = 32
 
 
-def _coerce_secret(
-    secret: str | SecretStr | None, fallback: SecretStr | None
-) -> str | None:
+def _coerce_secret(secret: str | SecretStr | None, fallback: SecretStr | None) -> str | None:
     """Resolve a signing secret from an explicit value or a configured fallback."""
     if isinstance(secret, SecretStr):
         return secret.get_secret_value()
@@ -45,7 +43,6 @@ def generate_message_id() -> str:
     return f"msg_{secrets.token_urlsafe(16)}"
 
 
-
 class SessionSigner:
     """Creates and validates HMAC-SHA256 signed session cookie tokens."""
 
@@ -60,9 +57,7 @@ class SessionSigner:
 
         self._secret_bytes = raw_secret.encode("utf-8")
 
-    def create_cookie_token(
-        self, owner_session_id: str, expires_at: datetime
-    ) -> str:
+    def create_cookie_token(self, owner_session_id: str, expires_at: datetime) -> str:
         """Sign and format an anonymous session cookie token."""
         exp_timestamp = int(expires_at.astimezone(UTC).timestamp())
         payload = f"{COOKIE_VERSION}.{owner_session_id}.{exp_timestamp}"
@@ -126,9 +121,7 @@ class JWTSigner:
 
         secret_bytes = (raw_secret or "").encode("utf-8")
         if len(secret_bytes) < MIN_SECRET_LENGTH:
-            raise SessionConfigurationError(
-                "JWT signing secret is not configured or is too short."
-            )
+            raise SessionConfigurationError("JWT signing secret is not configured or is too short.")
 
         self._secret_bytes = secret_bytes
         self._algorithm = active_settings.jwt_algorithm

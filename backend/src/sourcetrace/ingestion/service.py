@@ -133,15 +133,8 @@ class IngestionService:
                 )
         elif source_type == "zip":
             if github_url is not None:
-                raise RepositoryValidationError(
-                    "GitHub URL must be None for zip source type."
-                )
-            if (
-                not isinstance(name, str)
-                or not name.strip()
-                or len(name) > 256
-                or "\x00" in name
-            ):
+                raise RepositoryValidationError("GitHub URL must be None for zip source type.")
+            if not isinstance(name, str) or not name.strip() or len(name) > 256 or "\x00" in name:
                 raise RepositoryValidationError(
                     "Repository display name must be a non-empty safe string."
                 )
@@ -177,9 +170,7 @@ class IngestionService:
         job_id = generate_job_id()
 
         current_step = (
-            "Queued for acquisition"
-            if source_type == "github"
-            else "Queued for archive processing"
+            "Queued for acquisition" if source_type == "github" else "Queued for archive processing"
         )
 
         repository = RepositoryRecord(

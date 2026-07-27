@@ -158,9 +158,7 @@ def test_class_chunk_does_not_absorb_method_body_calls() -> None:
     cls = _chunk(chunks, "Service")
     method = _chunk(chunks, "Service.run")
     assert {r.local_name for r in cls.references} == set()
-    assert ("self.execute", "attribute_call") in {
-        (r.local_name, r.kind) for r in method.references
-    }
+    assert ("self.execute", "attribute_call") in {(r.local_name, r.kind) for r in method.references}
 
 
 # ---------------------------------------------------------------------------
@@ -423,10 +421,12 @@ def read_summary():
     ]
 
     class _Repo:
-        def list_by_repository(self, owner_session_id, repository_id):
+        def list_by_repository(self, owner_session_id, repository_id, generation_id=None):
             return list(chunks)
 
-        def search_lexical(self, owner_session_id, repository_id, query_text, limit=5):
+        def search_lexical(
+            self, owner_session_id, repository_id, query_text, limit=5, generation_id=None
+        ):
             hits = [c for c in chunks if query_text in c.symbol_name]
             return [RetrievalResult(chunk=c, score=1.0) for c in hits[:limit]]
 

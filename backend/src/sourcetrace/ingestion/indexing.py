@@ -80,6 +80,7 @@ class RepositoryIndexingService:
         index_mode: str | None = None,
         now: datetime | None = None,
         observer: IndexingLifecycleObserver | None = None,
+        generation_id: str | None = None,
     ) -> IndexingResult:
         """Process acquired source through scanner, parser, optional embedder, and storage."""
         active_observer = observer if observer is not None else self._observer
@@ -246,6 +247,7 @@ class RepositoryIndexingService:
                             imports=p.imports,
                             endpoints=p.endpoints,
                             extraction_truncated=p.extraction_truncated,
+                            generation_id=generation_id,
                         )
                     )
 
@@ -378,6 +380,7 @@ class RepositoryIndexingService:
                         imports=embedded.imports,
                         endpoints=embedded.endpoints,
                         extraction_truncated=embedded.extraction_truncated,
+                        generation_id=generation_id,
                     )
                 )
 

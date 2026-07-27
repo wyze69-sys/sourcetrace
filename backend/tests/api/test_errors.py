@@ -61,7 +61,6 @@ def test_unauthorized_returns_standard_401_envelope_and_headers() -> None:
     }
 
 
-
 def test_validation_error_returns_standard_422_envelope() -> None:
     client = TestClient(create_test_error_app())
 

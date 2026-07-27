@@ -97,16 +97,12 @@ class TestValidateGitHubURL:
         assert repo == "repo"
 
     def test_valid_hyphens_underscores_dots(self) -> None:
-        owner, repo = validate_github_url(
-            "https://github.com/my-org/my_repo.lib"
-        )
+        owner, repo = validate_github_url("https://github.com/my-org/my_repo.lib")
         assert owner == "my-org"
         assert repo == "my_repo.lib"
 
     def test_valid_case_sensitive(self) -> None:
-        owner, repo = validate_github_url(
-            "https://github.com/Owner/Repo"
-        )
+        owner, repo = validate_github_url("https://github.com/Owner/Repo")
         assert owner == "Owner"
         assert repo == "Repo"
 
@@ -136,15 +132,11 @@ class TestValidateGitHubURL:
 
     def test_reject_raw_githubusercontent(self) -> None:
         with pytest.raises(InvalidRepositoryURLError, match="github.com"):
-            validate_github_url(
-                "https://raw.githubusercontent.com/owner/repo/main/README.md"
-            )
+            validate_github_url("https://raw.githubusercontent.com/owner/repo/main/README.md")
 
     def test_reject_codeload_as_submit(self) -> None:
         with pytest.raises(InvalidRepositoryURLError, match="github.com"):
-            validate_github_url(
-                "https://codeload.github.com/owner/repo/zip/refs/heads/main"
-            )
+            validate_github_url("https://codeload.github.com/owner/repo/zip/refs/heads/main")
 
     # ----- Rejected: gists -----
 
@@ -191,9 +183,7 @@ class TestValidateGitHubURL:
 
     def test_reject_extra_segments(self) -> None:
         with pytest.raises(InvalidRepositoryURLError, match="owner.*repo"):
-            validate_github_url(
-                "https://github.com/owner/repo/tree/main/src"
-            )
+            validate_github_url("https://github.com/owner/repo/tree/main/src")
 
     def test_reject_three_segments(self) -> None:
         with pytest.raises(InvalidRepositoryURLError, match="owner.*repo"):
@@ -241,14 +231,10 @@ class TestValidateRedirectURL:
     # ----- Allowed redirect hosts -----
 
     def test_allow_github_com(self) -> None:
-        validate_redirect_url(
-            "https://github.com/owner/repo/archive/refs/heads/main.zip"
-        )
+        validate_redirect_url("https://github.com/owner/repo/archive/refs/heads/main.zip")
 
     def test_allow_codeload(self) -> None:
-        validate_redirect_url(
-            "https://codeload.github.com/owner/repo/zip/refs/heads/main"
-        )
+        validate_redirect_url("https://codeload.github.com/owner/repo/zip/refs/heads/main")
 
     # ----- Rejected: non-HTTPS -----
 
@@ -268,9 +254,7 @@ class TestValidateRedirectURL:
 
     def test_reject_raw_githubusercontent_redirect(self) -> None:
         with pytest.raises(DisallowedRedirectError, match="allowlist"):
-            validate_redirect_url(
-                "https://raw.githubusercontent.com/owner/repo/main/f.py"
-            )
+            validate_redirect_url("https://raw.githubusercontent.com/owner/repo/main/f.py")
 
     def test_reject_api_github_redirect(self) -> None:
         with pytest.raises(DisallowedRedirectError, match="allowlist"):
@@ -278,9 +262,7 @@ class TestValidateRedirectURL:
 
     def test_reject_superdomain_redirect(self) -> None:
         with pytest.raises(DisallowedRedirectError, match="allowlist"):
-            validate_redirect_url(
-                "https://github.com.evil.example/owner/repo"
-            )
+            validate_redirect_url("https://github.com.evil.example/owner/repo")
 
     # ----- Rejected: empty -----
 
@@ -292,36 +274,26 @@ class TestValidateRedirectURL:
 
     def test_reject_redirect_with_credentials(self) -> None:
         with pytest.raises(DisallowedRedirectError, match="credentials"):
-            validate_redirect_url(
-                "https://user:pass@github.com/owner/repo/archive.zip"
-            )
+            validate_redirect_url("https://user:pass@github.com/owner/repo/archive.zip")
 
     def test_reject_redirect_with_username_only(self) -> None:
         with pytest.raises(DisallowedRedirectError, match="credentials"):
-            validate_redirect_url(
-                "https://user@codeload.github.com/owner/repo/zip/main"
-            )
+            validate_redirect_url("https://user@codeload.github.com/owner/repo/zip/main")
 
     # ----- Rejected: ports -----
 
     def test_reject_redirect_explicit_port(self) -> None:
         with pytest.raises(DisallowedRedirectError, match="port"):
-            validate_redirect_url(
-                "https://github.com:8080/owner/repo/archive.zip"
-            )
+            validate_redirect_url("https://github.com:8080/owner/repo/archive.zip")
 
     def test_reject_redirect_default_port_443(self) -> None:
         with pytest.raises(DisallowedRedirectError, match="port"):
-            validate_redirect_url(
-                "https://codeload.github.com:443/owner/repo/zip/main"
-            )
+            validate_redirect_url("https://codeload.github.com:443/owner/repo/zip/main")
 
     def test_reject_redirect_malformed_port(self) -> None:
         """Malformed port must raise typed error, never raw ValueError."""
         with pytest.raises(DisallowedRedirectError, match="port"):
-            validate_redirect_url(
-                "https://codeload.github.com:invalid/archive.zip"
-            )
+            validate_redirect_url("https://codeload.github.com:invalid/archive.zip")
 
 
 # =========================================================================
@@ -617,9 +589,7 @@ class TestExceptionHierarchy:
             IngestionLimitError,
         ],
     )
-    def test_subclass_of_sourcetrace_error(
-        self, exc_class: type[Exception]
-    ) -> None:
+    def test_subclass_of_sourcetrace_error(self, exc_class: type[Exception]) -> None:
         assert issubclass(exc_class, SourceTraceError)
 
     @pytest.mark.parametrize(
@@ -632,9 +602,7 @@ class TestExceptionHierarchy:
             IngestionLimitError,
         ],
     )
-    def test_instantiation_with_message(
-        self, exc_class: type[Exception]
-    ) -> None:
+    def test_instantiation_with_message(self, exc_class: type[Exception]) -> None:
         err = exc_class("Test message")
         assert str(err) == "Test message"
         assert isinstance(err, Exception)

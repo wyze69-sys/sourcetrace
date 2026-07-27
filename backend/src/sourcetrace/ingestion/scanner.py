@@ -49,23 +49,35 @@ class ScanResult:
     skipped: tuple[SkippedFile, ...]
 
 
-EXCLUDED_DIRS = frozenset({
-    ".git", ".hg", ".svn", "__pycache__", ".pytest_cache", ".mypy_cache",
-    ".ruff_cache", ".tox", ".nox", "venv", ".venv", "env", "site-packages",
-    "node_modules", "vendor", "dist", "build", "coverage", "htmlcov"
-})
+EXCLUDED_DIRS = frozenset(
+    {
+        ".git",
+        ".hg",
+        ".svn",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".tox",
+        ".nox",
+        "venv",
+        ".venv",
+        "env",
+        "site-packages",
+        "node_modules",
+        "vendor",
+        "dist",
+        "build",
+        "coverage",
+        "htmlcov",
+    }
+)
 
-SENSITIVE_FILE_STEMS = frozenset({
-    ".env", "credentials", "private_key", "private-key"
-})
+SENSITIVE_FILE_STEMS = frozenset({".env", "credentials", "private_key", "private-key"})
 
-SENSITIVE_FILE_PATTERNS = frozenset({
-    ".env.", "credentials."
-})
+SENSITIVE_FILE_PATTERNS = frozenset({".env.", "credentials."})
 
-SENSITIVE_EXTENSIONS = frozenset({
-    ".pem", ".key"
-})
+SENSITIVE_EXTENSIONS = frozenset({".pem", ".key"})
 
 EXCLUDED_DIRS_CASEFOLDED = frozenset(d.casefold() for d in EXCLUDED_DIRS)
 SENSITIVE_STEMS_CASEFOLDED = frozenset(s.casefold() for s in SENSITIVE_FILE_STEMS)
@@ -137,7 +149,7 @@ def _detect_github_wrapper(manifest_paths: tuple[str, ...]) -> str | None:
 
 def _strip_github_wrapper(relative_path: str, wrapper: str | None) -> str:
     if wrapper and relative_path.startswith(f"{wrapper}/"):
-        return relative_path[len(wrapper) + 1:]
+        return relative_path[len(wrapper) + 1 :]
     return relative_path
 
 
@@ -151,10 +163,7 @@ def _is_excluded_path(relative_path: str) -> bool:
             return True
         if part_casefolded in SENSITIVE_STEMS_CASEFOLDED:
             return True
-        if any(
-            part_casefolded.startswith(pattern)
-            for pattern in SENSITIVE_PATTERNS_CASEFOLDED
-        ):
+        if any(part_casefolded.startswith(pattern) for pattern in SENSITIVE_PATTERNS_CASEFOLDED):
             return True
 
     filename = parts[-1]
@@ -167,10 +176,7 @@ def _is_excluded_path(relative_path: str) -> bool:
     ):
         return True
 
-    if any(
-        file_casefolded.startswith(pattern)
-        for pattern in SENSITIVE_PATTERNS_CASEFOLDED
-    ):
+    if any(file_casefolded.startswith(pattern) for pattern in SENSITIVE_PATTERNS_CASEFOLDED):
         return True
 
     if any(file_casefolded.endswith(ext) for ext in SENSITIVE_EXTS_CASEFOLDED):
@@ -186,18 +192,20 @@ def _is_symlink(path: Path) -> bool:
 
 class SourceDecodeError(Exception):
     """Raised for encoding-related failures (invalid PEP 263 cookie, unknown codec, etc.)."""
+
     pass
 
 
 class SourceReadError(Exception):
     """Raised for OS/filesystem I/O read errors."""
+
     pass
 
 
 SUPPORTED_PYTHON_EXTENSIONS: frozenset[str] = frozenset({".py"})
-SUPPORTED_JAVASCRIPT_EXTENSIONS: frozenset[str] = frozenset({
-    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"
-})
+SUPPORTED_JAVASCRIPT_EXTENSIONS: frozenset[str] = frozenset(
+    {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
+)
 SUPPORTED_CODE_EXTENSIONS: frozenset[str] = (
     SUPPORTED_PYTHON_EXTENSIONS | SUPPORTED_JAVASCRIPT_EXTENSIONS
 )
@@ -340,4 +348,3 @@ def scan_code_sources(
 def scan_python_sources(acquired_source: AcquiredSource) -> ScanResult:
     """Discover canonical lowercase-``.py`` sources in deterministic order."""
     return scan_code_sources(acquired_source, allowed_extensions=SUPPORTED_PYTHON_EXTENSIONS)
-

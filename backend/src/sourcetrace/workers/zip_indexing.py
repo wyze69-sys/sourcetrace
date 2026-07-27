@@ -51,11 +51,7 @@ def run_zip_indexing(
     Resolves opaque staging token, performs setup safety, delegates to AcquisitionRunner,
     and guarantees staged file deletion on every terminal path.
     """
-    store = (
-        staging_store
-        if staging_store is not None
-        else FileSystemUploadStagingStore()
-    )
+    store = staging_store if staging_store is not None else FileSystemUploadStagingStore()
 
     try:
         # 1. Composition setup block with safe pre-claim failure handling and token resolution
@@ -64,19 +60,9 @@ def run_zip_indexing(
             if not staged_path.exists() or staged_path.is_dir():
                 raise UploadStagingError("Staged ZIP archive file is unavailable.")
 
-            r_repo = (
-                repository_repo
-                if repository_repo is not None
-                else MongoRepositoryRepository()
-            )
-            j_repo = (
-                job_repo if job_repo is not None else MongoIndexingJobRepository()
-            )
-            c_repo = (
-                code_chunk_repo
-                if code_chunk_repo is not None
-                else MongoCodeChunkRepository()
-            )
+            r_repo = repository_repo if repository_repo is not None else MongoRepositoryRepository()
+            j_repo = job_repo if job_repo is not None else MongoIndexingJobRepository()
+            c_repo = code_chunk_repo if code_chunk_repo is not None else MongoCodeChunkRepository()
 
             repo_rec = r_repo.get_by_id(owner_session_id, repository_id)
             if repo_rec is None:
@@ -117,9 +103,7 @@ def run_zip_indexing(
             now_fail = datetime.now(UTC)
             failed_job: IndexingJobRecord | None = None
             try:
-                target_j_repo = (
-                    job_repo if job_repo is not None else MongoIndexingJobRepository()
-                )
+                target_j_repo = job_repo if job_repo is not None else MongoIndexingJobRepository()
                 failed_job = target_j_repo.transition_status(
                     owner_session_id=owner_session_id,
                     job_id=job_id,

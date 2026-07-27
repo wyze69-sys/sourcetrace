@@ -118,9 +118,7 @@ def test_diff_prompt_numbers_targets_before_impact_items() -> None:
 
 def test_prompt_is_deterministic() -> None:
     result = _symbol_result(upstream=[_item("c_up", "handler")])
-    assert build_impact_explanation_prompt(result) == build_impact_explanation_prompt(
-        result
-    )
+    assert build_impact_explanation_prompt(result) == build_impact_explanation_prompt(result)
 
 
 # ---------------------------------------------------------------------------
@@ -159,10 +157,7 @@ def test_markerless_answer_is_discarded() -> None:
 def test_empty_answer_and_provider_failure_are_discarded() -> None:
     result = _symbol_result(upstream=[_item("c_up", "handler")])
     assert ImpactExplanationService(_FakeProvider("   ")).explain(result) is None
-    assert (
-        ImpactExplanationService(_FakeProvider(RuntimeError("boom"))).explain(result)
-        is None
-    )
+    assert ImpactExplanationService(_FakeProvider(RuntimeError("boom"))).explain(result) is None
 
 
 def test_zero_item_preview_never_calls_the_provider() -> None:

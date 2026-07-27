@@ -22,6 +22,7 @@ from sourcetrace.ingestion.scanner import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class _FakeManifest:
     """Minimal ExtractionManifest stand-in for tests."""
@@ -73,6 +74,7 @@ def _make_source(
 # Stable lexicographic Python-file discovery
 # ---------------------------------------------------------------------------
 
+
 class TestStableLexicographicOrder:
     """Eligible files must be in stable lexicographic order by citation path."""
 
@@ -96,6 +98,7 @@ class TestStableLexicographicOrder:
 # ---------------------------------------------------------------------------
 # Non-Python files excluded
 # ---------------------------------------------------------------------------
+
 
 class TestNonPythonExcluded:
     """Non-Python files must be excluded."""
@@ -126,17 +129,32 @@ class TestNonPythonExcluded:
 # Dependency/cache/VCS paths excluded
 # ---------------------------------------------------------------------------
 
+
 class TestExcludedDirectories:
     """Dependency, cache, VCS, and build directories must be excluded."""
 
     @pytest.mark.parametrize(
         "excluded_dir",
         [
-            ".git", ".hg", ".svn", "__pycache__", ".pytest_cache",
-            ".mypy_cache", ".ruff_cache", ".tox", ".nox",
-            "venv", ".venv", "env", "site-packages",
-            "node_modules", "vendor", "dist", "build",
-            "coverage", "htmlcov",
+            ".git",
+            ".hg",
+            ".svn",
+            "__pycache__",
+            ".pytest_cache",
+            ".mypy_cache",
+            ".ruff_cache",
+            ".tox",
+            ".nox",
+            "venv",
+            ".venv",
+            "env",
+            "site-packages",
+            "node_modules",
+            "vendor",
+            "dist",
+            "build",
+            "coverage",
+            "htmlcov",
         ],
     )
     def test_excluded_directory(self, tmp_path: Path, excluded_dir: str) -> None:
@@ -160,6 +178,7 @@ class TestExcludedDirectories:
 # ---------------------------------------------------------------------------
 # Case-folded exclusions
 # ---------------------------------------------------------------------------
+
 
 class TestCaseFoldedExclusions:
     """Exclusion policy checks must be case-insensitive / case-folded."""
@@ -229,6 +248,7 @@ class TestSensitiveFilenamePolicy:
 # Reject rather than repair non-canonical paths
 # ---------------------------------------------------------------------------
 
+
 class TestNonCanonicalPathRejection:
     """Non-canonical paths must be rejected rather than repaired/redirected."""
 
@@ -247,9 +267,7 @@ class TestNonCanonicalPathRejection:
             "path\x00evil.py",
         ],
     )
-    def test_non_canonical_paths_rejected(
-        self, tmp_path: Path, non_canonical_path: str
-    ) -> None:
+    def test_non_canonical_paths_rejected(self, tmp_path: Path, non_canonical_path: str) -> None:
         good = "safe.py"
         _write_file(tmp_path, good)
         manifest = _FakeManifest(
@@ -295,6 +313,7 @@ class TestNonCanonicalPathRejection:
 # Redaction of invalid raw manifest paths
 # ---------------------------------------------------------------------------
 
+
 class TestInvalidPathRedaction:
     """Invalid raw manifest paths must never leak into SkippedFile or repr()."""
 
@@ -308,9 +327,7 @@ class TestInvalidPathRedaction:
             "super_secret\x00private.py",
         ],
     )
-    def test_sensitive_markers_redacted(
-        self, tmp_path: Path, sensitive_raw_path: str
-    ) -> None:
+    def test_sensitive_markers_redacted(self, tmp_path: Path, sensitive_raw_path: str) -> None:
         good = "app.py"
         _write_file(tmp_path, good)
         manifest = _FakeManifest(
@@ -340,6 +357,7 @@ class TestInvalidPathRedaction:
 # Platform-independent symlink tests
 # ---------------------------------------------------------------------------
 
+
 class TestPlatformIndependentSymlinks:
     """Platform-independent tests for leaf and parent-directory symlinks using mocks."""
 
@@ -356,8 +374,10 @@ class TestPlatformIndependentSymlinks:
             source_type="zip",
         )
 
-        with patch("sourcetrace.ingestion.scanner._is_symlink", return_value=True), \
-             patch("sourcetrace.ingestion.scanner._decode_python_source") as mock_decode:
+        with (
+            patch("sourcetrace.ingestion.scanner._is_symlink", return_value=True),
+            patch("sourcetrace.ingestion.scanner._decode_python_source") as mock_decode,
+        ):
             result = scan_python_sources(source)
 
             assert len(result.eligible_files) == 0
@@ -382,8 +402,10 @@ class TestPlatformIndependentSymlinks:
         def fake_is_symlink(p: Path) -> bool:
             return "link_dir" in p.parts
 
-        with patch("sourcetrace.ingestion.scanner._is_symlink", side_effect=fake_is_symlink), \
-             patch("sourcetrace.ingestion.scanner._decode_python_source") as mock_decode:
+        with (
+            patch("sourcetrace.ingestion.scanner._is_symlink", side_effect=fake_is_symlink),
+            patch("sourcetrace.ingestion.scanner._decode_python_source") as mock_decode,
+        ):
             result = scan_python_sources(source)
 
             assert len(result.eligible_files) == 0
@@ -395,6 +417,7 @@ class TestPlatformIndependentSymlinks:
 # ---------------------------------------------------------------------------
 # Real filesystem symlink test (conditional)
 # ---------------------------------------------------------------------------
+
 
 class TestRealSymlinkRejected:
     """Symlinks must be rejected even if they appear after extraction."""
@@ -429,6 +452,7 @@ class TestRealSymlinkRejected:
 # Oversized file rejected before read
 # ---------------------------------------------------------------------------
 
+
 class TestOversizedFileRejected:
     """Files exceeding MAX_SINGLE_FILE_BYTES must be skipped before read."""
 
@@ -462,6 +486,7 @@ class TestOversizedFileRejected:
 # GitHub wrapper stripped only for GitHub source
 # ---------------------------------------------------------------------------
 
+
 class TestGitHubWrapperStripping:
     """GitHub archive wrapper directory must be stripped from citation paths
     only for source_type=='github'."""
@@ -493,6 +518,7 @@ class TestGitHubWrapperStripping:
 # ZIP top-level directory preserved
 # ---------------------------------------------------------------------------
 
+
 class TestZipTopLevelPreserved:
     """ZIP uploads must preserve submitted repository-relative paths."""
 
@@ -511,6 +537,7 @@ class TestZipTopLevelPreserved:
 # ---------------------------------------------------------------------------
 # Encoding classification tests
 # ---------------------------------------------------------------------------
+
 
 class TestEncodingClassifications:
     """Test detailed encoding failure classification."""
@@ -616,6 +643,7 @@ class TestEncodingClassifications:
 # File not found
 # ---------------------------------------------------------------------------
 
+
 class TestFileNotFound:
     """Missing files must be reported with FILE_NOT_FOUND."""
 
@@ -638,6 +666,7 @@ class TestFileNotFound:
 # ---------------------------------------------------------------------------
 # Deduplication
 # ---------------------------------------------------------------------------
+
 
 class TestDeduplication:
     """Duplicate paths in manifest must be deduplicated."""
@@ -663,6 +692,7 @@ class TestDeduplication:
 # ---------------------------------------------------------------------------
 # Empty source files skipped with EMPTY_SOURCE
 # ---------------------------------------------------------------------------
+
 
 class TestEmptySourceFile:
     """Empty or whitespace-only Python source files must be skipped with EMPTY_SOURCE."""
@@ -706,6 +736,7 @@ class TestEmptySourceFile:
 # Resolved root escape handling
 # ---------------------------------------------------------------------------
 
+
 class TestResolvedRootEscape:
     """Paths that resolve outside extraction root must be rejected as UNSUPPORTED_PATH."""
 
@@ -739,5 +770,3 @@ class TestResolvedRootEscape:
             result = scan_python_sources(source)
             assert len(result.eligible_files) == 0
             assert any(s.reason == SkipReason.UNSUPPORTED_PATH for s in result.skipped)
-
-

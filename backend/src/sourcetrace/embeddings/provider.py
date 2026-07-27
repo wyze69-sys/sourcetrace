@@ -60,11 +60,7 @@ class OpenAIEmbeddingAdapter:
         else:
             resolved_dim = cfg.embedding_dimensions
 
-        if (
-            not isinstance(resolved_dim, int)
-            or isinstance(resolved_dim, bool)
-            or resolved_dim <= 0
-        ):
+        if not isinstance(resolved_dim, int) or isinstance(resolved_dim, bool) or resolved_dim <= 0:
             raise EmbeddingError("Embedding failed safely.")
         self._expected_dimensions: int = resolved_dim
 
@@ -306,12 +302,7 @@ def _classify_gemini_error(error: Exception) -> tuple[str, bool]:
         return ("A source chunk exceeded the embedding input limit.", False)
 
     # 6. Timeout / Deadline exceeded
-    if (
-        status_code in (408, 504)
-        or "timeout" in text
-        or "timed out" in text
-        or "deadline" in text
-    ):
+    if status_code in (408, 504) or "timeout" in text or "timed out" in text or "deadline" in text:
         return ("Embedding provider request timed out. Retry later.", True)
 
     # 7. Transient Server Errors (500, 502, 503)
@@ -357,11 +348,7 @@ class GeminiEmbeddingAdapter:
         else:
             resolved_dim = cfg.embedding_dimensions
 
-        if (
-            not isinstance(resolved_dim, int)
-            or isinstance(resolved_dim, bool)
-            or resolved_dim <= 0
-        ):
+        if not isinstance(resolved_dim, int) or isinstance(resolved_dim, bool) or resolved_dim <= 0:
             raise EmbeddingError("Embedding failed safely.")
         self._expected_dimensions: int = resolved_dim
 
@@ -504,10 +491,7 @@ class GeminiEmbeddingAdapter:
             # Gemini returns result.embeddings: list of ContentEmbedding objects
             # each with a .values: list[float] attribute
             raw_embeddings = getattr(response, "embeddings", None)
-            if (
-                not isinstance(raw_embeddings, (list, tuple))
-                or len(raw_embeddings) != batch_len
-            ):
+            if not isinstance(raw_embeddings, (list, tuple)) or len(raw_embeddings) != batch_len:
                 raise EmbeddingError("Embedding provider returned an invalid vector response.")
 
             for emb in raw_embeddings:
@@ -538,5 +522,3 @@ class GeminiEmbeddingAdapter:
             raise EmbeddingError("Embedding provider returned an invalid vector response.")
 
         return tuple(all_vectors)
-
-

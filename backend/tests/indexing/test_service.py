@@ -21,7 +21,6 @@ from sourcetrace.parsers.python_ast import ParseResult
 
 
 class FakeEmbeddingProvider:
-
     def __init__(
         self,
         model_identifier: str = "text-embedding-3-small",
@@ -51,16 +50,12 @@ class FakeEmbeddingProvider:
 
         result: list[tuple[float, ...]] = []
         for i, _ in enumerate(texts):
-            vec = tuple(
-                float((i + 1) * 0.1 + j * 0.01)
-                for j in range(self.embedding_dimensions)
-            )
+            vec = tuple(float((i + 1) * 0.1 + j * 0.01) for j in range(self.embedding_dimensions))
             result.append(vec)
         return result
 
 
 class FakeCodeChunkRepository:
-
     def __init__(
         self,
         save_many_return: Any = "DEFAULT",
@@ -80,11 +75,10 @@ class FakeCodeChunkRepository:
             return self.save_many_return
         return len(chunks)
 
-    def list_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> list[CodeChunk]:
+    def list_by_repository(self, owner_session_id: str, repository_id: str) -> list[CodeChunk]:
         return [
-            c for c in self.saved_chunks
+            c
+            for c in self.saved_chunks
             if c.owner_session_id == owner_session_id and c.repository_id == repository_id
         ]
 
@@ -97,9 +91,7 @@ class FakeCodeChunkRepository:
     ) -> list[Any]:
         return []
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         return 0
 
 
@@ -414,7 +406,9 @@ def test_parse_result_failures(monkeypatch: pytest.MonkeyPatch) -> None:
         # 5. Invalid parsed_file_count (bool, negative, float, string)
         for bad_count in (True, False, -1, 1.5, "1"):
             bad_res_count = ParseResult(
-                chunks=(good_chunk,), parsed_file_count=bad_count, skipped=()  # type: ignore
+                chunks=(good_chunk,),
+                parsed_file_count=bad_count,
+                skipped=(),  # type: ignore
             )
 
             def mock_count_func(*args: Any, target: Any = bad_res_count, **kwargs: Any) -> Any:
@@ -428,9 +422,7 @@ def test_parse_result_failures(monkeypatch: pytest.MonkeyPatch) -> None:
 
         # 6. Wrong owner or repository identity
         wrong_owner_chunk = replace(good_chunk, owner_session_id="other_owner")
-        res_wrong_owner = ParseResult(
-            chunks=(wrong_owner_chunk,), parsed_file_count=1, skipped=()
-        )
+        res_wrong_owner = ParseResult(chunks=(wrong_owner_chunk,), parsed_file_count=1, skipped=())
         monkeypatch.setattr(
             sourcetrace.ingestion.indexing,
             "parse_acquired_source",
@@ -496,7 +488,6 @@ def test_parse_result_failures(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class ExplodingChunk:
-
     @property
     def owner_session_id(self) -> str:
         raise RuntimeError("Exploding secret API key: sk-proj-123456789")
@@ -603,9 +594,7 @@ def test_embedded_output_failures(monkeypatch: pytest.MonkeyPatch) -> None:
             def mock_vec_func(*args: Any, target: Any = bad_vec_chunk, **kwargs: Any) -> Any:
                 return (target,)
 
-            monkeypatch.setattr(
-                sourcetrace.ingestion.indexing, "embed_chunks", mock_vec_func
-            )
+            monkeypatch.setattr(sourcetrace.ingestion.indexing, "embed_chunks", mock_vec_func)
             with pytest.raises(IndexingError):
                 service.index_acquired_source(source, "sess", "repo")
 

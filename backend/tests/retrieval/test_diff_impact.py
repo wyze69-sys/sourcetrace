@@ -59,7 +59,9 @@ class _FakeChunkRepo:
     def __init__(self, chunks: list[CodeChunk]) -> None:
         self._chunks = chunks
 
-    def list_by_repository(self, owner_session_id: str, repository_id: str) -> list[CodeChunk]:
+    def list_by_repository(
+        self, owner_session_id: str, repository_id: str, generation_id: str | None = None
+    ) -> list[CodeChunk]:
         assert owner_session_id == _OWNER and repository_id == _REPO
         return list(self._chunks)
 
@@ -184,9 +186,7 @@ def test_diff_touching_a_chunk_seeds_impact_from_it() -> None:
 
     # Line 13 is deleted; the replacement '+' run anchors to the old line it
     # displaces (14), so both are reported as touched.
-    assert [(t.node_id, t.changed_lines) for t in result.targets] == [
-        ("c_target", (13, 14))
-    ]
+    assert [(t.node_id, t.changed_lines) for t in result.targets] == [("c_target", (13, 14))]
     assert [item.node_id for item in result.upstream] == ["c_caller"]
     assert result.upstream[0].distance == 1
     assert result.risk_level in ("low", "medium", "high")
@@ -260,13 +260,7 @@ def test_diff_between_targets_does_not_report_them_as_impact() -> None:
 
 def test_unknown_diff_path_reports_diff_file_unmatched() -> None:
     chunks = [_chunk("c_only", "src/app.py", "main")]
-    diff = (
-        "--- a/src/other_project.py\n"
-        "+++ b/src/other_project.py\n"
-        "@@ -1,1 +1,1 @@\n"
-        "-x\n"
-        "+y\n"
-    )
+    diff = "--- a/src/other_project.py\n+++ b/src/other_project.py\n@@ -1,1 +1,1 @@\n-x\n+y\n"
     result = _preview(chunks, diff)
 
     assert result.targets == ()
@@ -278,12 +272,7 @@ def test_unknown_diff_path_reports_diff_file_unmatched() -> None:
 
 def test_new_file_in_diff_reports_unmatched_baseline_gap() -> None:
     chunks = [_chunk("c_only", "src/app.py", "main")]
-    diff = (
-        "--- /dev/null\n"
-        "+++ b/src/brand_new.py\n"
-        "@@ -0,0 +1,1 @@\n"
-        "+def created(): ...\n"
-    )
+    diff = "--- /dev/null\n+++ b/src/brand_new.py\n@@ -0,0 +1,1 @@\n+def created(): ...\n"
     result = _preview(chunks, diff)
 
     gaps = [g for g in result.gaps if g.kind == "diff_file_unmatched"]
@@ -370,13 +359,7 @@ def test_matching_baseline_text_reports_no_diff_stale() -> None:
 
 def test_diff_path_with_extra_root_matches_by_unique_suffix() -> None:
     chunks = [_chunk("c_target", "src/calc.py", "compute", start_line=1, end_line=10)]
-    diff = (
-        "--- a/myproject/src/calc.py\n"
-        "+++ b/myproject/src/calc.py\n"
-        "@@ -2,1 +2,1 @@\n"
-        "-x\n"
-        "+y\n"
-    )
+    diff = "--- a/myproject/src/calc.py\n+++ b/myproject/src/calc.py\n@@ -2,1 +2,1 @@\n-x\n+y\n"
     result = _preview(chunks, diff)
 
     assert [t.node_id for t in result.targets] == ["c_target"]
@@ -388,13 +371,7 @@ def test_ambiguous_diff_path_is_reported_not_guessed() -> None:
         _chunk("c_a", "app_a/utils/calc.py", "compute_a", start_line=1, end_line=10),
         _chunk("c_b", "app_b/utils/calc.py", "compute_b", start_line=1, end_line=10),
     ]
-    diff = (
-        "--- a/utils/calc.py\n"
-        "+++ b/utils/calc.py\n"
-        "@@ -2,1 +2,1 @@\n"
-        "-x\n"
-        "+y\n"
-    )
+    diff = "--- a/utils/calc.py\n+++ b/utils/calc.py\n@@ -2,1 +2,1 @@\n-x\n+y\n"
     result = _preview(chunks, diff)
 
     assert result.targets == ()

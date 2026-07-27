@@ -145,9 +145,7 @@ def test_oversized_generated_answer() -> None:
         llm_api_key=SecretStr("sk-test-key-12345"),
     )
     fake_client = FakeOpenAIClient(_make_choice_response("A" * 100))
-    adapter = OpenAIGenerationAdapter(
-        max_output_chars=50, client=fake_client, settings=settings
-    )
+    adapter = OpenAIGenerationAdapter(max_output_chars=50, client=fake_client, settings=settings)
     messages = [GenerationMessage(role="user", content="Question")]
 
     with pytest.raises(GenerationError) as exc_info:

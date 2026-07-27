@@ -16,5 +16,3 @@ def get_default_embedding_provider() -> EmbeddingProvider:
     if provider_name == "openai":
         return OpenAIEmbeddingAdapter(settings=settings)
     raise RuntimeError(f"Unsupported embedding provider: {provider_name!r}")
-
-

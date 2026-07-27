@@ -110,9 +110,7 @@ def test_route_dependency_override_and_agreement():
         embedding_api_key=None,
         embedding_provider="gemini",
         allowed_index_modes=("static", "cloud_ai"),
-        session_signing_secret=SecretStr(
-            "test-only-session-signing-secret-not-for-production"
-        ),
+        session_signing_secret=SecretStr("test-only-session-signing-secret-not-for-production"),
     )
 
     session_repo = MagicMock()
@@ -143,7 +141,6 @@ def test_route_dependency_override_and_agreement():
     )
     assert repo_resp.status_code == 422
     assert repo_resp.json()["error"]["code"] == "VALIDATION_ERROR"
-
 
 
 def test_no_secret_leakage():

@@ -33,16 +33,12 @@ def create_test_app(settings: Settings, mock_repo: MagicMock) -> FastAPI:
 
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_session_repository] = lambda: mock_repo
-    app.dependency_overrides[get_session_signer] = lambda: SessionSigner(
-        secret=TEST_SECRET
-    )
+    app.dependency_overrides[get_session_signer] = lambda: SessionSigner(secret=TEST_SECRET)
 
     return app
 
 
-def test_health_response_sets_no_cookie_and_performs_no_session_repository_work() -> (
-    None
-):
+def test_health_response_sets_no_cookie_and_performs_no_session_repository_work() -> None:
     mock_repo = MagicMock()
     settings = Settings(session_signing_secret=SecretStr(TEST_SECRET))
     app = create_test_app(settings, mock_repo)
@@ -56,14 +52,10 @@ def test_health_response_sets_no_cookie_and_performs_no_session_repository_work(
     mock_repo.save.assert_not_called()
 
 
-def test_no_cookie_protected_request_creates_one_persisted_session_and_set_cookie() -> (
-    None
-):
+def test_no_cookie_protected_request_creates_one_persisted_session_and_set_cookie() -> None:
     mock_repo = MagicMock()
     mock_repo.get_by_id.return_value = None
-    settings = Settings(
-        env="development", session_signing_secret=SecretStr(TEST_SECRET)
-    )
+    settings = Settings(env="development", session_signing_secret=SecretStr(TEST_SECRET))
     app = create_test_app(settings, mock_repo)
     client = TestClient(app)
 
@@ -85,9 +77,7 @@ def test_no_cookie_protected_request_creates_one_persisted_session_and_set_cooki
 def test_development_cookie_has_secure_false() -> None:
     mock_repo = MagicMock()
     mock_repo.get_by_id.return_value = None
-    settings = Settings(
-        env="development", session_signing_secret=SecretStr(TEST_SECRET)
-    )
+    settings = Settings(env="development", session_signing_secret=SecretStr(TEST_SECRET))
     app = create_test_app(settings, mock_repo)
     client = TestClient(app)
 
@@ -101,9 +91,7 @@ def test_development_cookie_has_secure_false() -> None:
 def test_production_cookie_has_secure_true() -> None:
     mock_repo = MagicMock()
     mock_repo.get_by_id.return_value = None
-    settings = Settings(
-        env="production", session_signing_secret=SecretStr(TEST_SECRET)
-    )
+    settings = Settings(env="production", session_signing_secret=SecretStr(TEST_SECRET))
     app = create_test_app(settings, mock_repo)
     client = TestClient(app)
 

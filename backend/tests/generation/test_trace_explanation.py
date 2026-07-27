@@ -112,9 +112,7 @@ def test_out_of_range_marker_discards_explanation() -> None:
 
 
 def test_zero_marker_explanation_is_discarded() -> None:
-    service = TraceExplanationService(
-        _FakeProvider("A plausible story that cites nothing at all.")
-    )
+    service = TraceExplanationService(_FakeProvider("A plausible story that cites nothing at all."))
     assert service.explain(_result(2)) is None
 
 

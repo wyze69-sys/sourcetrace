@@ -218,6 +218,7 @@ def test_fake_provider_with_zero_dimensions_rejected() -> None:
     class _StaticZeroProvider(_FakeProvider):
         def __init__(self):
             super().__init__(model_identifier="none", embedding_dimensions=0)
+
         def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
             return tuple(() for _ in texts)
 
@@ -258,4 +259,3 @@ def test_provider_property_access_exception_masked_safely() -> None:
         embed_chunks([p], provider=provider)  # type: ignore[arg-type]
     assert str(exc_info.value) == "Embedding failed safely."
     assert "sk-999" not in str(exc_info.value)
-

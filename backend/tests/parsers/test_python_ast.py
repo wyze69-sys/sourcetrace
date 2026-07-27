@@ -36,6 +36,7 @@ def _parse(source: str, path: str = "test.py") -> list:
 # Top-level function
 # ---------------------------------------------------------------------------
 
+
 class TestTopLevelFunction:
     def test_simple_function(self) -> None:
         source = textwrap.dedent("""\
@@ -71,6 +72,7 @@ class TestTopLevelFunction:
 # Async function
 # ---------------------------------------------------------------------------
 
+
 class TestAsyncFunction:
     def test_async_function_type(self) -> None:
         source = textwrap.dedent("""\
@@ -86,6 +88,7 @@ class TestAsyncFunction:
 # ---------------------------------------------------------------------------
 # Decorated function start line
 # ---------------------------------------------------------------------------
+
 
 class TestDecoratedFunction:
     def test_decorator_included_in_start_line(self) -> None:
@@ -126,6 +129,7 @@ class TestDecoratedFunction:
 # ---------------------------------------------------------------------------
 # Class and methods
 # ---------------------------------------------------------------------------
+
 
 class TestClassAndMethods:
     def test_class_extracted(self) -> None:
@@ -170,6 +174,7 @@ class TestClassAndMethods:
 # Async methods
 # ---------------------------------------------------------------------------
 
+
 class TestAsyncMethods:
     def test_async_method_type(self) -> None:
         source = textwrap.dedent("""\
@@ -186,6 +191,7 @@ class TestAsyncMethods:
 # ---------------------------------------------------------------------------
 # Nested functions and nested classes
 # ---------------------------------------------------------------------------
+
 
 class TestNestedSymbols:
     def test_nested_function(self) -> None:
@@ -241,6 +247,7 @@ class TestNestedSymbols:
 # Qualified names are deterministic
 # ---------------------------------------------------------------------------
 
+
 class TestQualifiedNames:
     def test_deeply_nested_qualified_name(self) -> None:
         source = textwrap.dedent("""\
@@ -252,9 +259,7 @@ class TestQualifiedNames:
         """)
         chunks = _parse(source)
         methods = [c for c in chunks if c.symbol_type == "method"]
-        assert any(
-            m.symbol_name == "Outer.Middle.Inner.deep_method" for m in methods
-        )
+        assert any(m.symbol_name == "Outer.Middle.Inner.deep_method" for m in methods)
 
     def test_deterministic_across_calls(self) -> None:
         source = textwrap.dedent("""\
@@ -274,6 +279,7 @@ class TestQualifiedNames:
 # ---------------------------------------------------------------------------
 # Inclusive exact line ranges
 # ---------------------------------------------------------------------------
+
 
 class TestLineRanges:
     def test_inclusive_line_range(self) -> None:
@@ -302,6 +308,7 @@ class TestLineRanges:
 # Chunk content matches its line range
 # ---------------------------------------------------------------------------
 
+
 class TestContentMatchesLineRange:
     def test_content_matches_range(self) -> None:
         source = "x = 1\ndef func():\n    pass\ny = 2\n"
@@ -329,6 +336,7 @@ class TestContentMatchesLineRange:
 # ---------------------------------------------------------------------------
 # Stable source-order output
 # ---------------------------------------------------------------------------
+
 
 class TestSourceOrder:
     def test_symbols_in_source_order(self) -> None:
@@ -365,6 +373,7 @@ class TestSourceOrder:
 # Module fallback for valid symbol-free source
 # ---------------------------------------------------------------------------
 
+
 class TestModuleFallback:
     def test_module_fallback_chunk(self) -> None:
         source = textwrap.dedent("""\
@@ -388,6 +397,7 @@ class TestModuleFallback:
 # Empty source does not fabricate a chunk
 # ---------------------------------------------------------------------------
 
+
 class TestEmptySource:
     def test_empty_string(self) -> None:
         chunks = _parse("")
@@ -401,6 +411,7 @@ class TestEmptySource:
 # ---------------------------------------------------------------------------
 # SHA-256 content hashes
 # ---------------------------------------------------------------------------
+
 
 class TestContentHashes:
     def test_sha256_hash(self) -> None:
@@ -418,6 +429,7 @@ class TestContentHashes:
 # ---------------------------------------------------------------------------
 # Stable deterministic chunk IDs
 # ---------------------------------------------------------------------------
+
 
 class TestChunkIDs:
     def test_chunk_id_prefix(self) -> None:
@@ -442,6 +454,7 @@ class TestChunkIDs:
 # Changed content changes hash and chunk ID
 # ---------------------------------------------------------------------------
 
+
 class TestContentChangeAffectsID:
     def test_different_content_different_hash(self) -> None:
         c1 = _parse("def func():\n    return 1\n")
@@ -464,6 +477,7 @@ class TestContentChangeAffectsID:
 # Owner/repository IDs copied exactly from trusted runner context
 # ---------------------------------------------------------------------------
 
+
 class TestTrustedContext:
     def test_ids_match_input(self) -> None:
         source = "def f():\n    pass\n"
@@ -475,6 +489,7 @@ class TestTrustedContext:
 # ---------------------------------------------------------------------------
 # No repository code execution
 # ---------------------------------------------------------------------------
+
 
 class TestNoCodeExecution:
     def test_malicious_source_not_executed(self) -> None:
@@ -495,6 +510,7 @@ class TestNoCodeExecution:
 # ---------------------------------------------------------------------------
 # One malformed file does not prevent valid files from parsing
 # ---------------------------------------------------------------------------
+
 
 class TestMalformedFileIsolation:
     """Uses parse_acquired_source integration path for this test."""
@@ -543,6 +559,7 @@ class TestMalformedFileIsolation:
 # No physical temporary path or raw exception in skip results
 # ---------------------------------------------------------------------------
 
+
 class TestNoPhysicalPathInResults:
     def test_no_physical_path_in_chunk(self) -> None:
         source = "def f():\n    pass\n"
@@ -560,6 +577,7 @@ class TestNoPhysicalPathInResults:
 # Content hash function
 # ---------------------------------------------------------------------------
 
+
 class TestContentHashFunction:
     def test_compute_content_hash_sha256(self) -> None:
         content = "def func():\n    pass\n"
@@ -574,6 +592,7 @@ class TestContentHashFunction:
 # ---------------------------------------------------------------------------
 # Chunk ID function
 # ---------------------------------------------------------------------------
+
 
 class TestChunkIDFunction:
     def test_chunk_id_deterministic(self) -> None:
@@ -602,6 +621,7 @@ class TestChunkIDFunction:
 # ---------------------------------------------------------------------------
 # Decorated classes and methods
 # ---------------------------------------------------------------------------
+
 
 class TestDecoratedClassesAndMethods:
     def test_decorated_class_start_line(self) -> None:
@@ -641,6 +661,7 @@ class TestDecoratedClassesAndMethods:
 # ---------------------------------------------------------------------------
 # Single AST parsing per file in parse_acquired_source
 # ---------------------------------------------------------------------------
+
 
 class TestSingleASTParseInAcquiredSource:
     """parse_acquired_source must parse each eligible file's AST exactly once."""
@@ -683,9 +704,9 @@ class TestSingleASTParseInAcquiredSource:
             return original_parse(*args, **kwargs)
 
         from unittest.mock import patch
+
         with patch("ast.parse", side_effect=tracking_parse):
             result = parse_acquired_source(source, REPO_ID, OWNER_ID)
             assert result.parsed_file_count == 1
             # Must be called exactly ONCE per file, not TWICE
             assert parse_calls == 1
-

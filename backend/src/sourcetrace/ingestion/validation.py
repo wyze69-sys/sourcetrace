@@ -64,9 +64,7 @@ def validate_github_url(url: str) -> tuple[str, str]:
         any security policy.
     """
     if not isinstance(url, str) or not url.strip():
-        raise InvalidRepositoryURLError(
-            "Repository URL must be a non-empty string."
-        )
+        raise InvalidRepositoryURLError("Repository URL must be a non-empty string.")
 
     # Parse the URL
     try:
@@ -78,15 +76,11 @@ def validate_github_url(url: str) -> tuple[str, str]:
 
     # --- Scheme ---
     if parsed.scheme != "https":
-        raise InvalidRepositoryURLError(
-            "Repository URL must use the HTTPS scheme."
-        )
+        raise InvalidRepositoryURLError("Repository URL must use the HTTPS scheme.")
 
     # --- Credentials / userinfo ---
     if parsed.username or parsed.password:
-        raise InvalidRepositoryURLError(
-            "Repository URL must not contain credentials."
-        )
+        raise InvalidRepositoryURLError("Repository URL must not contain credentials.")
 
     # --- Port ---
     # parsed.port raises ValueError on malformed ports like ":invalid".
@@ -94,30 +88,20 @@ def validate_github_url(url: str) -> tuple[str, str]:
     try:
         has_port = parsed.port is not None
     except ValueError:
-        raise InvalidRepositoryURLError(
-            "Repository URL must not specify a port."
-        ) from None
+        raise InvalidRepositoryURLError("Repository URL must not specify a port.") from None
     if has_port:
-        raise InvalidRepositoryURLError(
-            "Repository URL must not specify a port."
-        )
+        raise InvalidRepositoryURLError("Repository URL must not specify a port.")
 
     # --- Host ---
     hostname = parsed.hostname or ""
     if hostname != _SUBMIT_HOST:
-        raise InvalidRepositoryURLError(
-            "Repository URL host must be github.com."
-        )
+        raise InvalidRepositoryURLError("Repository URL host must be github.com.")
 
     # --- Query / fragment ---
     if parsed.query:
-        raise InvalidRepositoryURLError(
-            "Repository URL must not contain query parameters."
-        )
+        raise InvalidRepositoryURLError("Repository URL must not contain query parameters.")
     if parsed.fragment:
-        raise InvalidRepositoryURLError(
-            "Repository URL must not contain a fragment."
-        )
+        raise InvalidRepositoryURLError("Repository URL must not contain a fragment.")
 
     # --- Path pattern ---
     match = _GITHUB_REPO_RE.match(url)
@@ -149,27 +133,19 @@ def validate_redirect_url(url: str) -> None:
         When the redirect URL violates the allowlist.
     """
     if not isinstance(url, str) or not url.strip():
-        raise DisallowedRedirectError(
-            "Redirect URL must be a non-empty string."
-        )
+        raise DisallowedRedirectError("Redirect URL must be a non-empty string.")
 
     try:
         parsed = urlparse(url)
     except Exception:  # noqa: BLE001
-        raise DisallowedRedirectError(
-            "Redirect URL is malformed and cannot be parsed."
-        ) from None
+        raise DisallowedRedirectError("Redirect URL is malformed and cannot be parsed.") from None
 
     if parsed.scheme != "https":
-        raise DisallowedRedirectError(
-            "Redirect URL must use the HTTPS scheme."
-        )
+        raise DisallowedRedirectError("Redirect URL must use the HTTPS scheme.")
 
     # --- Credentials / userinfo ---
     if parsed.username or parsed.password:
-        raise DisallowedRedirectError(
-            "Redirect URL must not contain credentials."
-        )
+        raise DisallowedRedirectError("Redirect URL must not contain credentials.")
 
     # --- Port ---
     # parsed.port raises ValueError on malformed ports like ":invalid".
@@ -177,19 +153,13 @@ def validate_redirect_url(url: str) -> None:
     try:
         has_port = parsed.port is not None
     except ValueError:
-        raise DisallowedRedirectError(
-            "Redirect URL must not specify a port."
-        ) from None
+        raise DisallowedRedirectError("Redirect URL must not specify a port.") from None
     if has_port:
-        raise DisallowedRedirectError(
-            "Redirect URL must not specify a port."
-        )
+        raise DisallowedRedirectError("Redirect URL must not specify a port.")
 
     hostname = parsed.hostname or ""
     if hostname not in {_SUBMIT_HOST, _REDIRECT_HOST}:
-        raise DisallowedRedirectError(
-            "Redirect target host is not in the allowlist."
-        )
+        raise DisallowedRedirectError("Redirect target host is not in the allowlist.")
 
 
 # ---------------------------------------------------------------------------
@@ -213,55 +183,37 @@ def validate_ip_address(ip_str: str) -> None:
         reserved, unspecified, or falls into carrier-grade NAT ranges.
     """
     if not isinstance(ip_str, str) or not ip_str.strip():
-        raise UnsafeNetworkAddressError(
-            "IP address must be a non-empty string."
-        )
+        raise UnsafeNetworkAddressError("IP address must be a non-empty string.")
 
     try:
         addr = ipaddress.ip_address(ip_str.strip())
     except ValueError:
-        raise UnsafeNetworkAddressError(
-            "IP address is not a valid IPv4 or IPv6 address."
-        ) from None
+        raise UnsafeNetworkAddressError("IP address is not a valid IPv4 or IPv6 address.") from None
 
     if addr.is_loopback:
-        raise UnsafeNetworkAddressError(
-            "Loopback addresses are not allowed."
-        )
+        raise UnsafeNetworkAddressError("Loopback addresses are not allowed.")
 
     if addr.is_unspecified:
-        raise UnsafeNetworkAddressError(
-            "Unspecified addresses are not allowed."
-        )
+        raise UnsafeNetworkAddressError("Unspecified addresses are not allowed.")
 
     if addr.is_link_local:
-        raise UnsafeNetworkAddressError(
-            "Link-local addresses are not allowed."
-        )
+        raise UnsafeNetworkAddressError("Link-local addresses are not allowed.")
 
     if addr.is_multicast:
-        raise UnsafeNetworkAddressError(
-            "Multicast addresses are not allowed."
-        )
+        raise UnsafeNetworkAddressError("Multicast addresses are not allowed.")
 
     if addr.is_reserved:
-        raise UnsafeNetworkAddressError(
-            "Reserved addresses are not allowed."
-        )
+        raise UnsafeNetworkAddressError("Reserved addresses are not allowed.")
 
     if addr.is_private:
-        raise UnsafeNetworkAddressError(
-            "Private network addresses are not allowed."
-        )
+        raise UnsafeNetworkAddressError("Private network addresses are not allowed.")
 
     # Carrier-grade NAT (100.64.0.0/10) — is_private already covers
     # standard RFC 1918 ranges, but carrier-grade NAT is technically
     # "shared address space" and may not be flagged by is_private on
     # older Python versions.  Explicit check here.
     if isinstance(addr, ipaddress.IPv4Address) and addr in _CARRIER_GRADE_NAT:
-        raise UnsafeNetworkAddressError(
-            "Carrier-grade NAT addresses are not allowed."
-        )
+        raise UnsafeNetworkAddressError("Carrier-grade NAT addresses are not allowed.")
 
     # --- Final public-routability guard ---
     # Reject any address that is not globally routable.  This catches
@@ -270,9 +222,7 @@ def validate_ip_address(ip_str: str) -> None:
     # IPv6 addresses wrapping private IPv4, and any other non-global
     # address that individual checks above may have missed.
     if not addr.is_global:
-        raise UnsafeNetworkAddressError(
-            "Only globally routable addresses are allowed."
-        )
+        raise UnsafeNetworkAddressError("Only globally routable addresses are allowed.")
 
 
 # ---------------------------------------------------------------------------
@@ -296,21 +246,15 @@ def validate_archive_member_path(member_path: str) -> str:
         normalises to empty/unsafe values.
     """
     if not isinstance(member_path, str):
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must be a string."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must be a string.")
 
     # --- NUL bytes ---
     if "\x00" in member_path:
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must not contain NUL bytes."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must not contain NUL bytes.")
 
     # --- Empty ---
     if not member_path.strip():
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must not be empty."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must not be empty.")
 
     # --- Traversal patterns ---
     # Check both forward and backward slash variants before normalisation
@@ -328,28 +272,20 @@ def validate_archive_member_path(member_path: str) -> str:
     # e.g. \\.\COM1, \\?\Volume
     # Must check before UNC because device paths also start with \\\\
     if member_path.startswith("\\\\.") or member_path.startswith("\\\\?"):
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must not be a device path."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must not be a device path.")
 
     # --- UNC paths ---
     if member_path.startswith("\\\\"):
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must not be a UNC path."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must not be a UNC path.")
 
     # --- Absolute Windows paths (drive letters) ---
     # e.g. C:\foo, C:/foo, c:\foo
     if len(member_path) >= 2 and member_path[1] == ":":
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must not contain a drive letter."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must not contain a drive letter.")
 
     # --- UNC paths with forward slashes ---
     if member_path.startswith("//"):
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must not be a UNC path."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must not be a UNC path.")
 
     # --- Absolute POSIX paths ---
     if member_path.startswith("/"):
@@ -375,8 +311,6 @@ def validate_archive_member_path(member_path: str) -> str:
 
     # Absolute after normalisation (defensive)
     if os.path.isabs(safe_path):
-        raise UnsafeArchiveMemberPathError(
-            "Archive member path must be relative."
-        )
+        raise UnsafeArchiveMemberPathError("Archive member path must be relative.")
 
     return safe_path

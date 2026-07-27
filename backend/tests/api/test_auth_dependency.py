@@ -165,6 +165,7 @@ def test_tampered_jwt_returns_401() -> None:
 
 def test_expired_jwt_returns_401() -> None:
     import time
+
     settings = Settings(
         jwt_secret=SecretStr(TEST_JWT_SECRET),
         session_signing_secret=SecretStr(TEST_SESSION_SECRET),
@@ -232,9 +233,9 @@ def test_wrong_issuer_returns_401() -> None:
         jwt_issuer="wrong-issuer",
         session_signing_secret=SecretStr(TEST_SESSION_SECRET),
     )
-    token = JWTSigner(
-        secret=TEST_JWT_SECRET, settings=wrong_issuer_settings
-    ).create_access_token("sess_wrong_iss")
+    token = JWTSigner(secret=TEST_JWT_SECRET, settings=wrong_issuer_settings).create_access_token(
+        "sess_wrong_iss"
+    )
 
     app = create_test_bearer_app(settings)
     client = TestClient(app)
@@ -266,9 +267,9 @@ def test_wrong_audience_returns_401() -> None:
         jwt_audience="wrong-audience",
         session_signing_secret=SecretStr(TEST_SESSION_SECRET),
     )
-    token = JWTSigner(
-        secret=TEST_JWT_SECRET, settings=wrong_aud_settings
-    ).create_access_token("sess_wrong_aud")
+    token = JWTSigner(secret=TEST_JWT_SECRET, settings=wrong_aud_settings).create_access_token(
+        "sess_wrong_aud"
+    )
 
     app = create_test_bearer_app(settings)
     client = TestClient(app)
@@ -291,6 +292,7 @@ def test_wrong_audience_returns_401() -> None:
 
 def test_wrong_token_type_returns_401() -> None:
     import jwt
+
     settings = Settings(
         jwt_secret=SecretStr(TEST_JWT_SECRET),
         session_signing_secret=SecretStr(TEST_SESSION_SECRET),

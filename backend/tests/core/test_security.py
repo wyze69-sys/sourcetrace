@@ -19,7 +19,6 @@ from sourcetrace.core.security import (
 VALID_SECRET = "a_very_secret_key_that_is_at_least_32_bytes_long!"
 
 
-
 def test_opaque_ids_are_unique_and_cryptographically_random() -> None:
     ids = [generate_owner_session_id() for _ in range(100)]
     assert len(set(ids)) == 100
@@ -98,10 +97,7 @@ def test_exact_expiration_boundary_rejected() -> None:
     # Current time exactly equal to exp timestamp must be rejected
     assert signer.verify_cookie_token(token, current_time=exp) is None
     # Current time 1 second after exp timestamp must be rejected
-    assert (
-        signer.verify_cookie_token(token, current_time=exp + timedelta(seconds=1))
-        is None
-    )
+    assert signer.verify_cookie_token(token, current_time=exp + timedelta(seconds=1)) is None
     # Current time 1 second before exp timestamp is valid
     assert (
         signer.verify_cookie_token(token, current_time=exp - timedelta(seconds=1))
@@ -400,7 +396,6 @@ def test_jwt_algorithm_confusion_or_unsupported_algorithm_rejected() -> None:
         signer.verify_access_token(raw_token)
 
 
-
 # ---------------------------------------------------------------------------
 # AUTH-002A Regression & Hardening Tests
 # ---------------------------------------------------------------------------
@@ -525,7 +520,6 @@ def test_jwt_invalid_claim_types_and_values_rejected(
         signer.verify_access_token(raw_token)
 
 
-
 @pytest.mark.parametrize("invalid_ttl", [0, -1, -3600, True, False, "3600"])
 def test_jwt_create_access_token_rejects_invalid_ttl(invalid_ttl: object) -> None:
     signer = JWTSigner(secret=VALID_SECRET)
@@ -565,7 +559,6 @@ def test_jwt_settings_validation_rules() -> None:
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None, jwt_audience="   ")
-
 
     # Customized valid issuer and audience work
     custom = Settings(

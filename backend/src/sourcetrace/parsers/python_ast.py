@@ -1,10 +1,11 @@
 """
 SourceTrace Python AST symbol parser.
 
-This module processes Python source code extracted by the scanner, extracting functions, 
+This module processes Python source code extracted by the scanner, extracting functions,
 classes, and methods into deterministic chunks. It uses the builtin `ast` module and
 avoids unsafe execution methods.
 """
+
 from __future__ import annotations
 
 import ast
@@ -42,23 +43,27 @@ PYTHON_AST_PARSER_VERSION: str = "python-ast-v3"
 
 _SYMBOL_NODE_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
-VALID_SYMBOL_TYPES: frozenset[str] = frozenset({
-    "function",
-    "async_function", 
-    "class",
-    "method",
-    "async_method",
-    "nested_function",
-    "nested_async_function",
-    "nested_class",
-    "module",
-})
+VALID_SYMBOL_TYPES: frozenset[str] = frozenset(
+    {
+        "function",
+        "async_function",
+        "class",
+        "method",
+        "async_method",
+        "nested_function",
+        "nested_async_function",
+        "nested_class",
+        "module",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ParseResult:
     chunks: tuple[ParsedCodeChunk, ...]
     parsed_file_count: int
     skipped: tuple[SkippedFile, ...]
+
 
 @dataclass(frozen=True, slots=True)
 class _RawSymbol:
@@ -122,16 +127,12 @@ def _import_evidence(node: ast.Import | ast.ImportFrom) -> list[ImportEvidence]:
     if isinstance(node, ast.Import):
         for alias in node.names:
             local_name = alias.asname or alias.name.split(".")[0]
-            out.append(
-                ImportEvidence(local_name, alias.name, alias.name, line_start, line_end)
-            )
+            out.append(ImportEvidence(local_name, alias.name, alias.name, line_start, line_end))
     else:
         source_module = "." * (node.level or 0) + (node.module or "")
         for alias in node.names:
             local_name = alias.asname or alias.name
-            out.append(
-                ImportEvidence(local_name, source_module, alias.name, line_start, line_end)
-            )
+            out.append(ImportEvidence(local_name, source_module, alias.name, line_start, line_end))
     return out
 
 
@@ -177,9 +178,7 @@ def _prefixed_normalized_path(
 ) -> str:
     """Normalize a declared path, folding the router's own literal prefix in."""
     prefix = (
-        router_prefixes.get(dec_func.value.id)
-        if isinstance(dec_func.value, ast.Name)
-        else None
+        router_prefixes.get(dec_func.value.id) if isinstance(dec_func.value, ast.Name) else None
     )
     if prefix is None:
         return _normalize_endpoint_path(path)
@@ -266,9 +265,7 @@ def _extract_flow_evidence(
             named = _dotted_call_name(scoped.func)
             if named is not None:
                 line_start, line_end = _node_lines(scoped)
-                references.append(
-                    ReferenceEvidence(named[0], named[1], line_start, line_end)
-                )
+                references.append(ReferenceEvidence(named[0], named[1], line_start, line_end))
             if (
                 id(scoped) not in consumed_decorators
                 and isinstance(scoped.func, ast.Attribute)
@@ -291,9 +288,7 @@ def _extract_flow_evidence(
                     )
                 )
 
-    final_refs, refs_truncated = _finalize_evidence(
-        references, lambda r: (r.local_name, r.kind)
-    )
+    final_refs, refs_truncated = _finalize_evidence(references, lambda r: (r.local_name, r.kind))
     final_imports, imports_truncated = _finalize_evidence(
         imports, lambda i: (i.local_name, i.source_module, i.imported_name)
     )
@@ -367,15 +362,10 @@ class _SymbolVisitor(ast.NodeVisitor):
                 sym_type = "method" if base_type == "function" else "async_method"
             else:
                 # Child of a function/method is a nested function
-                sym_type = (
-                    "nested_function" if base_type == "function"
-                    else "nested_async_function"
-                )
+                sym_type = "nested_function" if base_type == "function" else "nested_async_function"
 
         if 1 <= start_line <= end_line <= len(self.source_lines):
-            self.symbols.append(
-                _RawSymbol(qual_name, sym_type, start_line, end_line, node)
-            )
+            self.symbols.append(_RawSymbol(qual_name, sym_type, start_line, end_line, node))
 
         self._context_stack.append((name, sym_type))
         self.generic_visit(node)
@@ -395,7 +385,7 @@ def _extract_symbols(tree: ast.Module, source_lines: list[str]) -> list[_RawSymb
     visitor = _SymbolVisitor(source_lines)
     for node in tree.body:
         visitor.visit(node)
-    
+
     # Sort by (start_line, end_line)
     return sorted(visitor.symbols, key=lambda s: (s.start_line, s.end_line))
 
@@ -420,9 +410,9 @@ def parse_python_source(
     source_lines_stripped = source.splitlines()
 
     raw_symbols = _extract_symbols(tree, source_lines_stripped)
-    
+
     chunks: list[ParsedCodeChunk] = []
-    
+
     if not raw_symbols:
         return _make_module_chunk(
             source=source,
@@ -445,8 +435,14 @@ def parse_python_source(
         content = "".join(source_lines[sym.start_line - 1 : sym.end_line])
         content_hash = _compute_content_hash(content)
         chunk_id = _compute_chunk_id(
-            repository_id, relative_path, sym.symbol_type, sym.qualified_name,
-            sym.start_line, sym.end_line, content_hash, PYTHON_AST_PARSER_VERSION
+            repository_id,
+            relative_path,
+            sym.symbol_type,
+            sym.qualified_name,
+            sym.start_line,
+            sym.end_line,
+            content_hash,
+            PYTHON_AST_PARSER_VERSION,
         )
         evidence = _extract_flow_evidence(sym.node, module_imports, router_prefixes)
         chunks.append(
@@ -479,7 +475,7 @@ def parse_acquired_source(
     owner_session_id: str,
 ) -> ParseResult:
     scan_result = scan_code_sources(acquired_source)
-    
+
     all_chunks: list[ParsedCodeChunk] = []
     all_skipped: list[SkippedFile] = list(scan_result.skipped)
     parsed_count = 0

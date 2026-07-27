@@ -57,9 +57,7 @@ class InMemoryRepositoryRepository:
     def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]:
         return [r for r in self.repos.values() if r.owner_session_id == owner_session_id]
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         return self.repos.get((owner_session_id, repository_id))
 
     def save(self, repo: RepositoryRecord) -> RepositoryRecord:
@@ -80,9 +78,7 @@ class InMemoryIndexingJobRepository:
             (j.owner_session_id, j.job_id): j for j in (jobs or [])
         }
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         return self.jobs.get((owner_session_id, job_id))
 
     def get_by_repository(
@@ -99,7 +95,8 @@ class InMemoryIndexingJobRepository:
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         keys_to_del = [
-            k for k, j in self.jobs.items()
+            k
+            for k, j in self.jobs.items()
             if j.owner_session_id == owner_session_id and j.repository_id == repository_id
         ]
         for k in keys_to_del:
@@ -114,9 +111,7 @@ def setup_test_app(
     active_owner_id: str | None = None,
 ):
     app = create_app()
-    settings = Settings(
-        env="development", session_signing_secret=SecretStr(TEST_SECRET)
-    )
+    settings = Settings(env="development", session_signing_secret=SecretStr(TEST_SECRET))
 
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_session_signer] = lambda: SessionSigner(secret=TEST_SECRET)
@@ -158,48 +153,52 @@ def test_list_returns_only_current_owner_records_and_excludes_cross_owner() -> N
     owner1 = "sess_owner1"
     owner2 = "sess_owner2"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner1,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        ),
-        AnonymousSession(
-            owner_session_id=owner2,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        ),
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner1,
+                last_active_at=now,
+                expires_at=exp,
+                created_at=now,
+                updated_at=now,
+            ),
+            AnonymousSession(
+                owner_session_id=owner2,
+                last_active_at=now,
+                expires_at=exp,
+                created_at=now,
+                updated_at=now,
+            ),
+        ]
+    )
 
-    repo_repo = InMemoryRepositoryRepository([
-        RepositoryRecord(
-            repository_id="repo_owner1_a",
-            owner_session_id=owner1,
-            name="owner1-repo-a",
-            source_type="github",
-            status="ready",
-            created_at=now,
-            updated_at=now,
-            github_url="https://github.com/owner1/repo-a",
-            file_count=5,
-            chunk_count=10,
-        ),
-        RepositoryRecord(
-            repository_id="repo_owner2_b",
-            owner_session_id=owner2,
-            name="owner2-repo-b",
-            source_type="zip",
-            status="pending",
-            created_at=now,
-            updated_at=now,
-            file_count=2,
-            chunk_count=0,
-        ),
-    ])
+    repo_repo = InMemoryRepositoryRepository(
+        [
+            RepositoryRecord(
+                repository_id="repo_owner1_a",
+                owner_session_id=owner1,
+                name="owner1-repo-a",
+                source_type="github",
+                status="ready",
+                created_at=now,
+                updated_at=now,
+                github_url="https://github.com/owner1/repo-a",
+                file_count=5,
+                chunk_count=10,
+            ),
+            RepositoryRecord(
+                repository_id="repo_owner2_b",
+                owner_session_id=owner2,
+                name="owner2-repo-b",
+                source_type="zip",
+                status="pending",
+                created_at=now,
+                updated_at=now,
+                file_count=2,
+                chunk_count=0,
+            ),
+        ]
+    )
     job_repo = InMemoryIndexingJobRepository()
 
     app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
@@ -233,29 +232,33 @@ def test_repository_detail_returns_owned_record() -> None:
     exp = now + timedelta(days=7)
     owner1 = "sess_owner1"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner1,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        )
-    ])
-    repo_repo = InMemoryRepositoryRepository([
-        RepositoryRecord(
-            repository_id="repo_owner1_a",
-            owner_session_id=owner1,
-            name="owner1-repo-a",
-            source_type="github",
-            status="ready",
-            created_at=now,
-            updated_at=now,
-            github_url="https://github.com/owner1/repo-a",
-            file_count=5,
-            chunk_count=10,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner1,
+                last_active_at=now,
+                expires_at=exp,
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
+    repo_repo = InMemoryRepositoryRepository(
+        [
+            RepositoryRecord(
+                repository_id="repo_owner1_a",
+                owner_session_id=owner1,
+                name="owner1-repo-a",
+                source_type="github",
+                status="ready",
+                created_at=now,
+                updated_at=now,
+                github_url="https://github.com/owner1/repo-a",
+                file_count=5,
+                chunk_count=10,
+            )
+        ]
+    )
     job_repo = InMemoryIndexingJobRepository()
 
     app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
@@ -276,26 +279,30 @@ def test_missing_and_cross_owner_repository_return_identical_safe_404() -> None:
     owner1 = "sess_owner1"
     owner2 = "sess_owner2"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner1,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        )
-    ])
-    repo_repo = InMemoryRepositoryRepository([
-        RepositoryRecord(
-            repository_id="repo_owner2_private",
-            owner_session_id=owner2,
-            name="owner2-repo",
-            source_type="github",
-            status="ready",
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner1,
+                last_active_at=now,
+                expires_at=exp,
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
+    repo_repo = InMemoryRepositoryRepository(
+        [
+            RepositoryRecord(
+                repository_id="repo_owner2_private",
+                owner_session_id=owner2,
+                name="owner2-repo",
+                source_type="github",
+                status="ready",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
     job_repo = InMemoryIndexingJobRepository()
 
     app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
@@ -312,13 +319,17 @@ def test_missing_and_cross_owner_repository_return_identical_safe_404() -> None:
     cross_json = res_cross.json()
 
     # Identical standard 404 envelope (zero metadata leakage)
-    assert missing_json == cross_json == {
-        "error": {
-            "code": "RESOURCE_NOT_FOUND",
-            "message": "The requested resource was not found.",
-            "request_id": None,
+    assert (
+        missing_json
+        == cross_json
+        == {
+            "error": {
+                "code": "RESOURCE_NOT_FOUND",
+                "message": "The requested resource was not found.",
+                "request_id": None,
+            }
         }
-    }
+    )
 
 
 def test_job_polling_returns_owned_job() -> None:
@@ -326,28 +337,32 @@ def test_job_polling_returns_owned_job() -> None:
     exp = now + timedelta(days=7)
     owner1 = "sess_owner1"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner1,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner1,
+                last_active_at=now,
+                expires_at=exp,
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
-    job_repo = InMemoryIndexingJobRepository([
-        IndexingJobRecord(
-            job_id="job_owner1_123",
-            repository_id="repo_owner1_a",
-            owner_session_id=owner1,
-            status="parsing",
-            progress_percentage=45,
-            current_step="Parsing AST nodes",
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    job_repo = InMemoryIndexingJobRepository(
+        [
+            IndexingJobRecord(
+                job_id="job_owner1_123",
+                repository_id="repo_owner1_a",
+                owner_session_id=owner1,
+                status="parsing",
+                progress_percentage=45,
+                current_step="Parsing AST nodes",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
 
     app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
@@ -370,28 +385,32 @@ def test_missing_and_cross_owner_job_return_identical_safe_404() -> None:
     owner1 = "sess_owner1"
     owner2 = "sess_owner2"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner1,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner1,
+                last_active_at=now,
+                expires_at=exp,
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
     repo_repo = InMemoryRepositoryRepository()
-    job_repo = InMemoryIndexingJobRepository([
-        IndexingJobRecord(
-            job_id="job_owner2_private",
-            repository_id="repo_owner2_a",
-            owner_session_id=owner2,
-            status="ready",
-            progress_percentage=100,
-            current_step="Completed",
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    job_repo = InMemoryIndexingJobRepository(
+        [
+            IndexingJobRecord(
+                job_id="job_owner2_private",
+                repository_id="repo_owner2_a",
+                owner_session_id=owner2,
+                status="ready",
+                progress_percentage=100,
+                current_step="Completed",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
 
     app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
@@ -402,13 +421,17 @@ def test_missing_and_cross_owner_job_return_identical_safe_404() -> None:
     res_cross = client.get("/api/v1/indexing-jobs/job_owner2_private")
     assert res_cross.status_code == 404
 
-    assert res_missing.json() == res_cross.json() == {
-        "error": {
-            "code": "RESOURCE_NOT_FOUND",
-            "message": "The requested resource was not found.",
-            "request_id": None,
+    assert (
+        res_missing.json()
+        == res_cross.json()
+        == {
+            "error": {
+                "code": "RESOURCE_NOT_FOUND",
+                "message": "The requested resource was not found.",
+                "request_id": None,
+            }
         }
-    }
+    )
 
 
 def test_read_operations_do_not_reserve_slot_or_modify_session_activity() -> None:
@@ -424,28 +447,32 @@ def test_read_operations_do_not_reserve_slot_or_modify_session_activity() -> Non
         updated_at=now,
     )
     session_repo = InMemoryAnonymousSessionRepository([original_session])
-    repo_repo = InMemoryRepositoryRepository([
-        RepositoryRecord(
-            repository_id="repo_1",
-            owner_session_id=owner1,
-            name="repo-1",
-            source_type="github",
-            status="ready",
-            created_at=now,
-            updated_at=now,
-        )
-    ])
-    job_repo = InMemoryIndexingJobRepository([
-        IndexingJobRecord(
-            job_id="job_1",
-            repository_id="repo_1",
-            owner_session_id=owner1,
-            status="ready",
-            current_step="Done",
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    repo_repo = InMemoryRepositoryRepository(
+        [
+            RepositoryRecord(
+                repository_id="repo_1",
+                owner_session_id=owner1,
+                name="repo-1",
+                source_type="github",
+                status="ready",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
+    job_repo = InMemoryIndexingJobRepository(
+        [
+            IndexingJobRecord(
+                job_id="job_1",
+                repository_id="repo_1",
+                owner_session_id=owner1,
+                status="ready",
+                current_step="Done",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
 
     app, _ = setup_test_app(session_repo, repo_repo, job_repo, active_owner_id=owner1)
     client = TestClient(app)
@@ -469,17 +496,19 @@ def test_unauthenticated_read_request_returns_401_without_creating_session() -> 
     owner_other = "sess_other"
 
     session_repo = InMemoryAnonymousSessionRepository()
-    repo_repo = InMemoryRepositoryRepository([
-        RepositoryRecord(
-            repository_id="repo_other",
-            owner_session_id=owner_other,
-            name="other-repo",
-            source_type="github",
-            status="ready",
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    repo_repo = InMemoryRepositoryRepository(
+        [
+            RepositoryRecord(
+                repository_id="repo_other",
+                owner_session_id=owner_other,
+                name="other-repo",
+                source_type="github",
+                status="ready",
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
     job_repo = InMemoryIndexingJobRepository()
 
     app, _ = setup_test_app(session_repo, repo_repo, job_repo)
@@ -499,15 +528,17 @@ def test_storage_exception_returns_fixed_safe_500_envelope() -> None:
     exp = now + timedelta(days=7)
     owner1 = "sess_owner1"
 
-    session_repo = InMemoryAnonymousSessionRepository([
-        AnonymousSession(
-            owner_session_id=owner1,
-            last_active_at=now,
-            expires_at=exp,
-            created_at=now,
-            updated_at=now,
-        )
-    ])
+    session_repo = InMemoryAnonymousSessionRepository(
+        [
+            AnonymousSession(
+                owner_session_id=owner1,
+                last_active_at=now,
+                expires_at=exp,
+                created_at=now,
+                updated_at=now,
+            )
+        ]
+    )
     failing_repo = MagicMock()
     failing_repo.list_by_owner.side_effect = RuntimeError(
         "Database connection lost or document corrupted"

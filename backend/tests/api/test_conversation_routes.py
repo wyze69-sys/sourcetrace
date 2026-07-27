@@ -62,18 +62,12 @@ class InMemoryConversationRepository:
         self.items[key] = conversation
         return conversation
 
-    def delete(
-        self, owner_session_id: str, repository_id: str, conversation_id: str
-    ) -> bool:
+    def delete(self, owner_session_id: str, repository_id: str, conversation_id: str) -> bool:
         key = (owner_session_id, repository_id, conversation_id)
         return self.items.pop(key, None) is not None
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
-        keys = [
-            k
-            for k in self.items
-            if k[0] == owner_session_id and k[1] == repository_id
-        ]
+        keys = [k for k in self.items if k[0] == owner_session_id and k[1] == repository_id]
         for k in keys:
             del self.items[k]
         return len(keys)
@@ -116,11 +110,7 @@ class InMemoryMessageRepository:
         return len(keys)
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
-        keys = [
-            k
-            for k in self.items
-            if k[0] == owner_session_id and k[1] == repository_id
-        ]
+        keys = [k for k in self.items if k[0] == owner_session_id and k[1] == repository_id]
         for k in keys:
             del self.items[k]
         return len(keys)
@@ -174,9 +164,7 @@ class InMemoryRepositoryRepository:
             (r.owner_session_id, r.repository_id): r for r in (repositories or [])
         }
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         return self.repos.get((owner_session_id, repository_id))
 
     def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]:
@@ -202,11 +190,7 @@ class InMemoryRepositoryRepository:
         repo = self.get_by_id(owner_session_id, repository_id)
         if not repo:
             return None
-        expected = (
-            (expected_status,)
-            if isinstance(expected_status, str)
-            else expected_status
-        )
+        expected = (expected_status,) if isinstance(expected_status, str) else expected_status
         if repo.status not in expected:
             return None
         updated = RepositoryRecord(
@@ -264,7 +248,6 @@ class InMemoryAnonymousSessionRepo:
 
 class StrictFakeGroundedAnswerService:
     """Strict fake GroundedAnswerService that enforces exact parameter signatures."""
-
 
     def __init__(
         self,
@@ -347,9 +330,7 @@ def _setup_app_and_client(
         )
 
     app = create_app()
-    settings_obj = Settings(
-        env="development", session_signing_secret=SecretStr(TEST_SECRET)
-    )
+    settings_obj = Settings(env="development", session_signing_secret=SecretStr(TEST_SECRET))
 
     session_repo = InMemoryAnonymousSessionRepo(session, fail_save=fail_session_save)
     repository_repo = InMemoryRepositoryRepository([repo_record])
@@ -474,9 +455,7 @@ def test_create_conversation_invalid_question_returns_422() -> None:
 
 
 def test_get_conversation_history_returns_200() -> None:
-    client, owner_id, repo_id, session_repo, conv_repo, msg_repo, _, _ = (
-        _setup_app_and_client()
-    )
+    client, owner_id, repo_id, session_repo, conv_repo, msg_repo, _, _ = _setup_app_and_client()
 
     now = datetime.now(UTC)
     conv = ConversationRecord(
@@ -605,8 +584,8 @@ def test_send_message_missing_conversation_returns_404() -> None:
 
 
 def test_generation_failure_returns_500_and_does_not_persist() -> None:
-    client, owner_id, repo_id, _, conv_repo, msg_repo, _, answer_service = (
-        _setup_app_and_client(grounded_error=GenerationError("LLM service unavailable"))
+    client, owner_id, repo_id, _, conv_repo, msg_repo, _, answer_service = _setup_app_and_client(
+        grounded_error=GenerationError("LLM service unavailable")
     )
 
     now = datetime.now(UTC)
@@ -655,8 +634,8 @@ def test_exchange_persistence_failure_returns_500() -> None:
 
 
 def test_session_activity_failure_does_not_cause_500_when_exchange_succeeds() -> None:
-    client, owner_id, repo_id, _, conv_repo, msg_repo, exchange_repo, _ = (
-        _setup_app_and_client(fail_session_save=True)
+    client, owner_id, repo_id, _, conv_repo, msg_repo, exchange_repo, _ = _setup_app_and_client(
+        fail_session_save=True
     )
 
     res = client.post(

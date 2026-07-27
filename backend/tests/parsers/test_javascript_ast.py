@@ -28,7 +28,7 @@ async function fetchUserWorkouts(userId) {
         owner_session_id="sess_456",
     )
     assert len(chunks) == 2
-    
+
     c1 = chunks[0]
     assert c1.symbol_name == "calculateCalories"
     assert c1.symbol_type == "function"
@@ -72,11 +72,11 @@ export function useWorkout(id) {
         owner_session_id="sess_456",
     )
     assert len(chunks) == 2
-    
+
     comp = [c for c in chunks if c.symbol_name == "WorkoutCard"][0]
     assert comp.symbol_type == "react_component"
     assert comp.language == "jsx"
-    
+
     hook = [c for c in chunks if c.symbol_name == "useWorkout"][0]
     assert hook.symbol_type == "hook"
     assert hook.language == "jsx"
@@ -544,5 +544,3 @@ module.exports = new UserRepository();
     assert first_chunk.repository_id == "repo_fitsync_fixture"
     assert first_chunk.owner_session_id == "sess_fitsync_fixture"
     assert first_chunk.relative_path == "backend/src/repositories/userRepository.js"
-
-

@@ -67,9 +67,7 @@ def test_evidence_search_successful_static_repository():
     mock_repo_repo.get_by_id.return_value = repo_record
 
     mock_chunk_repo = MagicMock()
-    mock_chunk_repo.search_lexical.return_value = [
-        RetrievalResult(chunk=chunk, score=1.0)
-    ]
+    mock_chunk_repo.search_lexical.return_value = [RetrievalResult(chunk=chunk, score=1.0)]
 
     app = create_app()
     app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id

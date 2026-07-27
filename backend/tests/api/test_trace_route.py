@@ -76,9 +76,7 @@ def _app(repo_record=None, chunks=None, lexical_hits=None, authed: bool = True):
 
 def test_trace_requires_bearer_authentication() -> None:
     client = TestClient(_app(authed=False))
-    response = client.post(
-        "/api/v1/repositories/repo_t3/trace", json={"entry": "main"}
-    )
+    response = client.post("/api/v1/repositories/repo_t3/trace", json={"entry": "main"})
     assert response.status_code == 401
     assert response.headers.get("WWW-Authenticate") == "Bearer"
 
@@ -95,9 +93,7 @@ def test_trace_missing_or_cross_owner_repository_returns_uniform_404() -> None:
 
 def test_trace_not_ready_repository_returns_400() -> None:
     client = TestClient(_app(repo_record=_repo_record(status="processing")))
-    response = client.post(
-        "/api/v1/repositories/repo_t3/trace", json={"entry": "main"}
-    )
+    response = client.post("/api/v1/repositories/repo_t3/trace", json={"entry": "main"})
     assert response.status_code == 400
 
 
@@ -137,7 +133,7 @@ def _explain_app(outcome, chunks, lexical_hits):
 
     app = _app(repo_record=_repo_record(), chunks=chunks, lexical_hits=lexical_hits)
     explainer = _FakeExplainer(outcome)
-    app.dependency_overrides[get_trace_explainer_factory] = lambda: (lambda: explainer)
+    app.dependency_overrides[get_trace_explainer_factory] = lambda: lambda: explainer
     app.dependency_overrides[get_settings] = lambda: Settings(
         llm_provider="gemini", gemini_api_key="test-gemini-key"
     )
@@ -208,9 +204,7 @@ def test_trace_success_returns_nodes_edges_steps_and_null_explanation() -> None:
         _app(repo_record=_repo_record(), chunks=[main, helper], lexical_hits=[main])
     )
 
-    response = client.post(
-        "/api/v1/repositories/repo_t3/trace", json={"entry": "main"}
-    )
+    response = client.post("/api/v1/repositories/repo_t3/trace", json={"entry": "main"})
 
     assert response.status_code == 200
     data = response.json()
@@ -232,9 +226,7 @@ def test_trace_owned_ready_repo_with_no_match_returns_200_entry_unresolved() -> 
         _app(repo_record=_repo_record(), chunks=[_chunk("c_x", "unrelated")], lexical_hits=[])
     )
 
-    response = client.post(
-        "/api/v1/repositories/repo_t3/trace", json={"entry": "does_not_exist"}
-    )
+    response = client.post("/api/v1/repositories/repo_t3/trace", json={"entry": "does_not_exist"})
 
     assert response.status_code == 200
     data = response.json()
@@ -258,9 +250,7 @@ def test_trace_static_mode_makes_no_llm_or_provider_calls() -> None:
     app.dependency_overrides[get_code_chunk_repository] = lambda: mock_chunk_repo
     client = TestClient(app)
 
-    response = client.post(
-        "/api/v1/repositories/repo_t3/trace", json={"entry": "main"}
-    )
+    response = client.post("/api/v1/repositories/repo_t3/trace", json={"entry": "main"})
 
     assert response.status_code == 200
     # The chunk repository is the ONLY collaborator, and only its two

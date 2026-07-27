@@ -29,7 +29,6 @@ MARKER_PATTERN = re.compile(r"\[E([1-9][0-9]*)\]")
 class GroundedAnswerService:
     """Service coordinating retrieval, prompt building, LLM generation, and citations."""
 
-
     def __init__(
         self,
         retrieval_service: SemanticRetrievalService,
@@ -117,9 +116,7 @@ class GroundedAnswerService:
             raise GenerationError("Generation failed safely.")
 
         # 7. Extract and Map Valid Evidence Markers
-        matched_items = self._extract_valid_evidence_items(
-            clean_answer, evidence_result.items
-        )
+        matched_items = self._extract_valid_evidence_items(clean_answer, evidence_result.items)
 
         # 8. Citation Control Policy when no valid evidence marker is cited
         if not matched_items:
@@ -131,9 +128,7 @@ class GroundedAnswerService:
                 chunks_retrieved=evidence_result.total_retrieved,
             )
 
-        citations: tuple[CitationRecord, ...] = tuple(
-            item.citation for item in matched_items
-        )
+        citations: tuple[CitationRecord, ...] = tuple(item.citation for item in matched_items)
         evidence_snippets: tuple[EvidenceSnippetRecord, ...] = tuple(
             item.snippet for item in matched_items
         )

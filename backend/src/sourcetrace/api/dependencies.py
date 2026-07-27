@@ -78,6 +78,43 @@ def get_github_indexing_scheduler() -> GitHubIndexingScheduler:
     return DefaultGitHubIndexingScheduler()
 
 
+class GitHubRefreshScheduler(Protocol):
+    """Protocol for scheduling background repository refresh tasks."""
+
+    def schedule(
+        self,
+        background_tasks: BackgroundTasks,
+        owner_session_id: str,
+        repository_id: str,
+        job_id: str,
+    ) -> None: ...
+
+
+class DefaultGitHubRefreshScheduler:
+    """Production implementation of GitHubRefreshScheduler using FastAPI BackgroundTasks."""
+
+    def schedule(
+        self,
+        background_tasks: BackgroundTasks,
+        owner_session_id: str,
+        repository_id: str,
+        job_id: str,
+    ) -> None:
+        from sourcetrace.workers.github_refresh import run_github_refresh
+
+        background_tasks.add_task(
+            run_github_refresh,
+            owner_session_id=owner_session_id,
+            repository_id=repository_id,
+            job_id=job_id,
+        )
+
+
+def get_github_refresh_scheduler() -> GitHubRefreshScheduler:
+    """Dependency provider for GitHubRefreshScheduler."""
+    return DefaultGitHubRefreshScheduler()
+
+
 class ZipIndexingScheduler(Protocol):
     """Protocol for scheduling background ZIP repository indexing tasks."""
 
@@ -184,11 +221,7 @@ def get_current_owner_id(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> str:
     """FastAPI dependency verifying stateless JWT Bearer token and returning owner_session_id."""
-    if (
-        credentials is None
-        or not credentials.credentials
-        or credentials.scheme.lower() != "bearer"
-    ):
+    if credentials is None or not credentials.credentials or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
 
     # Built here rather than via Depends so a missing/!bearer header still yields
@@ -343,9 +376,7 @@ def build_generation_adapter(settings: Settings):
 
 
 def get_grounded_answer_service(
-    retrieval_service: Annotated[
-        SemanticRetrievalService, Depends(get_semantic_retrieval_service)
-    ],
+    retrieval_service: Annotated[SemanticRetrievalService, Depends(get_semantic_retrieval_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GroundedAnswerService:
     """Dependency provider for GroundedAnswerService."""
@@ -389,5 +420,3 @@ def get_impact_explainer_factory(
 def get_conversation_exchange_repository() -> ConversationExchangeRepository:
     """Dependency provider for ConversationExchangeRepository."""
     return MongoConversationExchangeRepository()
-
-

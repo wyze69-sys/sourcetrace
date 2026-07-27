@@ -38,19 +38,9 @@ def run_github_indexing(
     """
     # 1. Composition setup block with safe pre-claim failure handling
     try:
-        r_repo = (
-            repository_repo
-            if repository_repo is not None
-            else MongoRepositoryRepository()
-        )
-        j_repo = (
-            job_repo if job_repo is not None else MongoIndexingJobRepository()
-        )
-        c_repo = (
-            code_chunk_repo
-            if code_chunk_repo is not None
-            else MongoCodeChunkRepository()
-        )
+        r_repo = repository_repo if repository_repo is not None else MongoRepositoryRepository()
+        j_repo = job_repo if job_repo is not None else MongoIndexingJobRepository()
+        c_repo = code_chunk_repo if code_chunk_repo is not None else MongoCodeChunkRepository()
 
         repo_rec = r_repo.get_by_id(owner_session_id, repository_id)
         if repo_rec is None:
@@ -73,9 +63,7 @@ def run_github_indexing(
         effective_index_mode = index_mode
 
         runner = AcquisitionRunner(repository_repo=r_repo, job_repo=j_repo)
-        indexing_service = RepositoryIndexingService(
-            provider=emb_provider, code_chunk_repo=c_repo
-        )
+        indexing_service = RepositoryIndexingService(provider=emb_provider, code_chunk_repo=c_repo)
         coordinator = IndexingLifecycleCoordinator(
             repository_repo=r_repo,
             job_repo=j_repo,
@@ -93,9 +81,7 @@ def run_github_indexing(
         now_fail = datetime.now(UTC)
         failed_job: IndexingJobRecord | None = None
         try:
-            target_j_repo = (
-                job_repo if job_repo is not None else MongoIndexingJobRepository()
-            )
+            target_j_repo = job_repo if job_repo is not None else MongoIndexingJobRepository()
             failed_job = target_j_repo.transition_status(
                 owner_session_id=owner_session_id,
                 job_id=job_id,
@@ -121,9 +107,7 @@ def run_github_indexing(
         ):
             try:
                 target_r_repo = (
-                    repository_repo
-                    if repository_repo is not None
-                    else MongoRepositoryRepository()
+                    repository_repo if repository_repo is not None else MongoRepositoryRepository()
                 )
                 target_r_repo.transition_status(
                     owner_session_id=owner_session_id,

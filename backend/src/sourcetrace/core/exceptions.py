@@ -142,4 +142,3 @@ class GenerationValidationError(GenerationError):
 
     def __init__(self, message: str = "Generation request is invalid.") -> None:
         super().__init__(message)
-

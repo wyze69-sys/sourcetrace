@@ -41,19 +41,13 @@ class ConfigurableRepositoryRepository(RepositoryRepository):
         self.fail_save_status: set[str] = set()
         self.save_calls: list[RepositoryRecord] = []
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         if self.fail_get_by_id:
             raise DummyStorageError("Raw MongoDB repository query failure: secret_db_uri")
         return self._repos.get((owner_session_id, repository_id))
 
     def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]:
-        return [
-            repo
-            for (sid, _), repo in self._repos.items()
-            if sid == owner_session_id
-        ]
+        return [repo for (sid, _), repo in self._repos.items() if sid == owner_session_id]
 
     def count_by_owner(self, owner_session_id: str) -> int:
         return len(self.list_by_owner(owner_session_id))
@@ -87,9 +81,7 @@ class ConfigurableRepositoryRepository(RepositoryRepository):
             return None
         existing = self._repos[key]
         expected_set = (
-            {expected_status}
-            if isinstance(expected_status, str)
-            else set(expected_status)
+            {expected_status} if isinstance(expected_status, str) else set(expected_status)
         )
         if existing.status not in expected_set:
             return None
@@ -127,9 +119,7 @@ class ConfigurableIndexingJobRepository(IndexingJobRepository):
         self.fail_save_status: set[str] = set()
         self.save_calls: list[IndexingJobRecord] = []
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         if self.fail_get_by_id:
             raise DummyStorageError("Raw MongoDB job query failure: secret_db_uri")
         return self._jobs.get((owner_session_id, job_id))
@@ -144,9 +134,7 @@ class ConfigurableIndexingJobRepository(IndexingJobRepository):
 
     def save(self, job: IndexingJobRecord) -> IndexingJobRecord:
         if job.status in self.fail_save_status:
-            raise DummyStorageError(
-                f"Raw MongoDB job save failure for status {job.status}"
-            )
+            raise DummyStorageError(f"Raw MongoDB job save failure for status {job.status}")
 
         self.save_calls.append(job)
         key = (job.owner_session_id, job.job_id)
@@ -167,9 +155,7 @@ class ConfigurableIndexingJobRepository(IndexingJobRepository):
         completed_at: datetime | None = None,
     ) -> IndexingJobRecord | None:
         if new_status in self.fail_save_status:
-            raise DummyStorageError(
-                f"Raw MongoDB job transition failure for status {new_status}"
-            )
+            raise DummyStorageError(f"Raw MongoDB job transition failure for status {new_status}")
         key = (owner_session_id, job_id)
         if key not in self._jobs:
             return None
@@ -177,9 +163,7 @@ class ConfigurableIndexingJobRepository(IndexingJobRepository):
         if existing.repository_id != repository_id:
             return None
         expected_set = (
-            {expected_status}
-            if isinstance(expected_status, str)
-            else set(expected_status)
+            {expected_status} if isinstance(expected_status, str) else set(expected_status)
         )
         if existing.status not in expected_set:
             return None
@@ -204,9 +188,7 @@ class ConfigurableIndexingJobRepository(IndexingJobRepository):
         self._jobs[key] = updated
         return updated
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         keys_to_del = [
             k
             for k, j in self._jobs.items()
@@ -215,7 +197,6 @@ class ConfigurableIndexingJobRepository(IndexingJobRepository):
         for k in keys_to_del:
             del self._jobs[k]
         return len(keys_to_del)
-
 
 
 def create_valid_zip_bytes(files: dict[str, str] | None = None) -> bytes:
@@ -431,10 +412,12 @@ def test_github_acquisition_disallowed_redirect_rejection(tmp_path: Path):
                     class Resp:
                         status_code = 302
                         headers = {"Location": "https://evil.com/archive.zip"}
+
                     return Resp()
 
                 def __exit__(self, *args):
                     pass
+
             return StreamContext()
 
         def close(self):
@@ -851,7 +834,6 @@ def test_initial_job_save_failure_is_masked(tmp_path: Path):
     assert repo is not None and repo.status == "pending"
 
 
-
 def test_scanning_state_save_failure_is_masked_and_consumer_not_called(tmp_path: Path):
     """Verify failure saving scanning job state is masked and consumer is not invoked."""
     repo_storage = ConfigurableRepositoryRepository()
@@ -1192,7 +1174,6 @@ def test_only_one_worker_claims_queued_job_and_second_runner_invokes_no_consumer
         )
 
     assert worker2_ran is False
-
 
 
 def test_already_acquiring_or_ready_or_failed_job_cannot_be_claimed(tmp_path: Path):
@@ -1583,7 +1564,6 @@ def test_claim_loss_race_worker2_returns_none_without_finalization_or_mutation(t
     assert len([j for j in loss_job_storage.save_calls if j.status == "failed"]) == 0
 
 
-
 def test_atomic_claim_exception_causes_no_finalization_attempts(tmp_path: Path):
     """Verify claim exception raises safe error without running finalization."""
     repo_storage = ConfigurableRepositoryRepository()
@@ -1637,12 +1617,8 @@ def test_atomic_claim_exception_causes_no_finalization_attempts(tmp_path: Path):
     assert consumer_ran is False
 
     # Finalization must NOT have been called (no status='failed' saves recorded)
-    failed_job_saves = [
-        job for job in job_storage.save_calls if job.status == "failed"
-    ]
-    failed_repo_saves = [
-        repo for repo in repo_storage.save_calls if repo.status == "failed"
-    ]
+    failed_job_saves = [job for job in job_storage.save_calls if job.status == "failed"]
+    failed_repo_saves = [repo for repo in repo_storage.save_calls if repo.status == "failed"]
     assert len(failed_job_saves) == 0
     assert len(failed_repo_saves) == 0
 
@@ -1759,9 +1735,7 @@ def test_ineligible_starting_states_cannot_be_claimed_or_restarted(
         nonlocal consumer_ran
         consumer_ran = True
 
-    with pytest.raises(
-        AcquisitionError, match="Resource missing or owned by another session."
-    ):
+    with pytest.raises(AcquisitionError, match="Resource missing or owned by another session."):
         runner.run_acquisition(
             owner_session_id=owner_session_id,
             repository_id=repository_id,
@@ -1775,7 +1749,6 @@ def test_ineligible_starting_states_cannot_be_claimed_or_restarted(
 
 
 class HostileNow:
-
     @property
     def tzinfo(self) -> None:
         raise RuntimeError("Hostile tzinfo access: secret_key_999")
@@ -1850,7 +1823,3 @@ def test_invalid_now_raises_acquisition_error_before_claim(
     job_record = job_storage.get_by_id(owner_session_id, job_id)
     assert job_record is not None
     assert job_record.status == "queued"
-
-
-
-

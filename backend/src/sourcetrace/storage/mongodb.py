@@ -81,9 +81,7 @@ class MongoStorageManager:
             return self._client
 
         if not self._settings.mongodb_uri:
-            raise StorageConfigurationError(
-                "MongoDB connection URI is not configured."
-            )
+            raise StorageConfigurationError("MongoDB connection URI is not configured.")
 
         uri_str = self._settings.mongodb_uri.get_secret_value()
         self._client = self._client_factory(uri_str)
@@ -130,6 +128,7 @@ class MongoStorageManager:
                 return
             try:
                 from sourcetrace.storage.mongo_repositories import init_indexes
+
                 init_indexes(target_db)
                 _INITIALIZED_TARGETS.add(target_key)
                 self._initialized_target_keys.add(target_key)

@@ -108,6 +108,7 @@ def search_repository_evidence(
             repository_id=clean_repo_id,
             query_text=body.query,
             limit=body.limit,
+            generation_id=repo.active_generation_id,
         )
     except StorageDataError as err:
         raise HTTPException(

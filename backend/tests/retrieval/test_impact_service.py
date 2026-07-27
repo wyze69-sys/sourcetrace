@@ -72,12 +72,15 @@ class _FakeChunkRepo:
     def __init__(self, chunks: list[CodeChunk]) -> None:
         self._chunks = chunks
 
-    def list_by_repository(self, owner_session_id: str, repository_id: str) -> list[CodeChunk]:
+    def list_by_repository(
+        self, owner_session_id: str, repository_id: str, generation_id: str | None = None
+    ) -> list[CodeChunk]:
         assert owner_session_id == _OWNER and repository_id == _REPO
         return list(self._chunks)
 
     def search_lexical(
-        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5
+        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5,
+        generation_id: str | None = None,
     ) -> list[RetrievalResult]:
         # Match symbol names or paths — the real implementation indexes both
         # via search_terms.
@@ -85,15 +88,14 @@ class _FakeChunkRepo:
         matches = [
             c
             for c in self._chunks
-            if needle in c.symbol_name.casefold()
-            or needle in c.relative_path.casefold()
+            if needle in c.symbol_name.casefold() or needle in c.relative_path.casefold()
         ]
         return [RetrievalResult(chunk=c, score=1.0) for c in matches[:limit]]
 
 
 def _preview(chunks: list[CodeChunk], symbol: str, max_depth: int | None = None):
     service = ChangeImpactService(_FakeChunkRepo(chunks))
-    return service.preview(_OWNER, _REPO, symbol, max_depth=max_depth)
+    return service.impact(_OWNER, _REPO, symbol, max_depth=max_depth)
 
 
 def _gap_kinds(result) -> set[str]:
@@ -203,9 +205,7 @@ def test_http_edges_connect_frontend_to_backend_upstream() -> None:
             "c_client",
             "client/src/api.js",
             "fetchStats",
-            endpoints=(
-                EndpointEvidence("calls", "GET", "/api/v1/stats", "/api/v1/stats", 9, 9),
-            ),
+            endpoints=(EndpointEvidence("calls", "GET", "/api/v1/stats", "/api/v1/stats", 9, 9),),
             parser_version="js-ts-treesitter-v2",
         ),
         _chunk(
@@ -246,8 +246,13 @@ def test_affected_tests_detected_by_path_heuristic() -> None:
     chunks = [
         _chunk("c_target", "src/calc.py", "compute"),
         _chunk("c_test", "tests/test_calc.py", "test_compute", references=(_ref("compute"),)),
-        _chunk("c_spec", "client/src/calc.spec.ts", "calcSpec", references=(_ref("compute"),),
-               parser_version="js-ts-treesitter-v2"),
+        _chunk(
+            "c_spec",
+            "client/src/calc.spec.ts",
+            "calcSpec",
+            references=(_ref("compute"),),
+            parser_version="js-ts-treesitter-v2",
+        ),
         _chunk("c_plain", "src/app.py", "run", references=(_ref("compute"),)),
     ]
     result = _preview(chunks, "compute")
@@ -424,9 +429,7 @@ def test_unmatched_endpoint_call_reports_aggregate_gap() -> None:
             "c_client",
             "client/src/api.js",
             "pushLog",
-            endpoints=(
-                EndpointEvidence("calls", "POST", "/api/v1/logs", "/api/v1/logs", 3, 3),
-            ),
+            endpoints=(EndpointEvidence("calls", "POST", "/api/v1/logs", "/api/v1/logs", 3, 3),),
             parser_version="js-ts-treesitter-v2",
         ),
     ]

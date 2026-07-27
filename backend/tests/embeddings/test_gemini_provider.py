@@ -52,9 +52,7 @@ class _FakeModelsApi:
         # Default: return one embedding per input text in `contents`
         contents = kwargs.get("contents", [])
         n = len(contents) if isinstance(contents, (list, tuple)) else 1
-        return _FakeEmbedResponse(
-            [_FakeContentEmbedding([0.1] * 1536) for _ in range(n)]
-        )
+        return _FakeEmbedResponse([_FakeContentEmbedding([0.1] * 1536) for _ in range(n)])
 
 
 class _FakeGeminiClient:
@@ -114,9 +112,7 @@ def test_client_created_only_on_first_embed_call(monkeypatch: pytest.MonkeyPatch
 
     fake_client = _FakeGeminiClient()
 
-    patch_target = (
-        "sourcetrace.embeddings.provider.GeminiEmbeddingAdapter._get_client"
-    )
+    patch_target = "sourcetrace.embeddings.provider.GeminiEmbeddingAdapter._get_client"
     with patch(patch_target, return_value=fake_client):
         adapter = GeminiEmbeddingAdapter(settings=settings)
         adapter.embed(["hello"])
@@ -426,9 +422,7 @@ def test_valid_integer_and_float_values_accepted() -> None:
 
 def test_provider_exception_masked_as_embedding_error() -> None:
     err = RuntimeError("Internal server error with secret details")
-    fake_client = _FakeGeminiClient(
-        response_queue=[err, err, err]
-    )
+    fake_client = _FakeGeminiClient(response_queue=[err, err, err])
     adapter = GeminiEmbeddingAdapter(
         model_identifier="gemini-embedding-001",
         expected_dimensions=1536,
@@ -552,7 +546,6 @@ def test_none_model_with_blank_config_fails_safely() -> None:
             client=_FakeGeminiClient(),
         )
     assert str(exc_info.value) == "Embedding failed safely."
-
 
 
 @pytest.mark.parametrize("invalid_dim", [0, -1, -1536])

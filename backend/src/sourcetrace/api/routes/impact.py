@@ -22,6 +22,7 @@ from sourcetrace.core.capabilities import evaluate_capabilities
 from sourcetrace.core.config import Settings, get_settings
 from sourcetrace.core.exceptions import StorageDataError, StorageOperationError
 from sourcetrace.generation.impact_explanation import ImpactExplanationService
+from sourcetrace.models.domain import RepositoryRecord
 from sourcetrace.retrieval.diff import DiffParseError
 from sourcetrace.retrieval.impact import (
     ChangeImpactResult,
@@ -209,9 +210,7 @@ def _explain_or_degrade(
         explained = None
     if explained is None:
         return _with_explanation_failed_gap(result), None
-    return result, ImpactExplanationSchema(
-        text=explained[0], cited_steps=list(explained[1])
-    )
+    return result, ImpactExplanationSchema(text=explained[0], cited_steps=list(explained[1]))
 
 
 def _require_generation_capability(settings: Settings) -> None:
@@ -285,8 +284,7 @@ def _diff_result_to_response(
             for f in result.risk_factors
         ],
         gaps=[
-            ImpactGapSchema(kind=g.kind, detail=g.detail, node_id=g.node_id)
-            for g in result.gaps
+            ImpactGapSchema(kind=g.kind, detail=g.detail, node_id=g.node_id) for g in result.gaps
         ],
     )
 
@@ -295,8 +293,8 @@ def _load_ready_repository(
     repository_id: str,
     owner_session_id: str,
     repository_repo: RepositoryRepository,
-) -> str:
-    """Validate + authorize the repository; return the cleaned id."""
+) -> tuple[RepositoryRecord, str]:
+    """Validate + authorize the repository; return the repository record and cleaned id."""
     clean_repo_id = repository_id.strip()
 
     if not clean_repo_id:
@@ -324,7 +322,7 @@ def _load_ready_repository(
             detail=f"Repository is not ready for impact analysis (status: {repo.status}).",
         )
 
-    return clean_repo_id
+    return repo, clean_repo_id
 
 
 def _result_to_response(
@@ -358,8 +356,7 @@ def _result_to_response(
             for f in result.risk_factors
         ],
         gaps=[
-            ImpactGapSchema(kind=g.kind, detail=g.detail, node_id=g.node_id)
-            for g in result.gaps
+            ImpactGapSchema(kind=g.kind, detail=g.detail, node_id=g.node_id) for g in result.gaps
         ],
     )
 
@@ -392,20 +389,19 @@ def preview_change_impact(
     ],
 ) -> ChangeImpactResponse:
     """Produce a deterministic static change impact preview for a symbol."""
-    clean_repo_id = _load_ready_repository(
-        repository_id, owner_session_id, repository_repo
-    )
+    repo, clean_repo_id = _load_ready_repository(repository_id, owner_session_id, repository_repo)
 
     if body.mode == "explain":
         _require_generation_capability(settings)
 
     service = ChangeImpactService(code_chunk_repo)
     try:
-        result = service.preview(
+        result = service.impact(
             owner_session_id=owner_session_id,
             repository_id=clean_repo_id,
             symbol_query=body.symbol,
             max_depth=body.max_depth,
+            generation_id=repo.active_generation_id,
         )
     except StorageDataError as err:
         raise HTTPException(
@@ -450,9 +446,7 @@ def preview_diff_impact(
     ],
 ) -> DiffImpactResponse:
     """Produce a deterministic static impact preview for a pasted unified diff."""
-    clean_repo_id = _load_ready_repository(
-        repository_id, owner_session_id, repository_repo
-    )
+    repo, clean_repo_id = _load_ready_repository(repository_id, owner_session_id, repository_repo)
 
     if body.mode == "explain":
         _require_generation_capability(settings)
@@ -464,6 +458,7 @@ def preview_diff_impact(
             repository_id=clean_repo_id,
             diff_text=body.diff,
             max_depth=body.max_depth,
+            generation_id=repo.active_generation_id,
         )
     except DiffParseError as err:
         raise HTTPException(

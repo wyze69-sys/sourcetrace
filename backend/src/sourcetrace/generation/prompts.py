@@ -80,7 +80,6 @@ def build_grounded_prompt(
 
     messages.append(GenerationMessage(role="user", content=full_user_content))
 
-
     # Calculate total prompt length
     total_chars = sum(len(m.content) for m in messages)
     if total_chars > max_prompt_chars and evidence_blocks:
@@ -94,7 +93,6 @@ def build_grounded_prompt(
         header_overhead = len(evidence_blocks) * 120
         content_budget = max(40, remaining_for_evidence - header_overhead)
         budget_per_block = max(20, content_budget // len(evidence_blocks))
-
 
         for idx, item in enumerate(evidence_items, start=1):
             marker = f"[E{idx}]"
@@ -127,4 +125,3 @@ def build_grounded_prompt(
         messages[-1] = GenerationMessage(role="user", content=full_user_content)
 
     return tuple(messages)
-

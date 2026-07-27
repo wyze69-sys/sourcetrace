@@ -15,4 +15,3 @@ __all__ = [
     "acquire_github_source",
     "acquire_zip_source",
 ]
-

@@ -72,6 +72,16 @@ class RepositoryRepository(Protocol):
         repository_id: str,
         active_generation_id: str,
         updated_at: datetime,
+        indexed_branch: str | None = None,
+        indexed_commit_sha: str | None = None,
+        file_count: int | None = None,
+        chunk_count: int | None = None,
+        indexed_file_count: int | None = None,
+        indexed_chunk_count: int | None = None,
+        parser_versions: tuple[str, ...] | list[str] | None = None,
+        flow_evidence_complete: bool | None = None,
+        consecutive_refresh_failures: int | None = None,
+        is_stale: bool | None = None,
     ) -> RepositoryRecord | None: ...
 
     def delete(self, owner_session_id: str, repository_id: str) -> bool: ...
