@@ -766,4 +766,53 @@ describe('ApiClient', () => {
     expect(headers.get('Authorization')).toBe('Bearer jwt_zip_test_token')
     expect(res.repository.repository_id).toBe('repo_456')
   })
+
+  it('refreshRepository() sends POST to /api/v1/repositories/{id}/refresh with Bearer token', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_refresh_test_token')
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repository: {
+          repository_id: 'repo_789',
+          name: 'Hello-World',
+          source_type: 'github',
+          github_url: 'https://github.com/octocat/Hello-World',
+          status: 'ready',
+          file_count: 42,
+          chunk_count: 120,
+          created_at: '2026-07-24T00:00:00Z',
+          updated_at: '2026-07-27T00:00:00Z',
+          last_indexed_at: '2026-07-24T00:00:00Z',
+          indexed_commit_sha: 'abc1234def5678',
+          indexed_branch: 'main',
+          is_stale: true,
+          flow_evidence_complete: true,
+        },
+        indexing_job: {
+          job_id: 'job_refresh_001',
+          repository_id: 'repo_789',
+          status: 'queued',
+          job_type: 'refresh',
+          progress_percentage: 0,
+          current_step: 'Queued',
+          created_at: '2026-07-27T00:00:00Z',
+          updated_at: '2026-07-27T00:00:00Z',
+        },
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const res = await client.refreshRepository('repo_789')
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/repositories/repo_789/refresh')
+    const callInit = mockFetch.mock.calls[0][1] as RequestInit
+    expect((callInit.headers as Headers).get('Authorization')).toBe('Bearer jwt_refresh_test_token')
+    expect(callInit.method).toBe('POST')
+    expect(res.indexing_job.job_type).toBe('refresh')
+    expect(res.repository.is_stale).toBe(true)
+    expect(res.repository.indexed_commit_sha).toBe('abc1234def5678')
+    expect(res.repository.indexed_branch).toBe('main')
+  })
 })

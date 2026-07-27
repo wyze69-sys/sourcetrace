@@ -238,6 +238,20 @@ export function App({ client = defaultApiClient }: AppProps) {
     }
   }, [repositories, selectedRepoId])
 
+  const handleRefreshRepo = async (repo: Repository) => {
+    try {
+      const res = await client.refreshRepository(repo.repository_id)
+      setActiveJobs((prev) => ({ ...prev, [res.indexing_job.job_id]: res.indexing_job }))
+      setAriaLiveMsg(`Refresh started for ${repo.name}.`)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setGithubError(err.message)
+      } else {
+        setGithubError(SAFE_NETWORK_ERROR_MESSAGE)
+      }
+    }
+  }
+
   const handleRetryRepo = async (repo: Repository) => {
     try {
       if (repo.source_type === 'github' && repo.github_url) {
@@ -457,6 +471,11 @@ export function App({ client = defaultApiClient }: AppProps) {
                   )
                   const isSelected = selectedRepoId === repo.repository_id
                   const isReady = repo.status === 'ready'
+                  const isRefreshing =
+                    !!job &&
+                    job.job_type === 'refresh' &&
+                    job.status !== 'ready' &&
+                    job.status !== 'failed'
 
                   return (
                     <li key={repo.repository_id}>
@@ -468,9 +487,29 @@ export function App({ client = defaultApiClient }: AppProps) {
                         }}
                       >
                         <div className="repo-header">
-                          <span className="repo-title">{repo.name}</span>
-                          <span className={`repo-badge ${job?.status || repo.status}`}>
-                            {job?.status || repo.status}
+                          <span className="repo-title">
+                            {repo.name}
+                            {repo.is_stale && (
+                              <span
+                                title="Index may be out of date"
+                                style={{
+                                  marginLeft: '6px',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  color: '#f59e0b',
+                                  background: 'rgba(245,158,11,0.12)',
+                                  border: '1px solid rgba(245,158,11,0.4)',
+                                  borderRadius: '6px',
+                                  padding: '1px 6px',
+                                  verticalAlign: 'middle',
+                                }}
+                              >
+                                stale
+                              </span>
+                            )}
+                          </span>
+                          <span className={`repo-badge ${isRefreshing ? 'refreshing' : (job?.status || repo.status)}`}>
+                            {isRefreshing ? 'refreshing' : (job?.status || repo.status)}
                           </span>
                         </div>
                         <div className="repo-meta mono">
@@ -659,9 +698,23 @@ export function App({ client = defaultApiClient }: AppProps) {
                     <h2 className="panel-header" style={{ margin: 0 }}>
                       Repository: <span className="mono">{selectedRepo.name}</span>
                     </h2>
-                    <span className="static-banner" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
-                      Static inspection — no AI token required.
-                    </span>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {selectedRepo.source_type === 'github' && (
+                        <button
+                          id="btn-refresh-repo-static"
+                          type="button"
+                          className="btn-action"
+                          style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                          onClick={() => handleRefreshRepo(selectedRepo)}
+                          title={selectedRepo.indexed_commit_sha ? `Last indexed: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
+                        >
+                          ↻ Refresh
+                        </button>
+                      )}
+                      <span className="static-banner" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
+                        Static inspection — no AI token required.
+                      </span>
+                    </div>
                   </div>
                   <p className="panel-text" style={{ marginBottom: '16px' }}>
                     Search code symbols, classes, functions, and relative file paths without AI tokens.
@@ -718,9 +771,23 @@ export function App({ client = defaultApiClient }: AppProps) {
                 </section>
               ) : selectedRepo && selectedRepo.status === 'ready' ? (
                 <section className="card-panel chat-panel">
-                  <h2 className="panel-header">
-                    Repository: <span className="mono">{selectedRepo.name}</span>
-                  </h2>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                    <h2 className="panel-header" style={{ margin: 0 }}>
+                      Repository: <span className="mono">{selectedRepo.name}</span>
+                    </h2>
+                    {selectedRepo.source_type === 'github' && (
+                      <button
+                        id="btn-refresh-repo-ai"
+                        type="button"
+                        className="btn-action"
+                        style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                        onClick={() => handleRefreshRepo(selectedRepo)}
+                        title={selectedRepo.indexed_commit_sha ? `Last indexed: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
+                      >
+                        ↻ Refresh
+                      </button>
+                    )}
+                  </div>
                   <p className="panel-text">
                     Ask natural-language questions grounded in verified source code.
                   </p>

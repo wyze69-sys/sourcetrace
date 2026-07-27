@@ -46,6 +46,16 @@ export interface Repository {
   created_at: string
   updated_at: string
   index_mode?: IndexMode
+  /** ISO-8601 UTC timestamp of last successful index. Null before first index. */
+  last_indexed_at?: string | null
+  /** Git commit SHA that was indexed. Null if SHA could not be resolved. */
+  indexed_commit_sha?: string | null
+  /** Branch that was indexed (e.g. "main"). Null if unknown. */
+  indexed_branch?: string | null
+  /** True when the backend detects the repo may be out of date. */
+  is_stale?: boolean
+  /** True when all indexed chunks support flow-evidence extraction. */
+  flow_evidence_complete?: boolean
 }
 
 export type IndexingJobStatus =
@@ -62,6 +72,8 @@ export interface IndexingJob {
   job_id: string
   repository_id: string
   status: IndexingJobStatus
+  /** "initial" for first import; "refresh" for subsequent re-index. */
+  job_type?: 'initial' | 'refresh'
   progress_percentage: number
   current_step: string
   error_message?: string | null
