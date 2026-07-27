@@ -33,7 +33,6 @@ from sourcetrace.api.schemas import (
     CreateGitHubRepositoryRequest,
     CreateRepositoryResponse,
     ErrorEnvelope,
-    IndexingJob,
     Repository,
     RepositoryListResponse,
     job_record_to_schema,
@@ -618,7 +617,7 @@ def create_github_repository(
 
 @router.post(
     "/repositories/{repository_id}/refresh",
-    response_model=IndexingJob,
+    response_model=CreateRepositoryResponse,
     status_code=status.HTTP_202_ACCEPTED,
     operation_id="refreshRepository",
     responses={
@@ -648,7 +647,7 @@ def refresh_repository(
     repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
     job_repo: Annotated[IndexingJobRepository, Depends(get_indexing_job_repository)],
     scheduler: Annotated[GitHubRefreshScheduler, Depends(get_github_refresh_scheduler)],
-) -> IndexingJob:
+) -> CreateRepositoryResponse:
     """Trigger a generation-safe refresh for an existing ready GitHub repository."""
     clean_repo_id = repository_id.strip()
 
@@ -752,4 +751,7 @@ def refresh_repository(
             detail="An internal server error occurred.",
         ) from None
 
-    return job_record_to_schema(job_record)
+    return CreateRepositoryResponse(
+        repository=repository_record_to_schema(repo),
+        indexing_job=job_record_to_schema(job_record),
+    )

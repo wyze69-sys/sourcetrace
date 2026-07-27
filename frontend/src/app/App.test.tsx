@@ -337,4 +337,69 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
 
     expect(createGitHubMock).toHaveBeenCalledTimes(2)
   })
+
+  it('triggers GitHub repository refresh and tracks active refresh job', async () => {
+    const mockReadyRepo = {
+      repository_id: 'repo_ready_1',
+      name: 'Active-Repo',
+      source_type: 'github' as const,
+      github_url: 'https://github.com/octocat/Active-Repo',
+      status: 'ready' as const,
+      file_count: 10,
+      chunk_count: 25,
+      index_mode: 'static' as const,
+      created_at: '2026-07-24T00:00:00Z',
+      updated_at: '2026-07-24T00:00:00Z',
+      is_stale: true,
+    }
+
+    const mockRefreshJobQueued = {
+      job_id: 'job_ref_1',
+      repository_id: 'repo_ready_1',
+      status: 'queued' as const,
+      job_type: 'refresh' as const,
+      progress_percentage: 0,
+      current_step: 'Queued repository refresh',
+      created_at: '2026-07-27T00:00:00Z',
+      updated_at: '2026-07-27T00:00:00Z',
+    }
+
+    const refreshMock = vi.fn().mockResolvedValue({
+      repository: mockReadyRepo,
+      indexing_job: mockRefreshJobQueued,
+    })
+
+    const getJobMock = vi.fn().mockResolvedValue({
+      ...mockRefreshJobQueued,
+      status: 'ready' as const,
+      progress_percentage: 100,
+      current_step: 'Done',
+    })
+
+    const mockClient = {
+      getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-24' }),
+      listRepositories: vi.fn().mockResolvedValue({ repositories: [mockReadyRepo] }),
+      refreshRepository: refreshMock,
+      getIndexingJob: getJobMock,
+    } as unknown as ApiClient
+
+    render(<App client={mockClient} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('API Online (1.0.0)')).toBeInTheDocument()
+      expect(screen.getByText('Active-Repo')).toBeInTheDocument()
+    })
+
+    const refreshBtn = screen.getByRole('button', { name: /↻ Refresh/i })
+    await userEvent.click(refreshBtn)
+
+    expect(refreshMock).toHaveBeenCalledWith('repo_ready_1')
+
+    await waitFor(
+      () => {
+        expect(getJobMock).toHaveBeenCalledWith('job_ref_1')
+      },
+      { timeout: 4000 },
+    )
+  })
 })

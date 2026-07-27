@@ -265,9 +265,11 @@ def test_refresh_success_creates_job_and_schedules_task(
         res = client.post("/api/v1/repositories/repo_github/refresh", headers=auth_headers)
         assert res.status_code == 202
         payload = res.json()
-        assert payload["repository_id"] == "repo_github"
-        assert payload["status"] == "queued"
-        assert payload["job_type"] == "refresh"
+        assert set(payload.keys()) == {"repository", "indexing_job"}
+        assert payload["repository"]["repository_id"] == "repo_github"
+        assert payload["indexing_job"]["repository_id"] == "repo_github"
+        assert payload["indexing_job"]["status"] == "queued"
+        assert payload["indexing_job"]["job_type"] == "refresh"
 
         # Check job repo state
         job_in_repo = job_repo.get_by_repository("sess_owner_123", "repo_github")
