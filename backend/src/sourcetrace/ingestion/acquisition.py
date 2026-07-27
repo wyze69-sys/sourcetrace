@@ -44,6 +44,8 @@ class AcquiredSource:
     extraction_root: Path
     manifest: ExtractionManifest
     source_type: str
+    resolved_branch: str | None = None
+    resolved_commit_sha: str | None = None
 
 
 class AcquiredSourceConsumer(Protocol):
@@ -58,6 +60,7 @@ def acquire_github_source(
     parent_dir: str | Path | None = None,
     client: httpx.Client | None = None,
     resolver: Callable[[str], list[str]] | None = None,
+    ref: str | None = None,
 ) -> None:
     """Safely download a public GitHub archive, extract it, and invoke consumer callback.
 
@@ -69,6 +72,7 @@ def acquire_github_source(
         parent_dir=parent_dir,
         client=client,
         resolver=resolver,
+        ref=ref,
     ) as download_result:
         with safe_extract_zip(
             archive_source=download_result.archive_path,
@@ -78,6 +82,8 @@ def acquire_github_source(
                 extraction_root=extraction_result.target_dir,
                 manifest=extraction_result.manifest,
                 source_type="github",
+                resolved_branch=download_result.resolved_branch,
+                resolved_commit_sha=download_result.resolved_commit_sha,
             )
             consumer(source)
 
@@ -204,7 +210,6 @@ class AcquisitionRunner:
             # Another worker won or job is ineligible; do not finalize or mutate anything
             raise AcquisitionError("Acquisition failed safely.")
 
-
         # 3. Post-confirmed-claim processing block (finalization permitted on failure)
         started_consumer = False
         try:
@@ -257,9 +262,7 @@ class AcquisitionRunner:
                 str(exc)
                 if str(exc).strip()
                 else (
-                    "Indexing failed safely."
-                    if started_consumer
-                    else "Acquisition failed safely."
+                    "Indexing failed safely." if started_consumer else "Acquisition failed safely."
                 )
             )
             self._finalize_failed_state(
@@ -272,9 +275,7 @@ class AcquisitionRunner:
             raise AcquisitionError("Acquisition failed safely.") from None
         except Exception:
             safe_msg = (
-                "Indexing failed safely."
-                if started_consumer
-                else "Acquisition failed safely."
+                "Indexing failed safely." if started_consumer else "Acquisition failed safely."
             )
             self._finalize_failed_state(
                 owner_session_id,
@@ -313,9 +314,7 @@ class AcquisitionRunner:
                 err_text = error_message.strip()
             else:
                 err_text = (
-                    "Indexing failed safely."
-                    if started_consumer
-                    else "Acquisition failed safely."
+                    "Indexing failed safely." if started_consumer else "Acquisition failed safely."
                 )
             self._job_repo.transition_status(
                 owner_session_id=owner_session_id,

@@ -64,6 +64,93 @@ class DownloadedArchiveResult:
     content_length: int
     owner: str
     repo: str
+    resolved_branch: str | None = None
+    resolved_commit_sha: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GitHubRefMetadata:
+    """Resolved metadata for a GitHub repository reference."""
+
+    default_branch: str | None = None
+    commit_sha: str | None = None
+
+
+def resolve_github_ref_metadata(
+    owner: str,
+    repo: str,
+    client: httpx.Client | None = None,
+    resolver: Callable[[str], list[str]] | None = None,
+) -> GitHubRefMetadata:
+    """Attempt to resolve the default branch and exact HEAD commit SHA via public GitHub API.
+
+    Guaranteed never to raise an exception. On rate limit, 404, network failure, or timeout,
+    safely returns GitHubRefMetadata(default_branch=None, commit_sha=None).
+    """
+    dns_resolver = resolver or _default_dns_resolver
+    api_url = f"https://api.github.com/repos/{owner}/{repo}"
+
+    try:
+        _validate_target_url_and_ip(
+            api_url,
+            is_redirect=False,
+            resolver=dns_resolver,
+        )
+    except Exception:
+        return GitHubRefMetadata(default_branch=None, commit_sha=None)
+
+    own_client = client is None
+    http_client = client or httpx.Client(
+        follow_redirects=False,
+        trust_env=False,
+        timeout=httpx.Timeout(DOWNLOAD_TIMEOUT_SECONDS),
+    )
+
+    try:
+        headers = {
+            "User-Agent": "SourceTrace/1.0",
+            "Accept": "application/vnd.github+json",
+        }
+
+        # 1. Resolve default branch
+        branch: str | None = None
+        try:
+            repo_res = http_client.get(api_url, headers=headers)
+            if repo_res.status_code == 200:
+                data = repo_res.json()
+                if isinstance(data, dict):
+                    raw_branch = data.get("default_branch")
+                    if isinstance(raw_branch, str) and raw_branch.strip():
+                        branch = raw_branch.strip()
+        except Exception:
+            branch = None
+
+        # 2. Resolve commit SHA for branch (or HEAD fallback)
+        commit_sha: str | None = None
+        target_ref = branch if branch else "HEAD"
+        commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits/{target_ref}"
+
+        try:
+            commits_res = http_client.get(commits_url, headers=headers)
+            if commits_res.status_code == 200:
+                cdata = commits_res.json()
+                if isinstance(cdata, dict):
+                    raw_sha = cdata.get("sha")
+                    if isinstance(raw_sha, str) and raw_sha.strip():
+                        commit_sha = raw_sha.strip()
+        except Exception:
+            commit_sha = None
+
+        return GitHubRefMetadata(default_branch=branch, commit_sha=commit_sha)
+
+    except Exception:
+        return GitHubRefMetadata(default_branch=None, commit_sha=None)
+    finally:
+        if own_client:
+            try:
+                http_client.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _default_dns_resolver(hostname: str) -> list[str]:
@@ -128,7 +215,7 @@ def _validate_target_url_and_ip(
         raise InvalidRepositoryURLError("Repository URL is invalid.")
 
     if not is_redirect:
-        if hostname != "github.com":
+        if hostname not in {"github.com", "api.github.com"}:
             raise InvalidRepositoryURLError("Repository URL is invalid.")
     else:
         if hostname not in {"github.com", "codeload.github.com"}:
@@ -151,6 +238,7 @@ def safe_download_github_archive(
     parent_dir: str | Path | None = None,
     client: httpx.Client | None = None,
     resolver: Callable[[str], list[str]] | None = None,
+    ref: str | None = None,
 ) -> Iterator[DownloadedArchiveResult]:
     """Managed context manager for safe public GitHub repository archive downloads.
 
@@ -168,19 +256,42 @@ def safe_download_github_archive(
         Optional HTTP client (used for dependency injection in offline unit tests).
     resolver : Callable[[str], list[str]] | None
         Optional DNS resolver (used for dependency injection in offline unit tests).
+    ref : str | None
+        Optional explicit git reference (SHA or branch) to download.
 
     Yields
     ------
     DownloadedArchiveResult
-        Internal result object containing archive_path, content_length, owner, repo.
+        Internal download metadata result object.
     """
     dns_resolver = resolver or _default_dns_resolver
 
     # 1. Validate initial repository URL format & extract owner/repo
     owner, repo = validate_github_url(url)
 
-    # 2. Construct canonical archive URL
-    canonical_url = f"https://github.com/{owner}/{repo}/archive/HEAD.zip"
+    # 2. Resolve target git ref and branch/commit metadata
+    if ref is not None and ref.strip():
+        download_ref = ref.strip()
+        resolved_branch = None
+        resolved_commit_sha = download_ref
+    else:
+        meta = resolve_github_ref_metadata(
+            owner=owner,
+            repo=repo,
+            client=client,
+            resolver=dns_resolver,
+        )
+        if meta.commit_sha:
+            download_ref = meta.commit_sha
+        elif meta.default_branch:
+            download_ref = meta.default_branch
+        else:
+            download_ref = "HEAD"
+        resolved_branch = meta.default_branch
+        resolved_commit_sha = meta.commit_sha
+
+    # 3. Construct canonical archive URL
+    canonical_url = f"https://github.com/{owner}/{repo}/archive/{download_ref}.zip"
 
     # 3. Create isolated unique temporary directory
     if parent_dir is not None:
@@ -316,6 +427,8 @@ def safe_download_github_archive(
             content_length=downloaded_bytes,
             owner=owner,
             repo=repo,
+            resolved_branch=resolved_branch,
+            resolved_commit_sha=resolved_commit_sha,
         )
 
     finally:

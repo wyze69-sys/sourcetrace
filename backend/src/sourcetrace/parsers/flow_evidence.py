@@ -7,7 +7,7 @@ javascript_ast for module-chunk fallback).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 
 # Per-category cap on flow evidence items stored per chunk.
 FLOW_EVIDENCE_MAX_ITEMS: int = 100
@@ -15,6 +15,32 @@ FLOW_EVIDENCE_MAX_ITEMS: int = 100
 HTTP_ENDPOINT_METHODS: frozenset[str] = frozenset(
     {"get", "post", "put", "delete", "patch", "head", "options"}
 )
+
+# Parser versions whose chunks carry flow evidence. Older v2 chunks are
+# still valid evidence — v3 only adds router-prefix/mount folding into
+# normalized_path (and, for JS/TS, top-level Express registration recovery),
+# so v2 indexes lose some HTTP-edge matches but never lie.
+SUPPORTED_FLOW_EVIDENCE_PARSER_VERSIONS: frozenset[str] = frozenset(
+    {
+        "python-ast-v2",
+        "python-ast-v3",
+        "js-ts-treesitter-v2",
+        "js-ts-treesitter-v3",
+    }
+)
+EVIDENCE_PARSER_VERSIONS: frozenset[str] = SUPPORTED_FLOW_EVIDENCE_PARSER_VERSIONS
+
+
+def is_flow_evidence_complete(parser_versions: Iterable[str]) -> bool:
+    """Determine whether flow evidence is complete based on parser_versions.
+
+    Returns True if and only if parser_versions is non-empty AND every version in it
+    is present in SUPPORTED_FLOW_EVIDENCE_PARSER_VERSIONS.
+    """
+    versions = set(parser_versions)
+    if not versions:
+        return False
+    return versions.issubset(SUPPORTED_FLOW_EVIDENCE_PARSER_VERSIONS)
 
 
 def normalize_endpoint_path(path_literal: str) -> str:

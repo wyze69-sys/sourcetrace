@@ -71,6 +71,14 @@ class InMemoryRepositoryRepository:
         updated_at: datetime,
         file_count: int | None = None,
         chunk_count: int | None = None,
+        indexed_branch: str | None = None,
+        indexed_commit_sha: str | None = None,
+        last_indexed_at: datetime | None = None,
+        parser_versions: tuple[str, ...] | list[str] | None = None,
+        flow_evidence_complete: bool | None = None,
+        indexed_file_count: int | None = None,
+        indexed_chunk_count: int | None = None,
+        **kwargs: Any,
     ) -> RepositoryRecord | None:
         rec = self.get_by_id(owner_session_id, repository_id)
         if rec is None:
@@ -89,6 +97,24 @@ class InMemoryRepositoryRepository:
             file_count=file_count if file_count is not None else rec.file_count,
             chunk_count=chunk_count if chunk_count is not None else rec.chunk_count,
             index_mode=rec.index_mode,
+            active_generation_id=rec.active_generation_id,
+            indexed_branch=indexed_branch if indexed_branch is not None else rec.indexed_branch,
+            indexed_commit_sha=indexed_commit_sha
+            if indexed_commit_sha is not None
+            else rec.indexed_commit_sha,
+            last_indexed_at=last_indexed_at if last_indexed_at is not None else rec.last_indexed_at,
+            parser_versions=tuple(parser_versions)
+            if parser_versions is not None
+            else rec.parser_versions,
+            flow_evidence_complete=flow_evidence_complete
+            if flow_evidence_complete is not None
+            else rec.flow_evidence_complete,
+            indexed_file_count=indexed_file_count
+            if indexed_file_count is not None
+            else rec.indexed_file_count,
+            indexed_chunk_count=indexed_chunk_count
+            if indexed_chunk_count is not None
+            else rec.indexed_chunk_count,
         )
         self.records = [
             updated_rec
@@ -101,7 +127,8 @@ class InMemoryRepositoryRepository:
     def delete(self, owner_session_id: str, repository_id: str) -> bool:
         initial = len(self.records)
         self.records = [
-            r for r in self.records
+            r
+            for r in self.records
             if not (r.owner_session_id == owner_session_id and r.repository_id == repository_id)
         ]
         return len(self.records) < initial
@@ -171,7 +198,8 @@ class InMemoryIndexingJobRepository:
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         initial = len(self.records)
         self.records = [
-            j for j in self.records
+            j
+            for j in self.records
             if not (j.owner_session_id == owner_session_id and j.repository_id == repository_id)
         ]
         return initial - len(self.records)
@@ -187,7 +215,8 @@ class InMemoryCodeChunkRepository:
 
     def list_by_repository(self, owner_session_id: str, repository_id: str) -> list[CodeChunk]:
         return [
-            c for c in self.saved_chunks
+            c
+            for c in self.saved_chunks
             if c.owner_session_id == owner_session_id and c.repository_id == repository_id
         ]
 
@@ -199,7 +228,8 @@ class InMemoryCodeChunkRepository:
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         initial = len(self.saved_chunks)
         self.saved_chunks = [
-            c for c in self.saved_chunks
+            c
+            for c in self.saved_chunks
             if not (c.owner_session_id == owner_session_id and c.repository_id == repository_id)
         ]
         return initial - len(self.saved_chunks)
@@ -593,4 +623,3 @@ def test_zip_indexing_single_cleanup_owner_call_count(tmp_path: Path, failure_mo
 
     assert staging_store.delete.call_count == 1
     staging_store.delete.assert_called_once_with(token)
-

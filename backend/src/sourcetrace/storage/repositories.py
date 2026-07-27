@@ -40,9 +40,7 @@ class AnonymousSessionRepository(Protocol):
 class RepositoryRepository(Protocol):
     """Persistence interface for indexed repository metadata."""
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None: ...
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None: ...
 
     def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]: ...
 
@@ -59,6 +57,13 @@ class RepositoryRepository(Protocol):
         updated_at: datetime,
         file_count: int | None = None,
         chunk_count: int | None = None,
+        indexed_branch: str | None = None,
+        indexed_commit_sha: str | None = None,
+        last_indexed_at: datetime | None = None,
+        parser_versions: tuple[str, ...] | list[str] | None = None,
+        flow_evidence_complete: bool | None = None,
+        indexed_file_count: int | None = None,
+        indexed_chunk_count: int | None = None,
     ) -> RepositoryRecord | None: ...
 
     def update_active_generation(
@@ -75,9 +80,7 @@ class RepositoryRepository(Protocol):
 class IndexingJobRepository(Protocol):
     """Persistence interface for indexing job status records."""
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None: ...
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None: ...
 
     def get_by_repository(
         self, owner_session_id: str, repository_id: str
@@ -99,9 +102,7 @@ class IndexingJobRepository(Protocol):
         completed_at: datetime | None = None,
     ) -> IndexingJobRecord | None: ...
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int: ...
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int: ...
 
 
 class CodeChunkRepository(Protocol):
@@ -134,9 +135,7 @@ class CodeChunkRepository(Protocol):
         generation_id: str | None = None,
     ) -> list[RetrievalResult]: ...
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int: ...
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int: ...
 
     def delete_by_generation(
         self, owner_session_id: str, repository_id: str, generation_id: str
@@ -156,13 +155,9 @@ class ConversationRepository(Protocol):
 
     def save(self, conversation: ConversationRecord) -> ConversationRecord: ...
 
-    def delete(
-        self, owner_session_id: str, repository_id: str, conversation_id: str
-    ) -> bool: ...
+    def delete(self, owner_session_id: str, repository_id: str, conversation_id: str) -> bool: ...
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int: ...
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int: ...
 
 
 class MessageRepository(Protocol):
@@ -178,9 +173,7 @@ class MessageRepository(Protocol):
         self, owner_session_id: str, repository_id: str, conversation_id: str
     ) -> int: ...
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int: ...
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int: ...
 
 
 class ConversationExchangeRepository(Protocol):
@@ -199,4 +192,3 @@ class ConversationExchangeRepository(Protocol):
         user_message: MessageRecord,
         assistant_message: MessageRecord,
     ) -> None: ...
-

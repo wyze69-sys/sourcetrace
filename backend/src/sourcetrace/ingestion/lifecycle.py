@@ -14,6 +14,7 @@ from sourcetrace.ingestion.indexing import (
     IndexingResult,
     RepositoryIndexingService,
 )
+from sourcetrace.parsers.flow_evidence import is_flow_evidence_complete
 from sourcetrace.storage.repositories import (
     IndexingJobRepository,
     RepositoryRepository,
@@ -31,6 +32,8 @@ class _CoordinatorObserver(IndexingLifecycleObserver):
         repository_id: str,
         job_id: str,
         clock: Callable[[], datetime],
+        resolved_branch: str | None = None,
+        resolved_commit_sha: str | None = None,
     ) -> None:
         self._job_repo = job_repo
         self._repository_repo = repository_repo
@@ -38,6 +41,8 @@ class _CoordinatorObserver(IndexingLifecycleObserver):
         self._repository_id = repository_id
         self._job_id = job_id
         self._clock = clock
+        self._resolved_branch = resolved_branch
+        self._resolved_commit_sha = resolved_commit_sha
 
     def parsing_started(self) -> None:
         now_dt = self._clock()
@@ -87,7 +92,7 @@ class _CoordinatorObserver(IndexingLifecycleObserver):
     def completed(self, result: IndexingResult) -> None:
         now_dt = self._clock()
 
-        # 1. Transition repository: indexing -> ready
+        # 1. Transition repository: indexing -> ready with freshness metadata
         repo = self._repository_repo.transition_status(
             owner_session_id=self._owner_session_id,
             repository_id=self._repository_id,
@@ -96,6 +101,13 @@ class _CoordinatorObserver(IndexingLifecycleObserver):
             updated_at=now_dt,
             file_count=result.parsed_file_count,
             chunk_count=result.chunk_count,
+            indexed_branch=self._resolved_branch,
+            indexed_commit_sha=self._resolved_commit_sha,
+            last_indexed_at=now_dt,
+            parser_versions=result.parser_versions,
+            flow_evidence_complete=is_flow_evidence_complete(result.parser_versions),
+            indexed_file_count=result.parsed_file_count,
+            indexed_chunk_count=result.chunk_count,
         )
         if repo is None:
             raise IndexingError("Indexing failed safely.")
@@ -184,6 +196,8 @@ class IndexingLifecycleCoordinator:
             repository_id=self._repository_id,
             job_id=self._job_id,
             clock=self._get_now,
+            resolved_branch=acquired_source.resolved_branch,
+            resolved_commit_sha=acquired_source.resolved_commit_sha,
         )
 
         try:

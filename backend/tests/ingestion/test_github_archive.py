@@ -160,6 +160,7 @@ def test_disallowed_redirect_makes_no_second_http_call() -> None:
             "https://github.com/owner/repo",
             client=client,
             resolver=_safe_resolver,
+            ref="HEAD",
         ):
             pass
 
@@ -186,6 +187,7 @@ def test_relative_redirect_handling() -> None:
         "https://github.com/owner/repo",
         client=client,
         resolver=_safe_resolver,
+        ref="HEAD",
     ) as res:
         assert res.content_length == len(zip_bytes)
 
@@ -197,6 +199,7 @@ def test_relative_redirect_handling() -> None:
 
 def test_missing_location_header() -> None:
     """Proves 302 response missing Location header raises DisallowedRedirectError."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(302)
 
@@ -213,8 +216,11 @@ def test_missing_location_header() -> None:
 
 def test_redirect_loop_and_limit_rejection() -> None:
     """Proves redirect loop or > 5 redirects raises DisallowedRedirectError."""
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(302, headers={"Location": "https://github.com/owner/repo/archive/HEAD.zip"})
+        return httpx.Response(
+            302, headers={"Location": "https://github.com/owner/repo/archive/HEAD.zip"}
+        )
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
 
@@ -235,6 +241,7 @@ def test_redirect_loop_and_limit_rejection() -> None:
 @pytest.mark.parametrize("bad_cl", ["invalid", "-500"])
 def test_malformed_and_negative_content_length(bad_cl: str) -> None:
     """Proves malformed or negative Content-Length header raises ArchiveDownloadError."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=b"data", headers={"Content-Length": bad_cl})
 
@@ -251,6 +258,7 @@ def test_malformed_and_negative_content_length(bad_cl: str) -> None:
 
 def test_oversized_content_length_header() -> None:
     """Proves Content-Length header exceeding limit raises IngestionLimitError."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -270,6 +278,7 @@ def test_oversized_content_length_header() -> None:
 
 def test_streaming_body_exceeds_limit_despite_small_header() -> None:
     """Proves stream exceeding MAX_GITHUB_ARCHIVE_BYTES raises limit error and cleans up."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         huge_data = b"X" * (MAX_GITHUB_ARCHIVE_BYTES + 500)
         return httpx.Response(200, content=huge_data, headers={"Content-Length": "100"})
@@ -292,6 +301,7 @@ def test_streaming_body_exceeds_limit_despite_small_header() -> None:
 
 def test_unexpected_content_type() -> None:
     """Proves non-ZIP Content-Type raises ArchiveDownloadError."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             200,
@@ -312,6 +322,7 @@ def test_unexpected_content_type() -> None:
 
 def test_timeout_and_transport_error() -> None:
     """Proves httpx timeout/transport exception raises safe ArchiveDownloadError."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectTimeout("Network timed out")
 
@@ -328,6 +339,7 @@ def test_timeout_and_transport_error() -> None:
 
 def test_non_200_response() -> None:
     """Proves HTTP 404/500 response raises safe ArchiveDownloadError."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(404, content=b"Not Found")
 
@@ -376,6 +388,7 @@ def test_cleanup_after_caller_exception() -> None:
 
 def test_no_raw_leaks_in_domain_errors() -> None:
     """Proves error messages do not leak internal URLs, IPs, local paths, headers, or bodies."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(500, content=b"Internal Secret Stack Trace Server Error")
 
@@ -417,6 +430,7 @@ def test_downloader_uses_client_stream_not_get() -> None:
         "https://github.com/owner/repo",
         client=mock_client,
         resolver=_safe_resolver,
+        ref="HEAD",
     ) as res:
         assert res.content_length == 10
 

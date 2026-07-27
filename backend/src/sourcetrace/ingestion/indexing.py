@@ -27,6 +27,7 @@ class IndexingResult:
     chunk_count: int
     skipped_file_count: int
     skipped: tuple[SkippedFile, ...] = ()
+    parser_versions: tuple[str, ...] = ()
 
 
 class IndexingLifecycleObserver(Protocol):
@@ -41,10 +42,17 @@ class IndexingLifecycleObserver(Protocol):
 class _NoOpIndexingLifecycleObserver:
     """Default no-op implementation of IndexingLifecycleObserver."""
 
-    def parsing_started(self) -> None: pass
-    def embedding_started(self) -> None: pass
-    def storing_started(self) -> None: pass
-    def completed(self, result: IndexingResult) -> None: pass
+    def parsing_started(self) -> None:
+        pass
+
+    def embedding_started(self) -> None:
+        pass
+
+    def storing_started(self) -> None:
+        pass
+
+    def completed(self, result: IndexingResult) -> None:
+        pass
 
 
 class RepositoryIndexingService:
@@ -156,10 +164,7 @@ class RepositoryIndexingService:
                 seen_parsed_chunk_ids.add(chunk.chunk_id)
 
                 # Path safety
-                if (
-                    type(chunk.relative_path) is not str
-                    or not chunk.relative_path.strip()
-                ):
+                if type(chunk.relative_path) is not str or not chunk.relative_path.strip():
                     raise IndexingError("Indexing failed safely.")
 
                 rel_p = Path(chunk.relative_path)
@@ -201,6 +206,13 @@ class RepositoryIndexingService:
                     raise IndexingError("Indexing failed safely.")
 
             chunks_to_store: list[CodeChunk] = []
+
+            version_list: list[str] = []
+            for pc in parsed_chunks:
+                pv = getattr(pc, "parser_version", None)
+                if isinstance(pv, str) and pv.strip() and pv.strip() not in version_list:
+                    version_list.append(pv.strip())
+            parser_versions = tuple(sorted(version_list))
 
             if effective_mode == "static":
                 # Static mode: bypass embedding phase entirely
@@ -245,6 +257,7 @@ class RepositoryIndexingService:
                         chunk_count=0,
                         skipped_file_count=skipped_file_count,
                         skipped=skipped,
+                        parser_versions=parser_versions,
                     )
                     active_observer.completed(result)
                     return result
@@ -262,6 +275,7 @@ class RepositoryIndexingService:
                     chunk_count=accepted_count,
                     skipped_file_count=skipped_file_count,
                     skipped=skipped,
+                    parser_versions=parser_versions,
                 )
                 active_observer.completed(result)
                 return result
@@ -278,10 +292,7 @@ class RepositoryIndexingService:
                 now=now_dt,
             )
 
-            if (
-                type(embedded_chunks) is not tuple
-                or len(embedded_chunks) != len(parsed_chunks)
-            ):
+            if type(embedded_chunks) is not tuple or len(embedded_chunks) != len(parsed_chunks):
                 raise IndexingError("Indexing failed safely.")
 
             active_observer.storing_started()
@@ -294,6 +305,7 @@ class RepositoryIndexingService:
                     chunk_count=0,
                     skipped_file_count=skipped_file_count,
                     skipped=skipped,
+                    parser_versions=parser_versions,
                 )
                 active_observer.completed(result)
                 return result
@@ -383,6 +395,7 @@ class RepositoryIndexingService:
                 chunk_count=accepted_count,
                 skipped_file_count=skipped_file_count,
                 skipped=skipped,
+                parser_versions=parser_versions,
             )
             active_observer.completed(result)
             return result

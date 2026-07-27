@@ -21,7 +21,6 @@ from sourcetrace.models.domain import CodeChunk, IndexingJobRecord, RepositoryRe
 
 
 class FakeEmbeddingProvider:
-
     def __init__(self, embedding_dimensions: int = 4) -> None:
         self.embedding_dimensions = embedding_dimensions
         self.model_identifier = "text-embedding-3-small"
@@ -36,7 +35,6 @@ class FakeEmbeddingProvider:
 
 
 class FakeCodeChunkRepository:
-
     def __init__(self) -> None:
         self.saved_chunks: list[CodeChunk] = []
         self.save_many_calls = 0
@@ -46,11 +44,10 @@ class FakeCodeChunkRepository:
         self.saved_chunks.extend(chunks)
         return len(chunks)
 
-    def list_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> list[CodeChunk]:
+    def list_by_repository(self, owner_session_id: str, repository_id: str) -> list[CodeChunk]:
         return [
-            c for c in self.saved_chunks
+            c
+            for c in self.saved_chunks
             if c.owner_session_id == owner_session_id and c.repository_id == repository_id
         ]
 
@@ -63,21 +60,16 @@ class FakeCodeChunkRepository:
     ) -> list[Any]:
         return []
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         return 0
 
 
 class FakeRepositoryRepository:
-
     def __init__(self) -> None:
         self.records: dict[tuple[str, str], RepositoryRecord] = {}
         self.transition_calls: list[dict[str, Any]] = []
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         return self.records.get((owner_session_id, repository_id))
 
     def list_by_owner(self, owner_session_id: str) -> list[RepositoryRecord]:
@@ -99,6 +91,14 @@ class FakeRepositoryRepository:
         updated_at: datetime,
         file_count: int | None = None,
         chunk_count: int | None = None,
+        indexed_branch: str | None = None,
+        indexed_commit_sha: str | None = None,
+        last_indexed_at: datetime | None = None,
+        parser_versions: tuple[str, ...] | list[str] | None = None,
+        flow_evidence_complete: bool | None = None,
+        indexed_file_count: int | None = None,
+        indexed_chunk_count: int | None = None,
+        **kwargs: Any,
     ) -> RepositoryRecord | None:
         call_info = {
             "owner_session_id": owner_session_id,
@@ -108,6 +108,13 @@ class FakeRepositoryRepository:
             "updated_at": updated_at,
             "file_count": file_count,
             "chunk_count": chunk_count,
+            "indexed_branch": indexed_branch,
+            "indexed_commit_sha": indexed_commit_sha,
+            "last_indexed_at": last_indexed_at,
+            "parser_versions": parser_versions,
+            "flow_evidence_complete": flow_evidence_complete,
+            "indexed_file_count": indexed_file_count,
+            "indexed_chunk_count": indexed_chunk_count,
         }
         self.transition_calls.append(call_info)
         rec = self.get_by_id(owner_session_id, repository_id)
@@ -130,6 +137,24 @@ class FakeRepositoryRepository:
             file_count=file_count if file_count is not None else rec.file_count,
             chunk_count=chunk_count if chunk_count is not None else rec.chunk_count,
             index_mode=rec.index_mode,
+            active_generation_id=rec.active_generation_id,
+            indexed_branch=indexed_branch if indexed_branch is not None else rec.indexed_branch,
+            indexed_commit_sha=indexed_commit_sha
+            if indexed_commit_sha is not None
+            else rec.indexed_commit_sha,
+            last_indexed_at=last_indexed_at if last_indexed_at is not None else rec.last_indexed_at,
+            parser_versions=tuple(parser_versions)
+            if parser_versions is not None
+            else rec.parser_versions,
+            flow_evidence_complete=flow_evidence_complete
+            if flow_evidence_complete is not None
+            else rec.flow_evidence_complete,
+            indexed_file_count=indexed_file_count
+            if indexed_file_count is not None
+            else rec.indexed_file_count,
+            indexed_chunk_count=indexed_chunk_count
+            if indexed_chunk_count is not None
+            else rec.indexed_chunk_count,
         )
         self.records[(owner_session_id, repository_id)] = new_rec
         return new_rec
@@ -139,14 +164,11 @@ class FakeRepositoryRepository:
 
 
 class FakeIndexingJobRepository:
-
     def __init__(self) -> None:
         self.records: dict[tuple[str, str], IndexingJobRecord] = {}
         self.transition_calls: list[dict[str, Any]] = []
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         return self.records.get((owner_session_id, job_id))
 
     def get_by_repository(
@@ -196,9 +218,7 @@ class FakeIndexingJobRepository:
             return None
 
         new_prog = (
-            progress_percentage
-            if progress_percentage is not None
-            else rec.progress_percentage
+            progress_percentage if progress_percentage is not None else rec.progress_percentage
         )
         new_rec = IndexingJobRecord(
             job_id=rec.job_id,
@@ -215,11 +235,10 @@ class FakeIndexingJobRepository:
         self.records[(owner_session_id, job_id)] = new_rec
         return new_rec
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         to_del = [
-            k for k, v in self.records.items()
+            k
+            for k, v in self.records.items()
             if k[0] == owner_session_id and v.repository_id == repository_id
         ]
         for k in to_del:
@@ -246,9 +265,7 @@ def test_successful_full_lifecycle_integration() -> None:
 
         provider = FakeEmbeddingProvider()
         chunk_repo = FakeCodeChunkRepository()
-        indexing_service = RepositoryIndexingService(
-            provider=provider, code_chunk_repo=chunk_repo
-        )
+        indexing_service = RepositoryIndexingService(provider=provider, code_chunk_repo=chunk_repo)
 
         repo_repo = FakeRepositoryRepository()
         job_repo = FakeIndexingJobRepository()
@@ -258,25 +275,29 @@ def test_successful_full_lifecycle_integration() -> None:
         job_id = "job_300"
         now_dt = datetime(2026, 7, 24, 18, 0, 0, tzinfo=UTC)
 
-        repo_repo.save(RepositoryRecord(
-            repository_id=repo_id,
-            owner_session_id=owner_id,
-            name="test_repo",
-            source_type="zip",
-            status="pending",
-            created_at=now_dt,
-            updated_at=now_dt,
-        ))
-        job_repo.save(IndexingJobRecord(
-            job_id=job_id,
-            repository_id=repo_id,
-            owner_session_id=owner_id,
-            status="queued",
-            current_step="Queued for acquisition",
-            created_at=now_dt,
-            updated_at=now_dt,
-            progress_percentage=0,
-        ))
+        repo_repo.save(
+            RepositoryRecord(
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                name="test_repo",
+                source_type="zip",
+                status="pending",
+                created_at=now_dt,
+                updated_at=now_dt,
+            )
+        )
+        job_repo.save(
+            IndexingJobRecord(
+                job_id=job_id,
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                status="queued",
+                current_step="Queued for acquisition",
+                created_at=now_dt,
+                updated_at=now_dt,
+                progress_percentage=0,
+            )
+        )
 
         coordinator = IndexingLifecycleCoordinator(
             repository_repo=repo_repo,
@@ -339,9 +360,7 @@ def test_empty_repository_lifecycle() -> None:
 
         provider = FakeEmbeddingProvider()
         chunk_repo = FakeCodeChunkRepository()
-        indexing_service = RepositoryIndexingService(
-            provider=provider, code_chunk_repo=chunk_repo
-        )
+        indexing_service = RepositoryIndexingService(provider=provider, code_chunk_repo=chunk_repo)
 
         repo_repo = FakeRepositoryRepository()
         job_repo = FakeIndexingJobRepository()
@@ -351,25 +370,29 @@ def test_empty_repository_lifecycle() -> None:
         job_id = "job_empty"
         now_dt = datetime(2026, 7, 24, 18, 0, 0, tzinfo=UTC)
 
-        repo_repo.save(RepositoryRecord(
-            repository_id=repo_id,
-            owner_session_id=owner_id,
-            name="empty_repo",
-            source_type="zip",
-            status="pending",
-            created_at=now_dt,
-            updated_at=now_dt,
-        ))
-        job_repo.save(IndexingJobRecord(
-            job_id=job_id,
-            repository_id=repo_id,
-            owner_session_id=owner_id,
-            status="queued",
-            current_step="Queued for acquisition",
-            created_at=now_dt,
-            updated_at=now_dt,
-            progress_percentage=0,
-        ))
+        repo_repo.save(
+            RepositoryRecord(
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                name="empty_repo",
+                source_type="zip",
+                status="pending",
+                created_at=now_dt,
+                updated_at=now_dt,
+            )
+        )
+        job_repo.save(
+            IndexingJobRecord(
+                job_id=job_id,
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                status="queued",
+                current_step="Queued for acquisition",
+                created_at=now_dt,
+                updated_at=now_dt,
+                progress_percentage=0,
+            )
+        )
 
         coordinator = IndexingLifecycleCoordinator(
             repository_repo=repo_repo,
@@ -428,15 +451,29 @@ def test_transition_races() -> None:
             repo_repo = FakeRepositoryRepository()
             job_repo = FakeIndexingJobRepository()
 
-            repo_repo.save(RepositoryRecord(
-                repository_id=repo_id, owner_session_id=owner_id, name="race_repo",
-                source_type="zip", status="pending", created_at=now_dt, updated_at=now_dt,
-            ))
-            job_repo.save(IndexingJobRecord(
-                job_id=job_id, repository_id=repo_id, owner_session_id=owner_id,
-                status="queued", current_step="Queued for acquisition",
-                created_at=now_dt, updated_at=now_dt, progress_percentage=0,
-            ))
+            repo_repo.save(
+                RepositoryRecord(
+                    repository_id=repo_id,
+                    owner_session_id=owner_id,
+                    name="race_repo",
+                    source_type="zip",
+                    status="pending",
+                    created_at=now_dt,
+                    updated_at=now_dt,
+                )
+            )
+            job_repo.save(
+                IndexingJobRecord(
+                    job_id=job_id,
+                    repository_id=repo_id,
+                    owner_session_id=owner_id,
+                    status="queued",
+                    current_step="Queued for acquisition",
+                    created_at=now_dt,
+                    updated_at=now_dt,
+                    progress_percentage=0,
+                )
+            )
 
             orig_job_trans = job_repo.transition_status
             orig_repo_trans = repo_repo.transition_status
@@ -449,6 +486,7 @@ def test_transition_races() -> None:
                     if st == target_step:
                         return None
                     return orig_fn(*args, **kwargs)
+
                 return bad_job_trans
 
             def make_bad_repo(orig_fn: Any) -> Any:
@@ -459,6 +497,7 @@ def test_transition_races() -> None:
                     if st == "ready":
                         return None
                     return orig_fn(*args, **kwargs)
+
                 return bad_repo_trans
 
             target_step = "ready" if fail_step == "job_ready" else fail_step
@@ -526,15 +565,29 @@ def test_phase_failures_preserve_progress() -> None:
         repo_repo = FakeRepositoryRepository()
         job_repo = FakeIndexingJobRepository()
 
-        repo_repo.save(RepositoryRecord(
-            repository_id=repo_id, owner_session_id=owner_id, name="fail_repo",
-            source_type="zip", status="pending", created_at=now_dt, updated_at=now_dt,
-        ))
-        job_repo.save(IndexingJobRecord(
-            job_id=job_id, repository_id=repo_id, owner_session_id=owner_id,
-            status="queued", current_step="Queued for acquisition",
-            created_at=now_dt, updated_at=now_dt, progress_percentage=0,
-        ))
+        repo_repo.save(
+            RepositoryRecord(
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                name="fail_repo",
+                source_type="zip",
+                status="pending",
+                created_at=now_dt,
+                updated_at=now_dt,
+            )
+        )
+        job_repo.save(
+            IndexingJobRecord(
+                job_id=job_id,
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                status="queued",
+                current_step="Queued for acquisition",
+                created_at=now_dt,
+                updated_at=now_dt,
+                progress_percentage=0,
+            )
+        )
 
         coordinator = IndexingLifecycleCoordinator(
             repository_repo=repo_repo,
@@ -581,15 +634,29 @@ def test_acquisition_initial_claim_failures() -> None:
     repo_repo = FakeRepositoryRepository()
     job_repo = FakeIndexingJobRepository()
 
-    repo_repo.save(RepositoryRecord(
-        repository_id=repo_id, owner_session_id=owner_id, name="claim_repo",
-        source_type="zip", status="pending", created_at=now_dt, updated_at=now_dt,
-    ))
-    job_repo.save(IndexingJobRecord(
-        job_id=job_id, repository_id=repo_id, owner_session_id=owner_id,
-        status="queued", current_step="Queued for acquisition",
-        created_at=now_dt, updated_at=now_dt, progress_percentage=0,
-    ))
+    repo_repo.save(
+        RepositoryRecord(
+            repository_id=repo_id,
+            owner_session_id=owner_id,
+            name="claim_repo",
+            source_type="zip",
+            status="pending",
+            created_at=now_dt,
+            updated_at=now_dt,
+        )
+    )
+    job_repo.save(
+        IndexingJobRecord(
+            job_id=job_id,
+            repository_id=repo_id,
+            owner_session_id=owner_id,
+            status="queued",
+            current_step="Queued for acquisition",
+            created_at=now_dt,
+            updated_at=now_dt,
+            progress_percentage=0,
+        )
+    )
 
     job_repo.transition_status = lambda *a, **k: None  # type: ignore
 
@@ -623,15 +690,29 @@ def test_deletion_races_during_failure_finalization() -> None:
         repo_repo = FakeRepositoryRepository()
         job_repo = FakeIndexingJobRepository()
 
-        repo_repo.save(RepositoryRecord(
-            repository_id=repo_id, owner_session_id=owner_id, name="del_repo",
-            source_type="zip", status="pending", created_at=now_dt, updated_at=now_dt,
-        ))
-        job_repo.save(IndexingJobRecord(
-            job_id=job_id, repository_id=repo_id, owner_session_id=owner_id,
-            status="queued", current_step="Queued for acquisition",
-            created_at=now_dt, updated_at=now_dt, progress_percentage=0,
-        ))
+        repo_repo.save(
+            RepositoryRecord(
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                name="del_repo",
+                source_type="zip",
+                status="pending",
+                created_at=now_dt,
+                updated_at=now_dt,
+            )
+        )
+        job_repo.save(
+            IndexingJobRecord(
+                job_id=job_id,
+                repository_id=repo_id,
+                owner_session_id=owner_id,
+                status="queued",
+                current_step="Queued for acquisition",
+                created_at=now_dt,
+                updated_at=now_dt,
+                progress_percentage=0,
+            )
+        )
 
         def failing_consumer(source: AcquiredSource) -> None:
             repo_repo.delete(owner_id, repo_id)
@@ -671,8 +752,10 @@ def test_standalone_coordinator_failures_do_not_mutate_failed_state() -> None:
 
             chunk_repo = FakeCodeChunkRepository()
             if fail_stage == "storage":
+
                 def raise_storage(*a: Any, **k: Any) -> Any:
                     raise RuntimeError("Storage crash secret_db_uri")
+
                 chunk_repo.save_many = raise_storage  # type: ignore
 
             indexing_service = RepositoryIndexingService(
@@ -682,15 +765,29 @@ def test_standalone_coordinator_failures_do_not_mutate_failed_state() -> None:
             repo_repo = FakeRepositoryRepository()
             job_repo = FakeIndexingJobRepository()
 
-            repo_repo.save(RepositoryRecord(
-                repository_id=repo_id, owner_session_id=owner_id, name="stand_repo",
-                source_type="zip", status="indexing", created_at=now_dt, updated_at=now_dt,
-            ))
-            job_repo.save(IndexingJobRecord(
-                job_id=job_id, repository_id=repo_id, owner_session_id=owner_id,
-                status="scanning", current_step="Scanning source files",
-                created_at=now_dt, updated_at=now_dt, progress_percentage=30,
-            ))
+            repo_repo.save(
+                RepositoryRecord(
+                    repository_id=repo_id,
+                    owner_session_id=owner_id,
+                    name="stand_repo",
+                    source_type="zip",
+                    status="indexing",
+                    created_at=now_dt,
+                    updated_at=now_dt,
+                )
+            )
+            job_repo.save(
+                IndexingJobRecord(
+                    job_id=job_id,
+                    repository_id=repo_id,
+                    owner_session_id=owner_id,
+                    status="scanning",
+                    current_step="Scanning source files",
+                    created_at=now_dt,
+                    updated_at=now_dt,
+                    progress_percentage=30,
+                )
+            )
 
             orig_job_trans = job_repo.transition_status
             orig_repo_trans = repo_repo.transition_status
@@ -703,6 +800,7 @@ def test_standalone_coordinator_failures_do_not_mutate_failed_state() -> None:
                     if st == "ready":
                         return None
                     return orig_fn(*args, **kwargs)
+
                 return bad_repo_trans
 
             def make_bad_job(orig_fn: Any) -> Any:
@@ -713,6 +811,7 @@ def test_standalone_coordinator_failures_do_not_mutate_failed_state() -> None:
                     if st == "ready":
                         return None
                     return orig_fn(*args, **kwargs)
+
                 return bad_job_trans
 
             if fail_stage == "parsing":
@@ -765,9 +864,7 @@ def test_process_control_exceptions_passthrough() -> None:
     now_dt = datetime(2026, 7, 24, 18, 0, 0, tzinfo=UTC)
     provider = FakeEmbeddingProvider()
     chunk_repo = FakeCodeChunkRepository()
-    indexing_service = RepositoryIndexingService(
-        provider=provider, code_chunk_repo=chunk_repo
-    )
+    indexing_service = RepositoryIndexingService(provider=provider, code_chunk_repo=chunk_repo)
 
     repo_repo = FakeRepositoryRepository()
     job_repo = FakeIndexingJobRepository()

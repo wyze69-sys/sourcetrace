@@ -108,16 +108,12 @@ def _doc_to_session(doc: dict[str, Any]) -> AnonymousSession:
             expires_at=_to_utc(doc.get("expires_at")),
             created_at=_to_utc(doc.get("created_at")),
             updated_at=_to_utc(doc.get("updated_at")),
-            active_repository_count=_validate_int(
-                doc.get("active_repository_count"), default=0
-            ),
+            active_repository_count=_validate_int(doc.get("active_repository_count"), default=0),
         )
     except StorageDataError:
         raise
     except Exception as exc:
-        raise StorageDataError(
-            "Malformed anonymous session document in storage."
-        ) from exc
+        raise StorageDataError("Malformed anonymous session document in storage.") from exc
 
 
 def _doc_to_repository(doc: dict[str, Any]) -> RepositoryRecord:
@@ -133,22 +129,16 @@ def _doc_to_repository(doc: dict[str, Any]) -> RepositoryRecord:
                 raise StorageDataError("Invalid index_mode in stored document.")
 
         raw_last_indexed = doc.get("last_indexed_at")
-        last_indexed_at = (
-            _to_utc(raw_last_indexed) if raw_last_indexed is not None else None
-        )
+        last_indexed_at = _to_utc(raw_last_indexed) if raw_last_indexed is not None else None
 
         raw_stale_checked = doc.get("stale_checked_at")
-        stale_checked_at = (
-            _to_utc(raw_stale_checked) if raw_stale_checked is not None else None
-        )
+        stale_checked_at = _to_utc(raw_stale_checked) if raw_stale_checked is not None else None
 
         raw_parser_versions = doc.get("parser_versions")
         if raw_parser_versions is None:
             parser_versions: tuple[str, ...] = ()
         elif isinstance(raw_parser_versions, (list, tuple)):
-            parser_versions = tuple(
-                _validate_non_empty_string(v) for v in raw_parser_versions
-            )
+            parser_versions = tuple(_validate_non_empty_string(v) for v in raw_parser_versions)
         else:
             raise StorageDataError("Invalid parser_versions in stored document.")
 
@@ -176,22 +166,14 @@ def _doc_to_repository(doc: dict[str, Any]) -> RepositoryRecord:
             file_count=_validate_int(doc.get("file_count"), default=0),
             chunk_count=_validate_int(doc.get("chunk_count"), default=0),
             index_mode=index_mode,
-            active_generation_id=_validate_optional_string(
-                doc.get("active_generation_id")
-            ),
+            active_generation_id=_validate_optional_string(doc.get("active_generation_id")),
             last_indexed_at=last_indexed_at,
-            indexed_commit_sha=_validate_optional_string(
-                doc.get("indexed_commit_sha")
-            ),
+            indexed_commit_sha=_validate_optional_string(doc.get("indexed_commit_sha")),
             indexed_branch=_validate_optional_string(doc.get("indexed_branch")),
             parser_versions=parser_versions,
             flow_evidence_complete=flow_evidence_complete,
-            indexed_file_count=_validate_int(
-                doc.get("indexed_file_count"), default=0
-            ),
-            indexed_chunk_count=_validate_int(
-                doc.get("indexed_chunk_count"), default=0
-            ),
+            indexed_file_count=_validate_int(doc.get("indexed_file_count"), default=0),
+            indexed_chunk_count=_validate_int(doc.get("indexed_chunk_count"), default=0),
             consecutive_refresh_failures=_validate_int(
                 doc.get("consecutive_refresh_failures"), default=0
             ),
@@ -209,9 +191,7 @@ def _doc_to_job(doc: dict[str, Any]) -> IndexingJobRecord:
         raise StorageDataError("Malformed indexing job document in storage.")
     try:
         completed_at_raw = doc.get("completed_at")
-        completed_at = (
-            _to_utc(completed_at_raw) if completed_at_raw is not None else None
-        )
+        completed_at = _to_utc(completed_at_raw) if completed_at_raw is not None else None
         raw_job_type = doc.get("job_type")
         if raw_job_type is None:
             job_type = "initial"
@@ -226,9 +206,7 @@ def _doc_to_job(doc: dict[str, Any]) -> IndexingJobRecord:
             current_step=_validate_non_empty_string(doc.get("current_step")),
             created_at=_to_utc(doc.get("created_at")),
             updated_at=_to_utc(doc.get("updated_at")),
-            progress_percentage=_validate_int(
-                doc.get("progress_percentage"), default=0
-            ),
+            progress_percentage=_validate_int(doc.get("progress_percentage"), default=0),
             error_message=_validate_optional_string(doc.get("error_message")),
             completed_at=completed_at,
             job_type=job_type,
@@ -364,9 +342,7 @@ class MongoRepositoryRepository:
             self._manager = get_default_storage_manager()
         return self._manager.get_database()[self.COLLECTION_NAME]
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         query_filter = {
             "owner_session_id": owner_session_id,
             "repository_id": repository_id,
@@ -439,6 +415,13 @@ class MongoRepositoryRepository:
         updated_at: datetime,
         file_count: int | None = None,
         chunk_count: int | None = None,
+        indexed_branch: str | None = None,
+        indexed_commit_sha: str | None = None,
+        last_indexed_at: datetime | None = None,
+        parser_versions: tuple[str, ...] | list[str] | None = None,
+        flow_evidence_complete: bool | None = None,
+        indexed_file_count: int | None = None,
+        indexed_chunk_count: int | None = None,
     ) -> RepositoryRecord | None:
         expected_filter: Any
         if isinstance(expected_status, (tuple, list, set)):
@@ -459,6 +442,20 @@ class MongoRepositoryRepository:
             set_doc["file_count"] = file_count
         if chunk_count is not None:
             set_doc["chunk_count"] = chunk_count
+        if indexed_branch is not None:
+            set_doc["indexed_branch"] = indexed_branch
+        if indexed_commit_sha is not None:
+            set_doc["indexed_commit_sha"] = indexed_commit_sha
+        if last_indexed_at is not None:
+            set_doc["last_indexed_at"] = _ensure_utc(last_indexed_at)
+        if parser_versions is not None:
+            set_doc["parser_versions"] = list(parser_versions)
+        if flow_evidence_complete is not None:
+            set_doc["flow_evidence_complete"] = flow_evidence_complete
+        if indexed_file_count is not None:
+            set_doc["indexed_file_count"] = indexed_file_count
+        if indexed_chunk_count is not None:
+            set_doc["indexed_chunk_count"] = indexed_chunk_count
 
         doc = self._collection.find_one_and_update(
             query_filter,
@@ -536,9 +533,7 @@ class MongoIndexingJobRepository:
             self._manager = get_default_storage_manager()
         return self._manager.get_database()[self.COLLECTION_NAME]
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         query_filter = {
             "owner_session_id": owner_session_id,
             "job_id": job_id,
@@ -565,9 +560,7 @@ class MongoIndexingJobRepository:
             "owner_session_id": job.owner_session_id,
             "job_id": job.job_id,
         }
-        completed_at = (
-            _ensure_utc(job.completed_at) if job.completed_at is not None else None
-        )
+        completed_at = _ensure_utc(job.completed_at) if job.completed_at is not None else None
         doc = {
             "job_id": job.job_id,
             "repository_id": job.repository_id,
@@ -638,9 +631,7 @@ class MongoIndexingJobRepository:
             return None
         return _doc_to_job(doc)
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
 
         query_filter = {
             "owner_session_id": owner_session_id,
@@ -655,18 +646,10 @@ def build_vector_search_index_definition(
     index_name: str = "code_chunks_vector_index",
 ) -> dict[str, Any]:
     """Build a deterministic MongoDB Atlas Vector Search index definition dictionary."""
-    if (
-        isinstance(dimensions, bool)
-        or not isinstance(dimensions, int)
-        or dimensions <= 0
-    ):
+    if isinstance(dimensions, bool) or not isinstance(dimensions, int) or dimensions <= 0:
         raise StorageDataError("Invalid or unconfigured vector search dimensions.")
 
-    if (
-        isinstance(index_name, bool)
-        or not isinstance(index_name, str)
-        or not index_name.strip()
-    ):
+    if isinstance(index_name, bool) or not isinstance(index_name, str) or not index_name.strip():
         raise StorageDataError("Invalid vector search index name.")
 
     return {
@@ -1120,9 +1103,7 @@ def _chunk_to_doc(chunk: CodeChunk) -> dict[str, Any]:
         doc["embedding_dimensions"] = chunk.embedding_dimensions
         doc["embedding"] = float_vec
 
-    derived = derive_chunk_search_metadata(
-        chunk.symbol_name, chunk.relative_path, chunk.content
-    )
+    derived = derive_chunk_search_metadata(chunk.symbol_name, chunk.relative_path, chunk.content)
     doc["symbol_name_normalized"] = (
         chunk.symbol_name_normalized or derived["symbol_name_normalized"]
     )
@@ -1190,9 +1171,7 @@ class MongoCodeChunkRepository:
 
     def save_many(self, chunks: list[CodeChunk]) -> int:
         self._ensure_indexes_lazily()
-        if isinstance(chunks, (str, bytes, bytearray)) or not isinstance(
-            chunks, (list, tuple)
-        ):
+        if isinstance(chunks, (str, bytes, bytearray)) or not isinstance(chunks, (list, tuple)):
             raise StorageDataError("Invalid chunk collection container.")
 
         if not chunks:
@@ -1213,11 +1192,7 @@ class MongoCodeChunkRepository:
                 raise StorageDataError("Static chunk state mismatch.")
         else:
             _validate_non_empty_string(model_id)
-            if (
-                isinstance(dimensions, bool)
-                or not isinstance(dimensions, int)
-                or dimensions <= 0
-            ):
+            if isinstance(dimensions, bool) or not isinstance(dimensions, int) or dimensions <= 0:
                 raise StorageDataError("Invalid embedding_dimensions in batch.")
 
         seen_chunk_ids: set[str] = set()
@@ -1255,9 +1230,7 @@ class MongoCodeChunkRepository:
         except StorageDataError:
             raise
         except Exception:
-            raise StorageOperationError(
-                "Database batch save operation failed safely."
-            ) from None
+            raise StorageOperationError("Database batch save operation failed safely.") from None
 
         return len(chunks)
 
@@ -1289,13 +1262,9 @@ class MongoCodeChunkRepository:
             cursor = self._collection.find(query_filter).sort(sort_spec)
             return [_doc_to_chunk(doc) for doc in cursor]
         except Exception:
-            raise StorageOperationError(
-                "Database query operation failed safely."
-            ) from None
+            raise StorageOperationError("Database query operation failed safely.") from None
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
         repo_id = _validate_non_empty_string(repository_id)
@@ -1309,9 +1278,7 @@ class MongoCodeChunkRepository:
             result = self._collection.delete_many(query_filter)
             return int(result.deleted_count)
         except Exception:
-            raise StorageOperationError(
-                "Database delete operation failed safely."
-            ) from None
+            raise StorageOperationError("Database delete operation failed safely.") from None
 
     def delete_by_generation(
         self, owner_session_id: str, repository_id: str, generation_id: str
@@ -1331,9 +1298,7 @@ class MongoCodeChunkRepository:
             result = self._collection.delete_many(query_filter)
             return int(result.deleted_count)
         except Exception:
-            raise StorageOperationError(
-                "Database delete operation failed safely."
-            ) from None
+            raise StorageOperationError("Database delete operation failed safely.") from None
 
     def search_vectors(
         self,
@@ -1353,19 +1318,11 @@ class MongoCodeChunkRepository:
             or not isinstance(max_limit_cfg, int)
             or max_limit_cfg <= 0
         ):
-            raise StorageConfigurationError(
-                "Invalid vector search max limit configuration."
-            )
+            raise StorageConfigurationError("Invalid vector search max limit configuration.")
 
         expected_dim = self._settings.embedding_dimensions
-        if (
-            isinstance(expected_dim, bool)
-            or not isinstance(expected_dim, int)
-            or expected_dim <= 0
-        ):
-            raise StorageConfigurationError(
-                "Invalid vector search dimensions configuration."
-            )
+        if isinstance(expected_dim, bool) or not isinstance(expected_dim, int) or expected_dim <= 0:
+            raise StorageConfigurationError("Invalid vector search dimensions configuration.")
 
         configured_num_candidates = self._settings.vector_search_num_candidates
         if (
@@ -1373,9 +1330,7 @@ class MongoCodeChunkRepository:
             or not isinstance(configured_num_candidates, int)
             or configured_num_candidates <= 0
         ):
-            raise StorageConfigurationError(
-                "Invalid vector search numCandidates configuration."
-            )
+            raise StorageConfigurationError("Invalid vector search numCandidates configuration.")
 
         index_name = self._settings.vector_index_name
         if (
@@ -1383,9 +1338,7 @@ class MongoCodeChunkRepository:
             or not isinstance(index_name, str)
             or not index_name.strip()
         ):
-            raise StorageConfigurationError(
-                "Invalid vector search index configuration."
-            )
+            raise StorageConfigurationError("Invalid vector search index configuration.")
 
         # Validate request input
         if (
@@ -1405,6 +1358,7 @@ class MongoCodeChunkRepository:
             raise StorageDataError("Query vector dimension mismatch or invalid input.")
 
         import math
+
         float_query: list[float] = []
         for val in query_vector:
             if (
@@ -1466,9 +1420,7 @@ class MongoCodeChunkRepository:
         except StorageDataError:
             raise
         except Exception:
-            raise StorageOperationError(
-                "Database vector search operation failed safely."
-            ) from None
+            raise StorageOperationError("Database vector search operation failed safely.") from None
 
         results: list[RetrievalResult] = []
         for doc in raw_results:
@@ -1595,8 +1547,7 @@ class MongoCodeChunkRepository:
             ):
                 score = 1.0
             elif path_norm and (
-                path_norm == query_clean
-                or chunk.relative_path.strip().lower() == raw_query.lower()
+                path_norm == query_clean or chunk.relative_path.strip().lower() == raw_query.lower()
             ):
                 score = 0.95
             elif query_token_set.issubset(sym_tokens):
@@ -1624,7 +1575,6 @@ class MongoCodeChunkRepository:
         )
 
         return results[:limit]
-
 
 
 def _doc_to_conversation(doc: dict[str, Any]) -> ConversationRecord:
@@ -1843,9 +1793,7 @@ class MongoConversationRepository:
 
         return conversation
 
-    def delete(
-        self, owner_session_id: str, repository_id: str, conversation_id: str
-    ) -> bool:
+    def delete(self, owner_session_id: str, repository_id: str, conversation_id: str) -> bool:
         owner_id = _validate_non_empty_string(owner_session_id)
         repo_id = _validate_non_empty_string(repository_id)
         conv_id = _validate_non_empty_string(conversation_id)
@@ -1861,9 +1809,7 @@ class MongoConversationRepository:
         except Exception:
             raise StorageOperationError("Database delete operation failed safely.") from None
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         owner_id = _validate_non_empty_string(owner_session_id)
         repo_id = _validate_non_empty_string(repository_id)
 
@@ -1981,9 +1927,7 @@ class MongoMessageRepository:
         except Exception:
             raise StorageOperationError("Database delete operation failed safely.") from None
 
-    def delete_by_repository(
-        self, owner_session_id: str, repository_id: str
-    ) -> int:
+    def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         owner_id = _validate_non_empty_string(owner_session_id)
         repo_id = _validate_non_empty_string(repository_id)
 
@@ -2015,22 +1959,13 @@ def _validate_exchange_records(
     repo_id = conversation.repository_id
     conv_id = conversation.conversation_id
 
-    if (
-        user_message.owner_session_id != owner_id
-        or assistant_message.owner_session_id != owner_id
-    ):
+    if user_message.owner_session_id != owner_id or assistant_message.owner_session_id != owner_id:
         raise StorageDataError("Owner session ID mismatch across exchange records.")
 
-    if (
-        user_message.repository_id != repo_id
-        or assistant_message.repository_id != repo_id
-    ):
+    if user_message.repository_id != repo_id or assistant_message.repository_id != repo_id:
         raise StorageDataError("Repository ID mismatch across exchange records.")
 
-    if (
-        user_message.conversation_id != conv_id
-        or assistant_message.conversation_id != conv_id
-    ):
+    if user_message.conversation_id != conv_id or assistant_message.conversation_id != conv_id:
         raise StorageDataError("Conversation ID mismatch across exchange records.")
 
     if user_message.role != "user":
@@ -2097,9 +2032,7 @@ class MongoConversationExchangeRepository:
                 self._conv_repo.delete(owner_id, repo_id, conv_id)
             except Exception:
                 pass
-            raise StorageOperationError(
-                "Failed to save user message during exchange."
-            ) from None
+            raise StorageOperationError("Failed to save user message during exchange.") from None
 
         # Attempt 3: Save assistant message
         try:
@@ -2168,12 +2101,14 @@ class MongoConversationExchangeRepository:
         except Exception:
             # Compensate: delete user message and restore original conversation
             try:
-                self._msg_repo._collection.delete_one({
-                    "owner_session_id": owner_id,
-                    "repository_id": repo_id,
-                    "conversation_id": conv_id,
-                    "message_id": user_message.message_id,
-                })
+                self._msg_repo._collection.delete_one(
+                    {
+                        "owner_session_id": owner_id,
+                        "repository_id": repo_id,
+                        "conversation_id": conv_id,
+                        "message_id": user_message.message_id,
+                    }
+                )
             except Exception:
                 pass
             try:
@@ -2203,9 +2138,7 @@ def init_indexes(db: Database) -> None:
             [("owner_session_id", 1), ("created_at", -1)], name="repositories_owner_created_idx"
         )
 
-        db["indexing_jobs"].create_index(
-            [("job_id", 1)], unique=True, name="indexing_jobs_id_idx"
-        )
+        db["indexing_jobs"].create_index([("job_id", 1)], unique=True, name="indexing_jobs_id_idx")
         db["indexing_jobs"].create_index(
             [("owner_session_id", 1), ("job_id", 1)], name="indexing_jobs_owner_job_idx"
         )
@@ -2255,17 +2188,10 @@ def init_indexes(db: Database) -> None:
             name="conversations_owner_repo_conv_idx",
         )
 
-        db["messages"].create_index(
-            [("message_id", 1)], unique=True, name="messages_id_idx"
-        )
+        db["messages"].create_index([("message_id", 1)], unique=True, name="messages_id_idx")
         db["messages"].create_index(
             [("owner_session_id", 1), ("conversation_id", 1), ("created_at", 1)],
             name="messages_owner_conv_created_idx",
         )
     except (AttributeError, TypeError):
         pass
-
-
-
-
-

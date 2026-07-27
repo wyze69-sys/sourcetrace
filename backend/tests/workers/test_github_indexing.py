@@ -14,9 +14,7 @@ class InMemoryRepositoryRepository:
     def __init__(self, records: list[RepositoryRecord] | None = None) -> None:
         self.records: list[RepositoryRecord] = records or []
 
-    def get_by_id(
-        self, owner_session_id: str, repository_id: str
-    ) -> RepositoryRecord | None:
+    def get_by_id(self, owner_session_id: str, repository_id: str) -> RepositoryRecord | None:
         for r in self.records:
             if r.owner_session_id == owner_session_id and r.repository_id == repository_id:
                 return r
@@ -31,15 +29,19 @@ class InMemoryRepositoryRepository:
         updated_at: datetime | None = None,
         file_count: int | None = None,
         chunk_count: int | None = None,
+        indexed_branch: str | None = None,
+        indexed_commit_sha: str | None = None,
+        last_indexed_at: datetime | None = None,
+        parser_versions: tuple[str, ...] | list[str] | None = None,
+        flow_evidence_complete: bool | None = None,
+        indexed_file_count: int | None = None,
+        indexed_chunk_count: int | None = None,
+        **kwargs: Any,
     ) -> RepositoryRecord | None:
         rec = self.get_by_id(owner_session_id, repository_id)
         if rec is None:
             return None
-        allowed = (
-            (expected_status,)
-            if isinstance(expected_status, str)
-            else expected_status
-        )
+        allowed = (expected_status,) if isinstance(expected_status, str) else expected_status
         if rec.status not in allowed:
             return None
         updated_rec = RepositoryRecord(
@@ -53,12 +55,29 @@ class InMemoryRepositoryRepository:
             file_count=file_count if file_count is not None else rec.file_count,
             chunk_count=chunk_count if chunk_count is not None else rec.chunk_count,
             index_mode=rec.index_mode,
+            active_generation_id=rec.active_generation_id,
+            indexed_branch=indexed_branch if indexed_branch is not None else rec.indexed_branch,
+            indexed_commit_sha=indexed_commit_sha
+            if indexed_commit_sha is not None
+            else rec.indexed_commit_sha,
+            last_indexed_at=last_indexed_at if last_indexed_at is not None else rec.last_indexed_at,
+            parser_versions=tuple(parser_versions)
+            if parser_versions is not None
+            else rec.parser_versions,
+            flow_evidence_complete=flow_evidence_complete
+            if flow_evidence_complete is not None
+            else rec.flow_evidence_complete,
+            indexed_file_count=indexed_file_count
+            if indexed_file_count is not None
+            else rec.indexed_file_count,
+            indexed_chunk_count=indexed_chunk_count
+            if indexed_chunk_count is not None
+            else rec.indexed_chunk_count,
         )
         self.records = [
             (
                 updated_rec
-                if r.repository_id == repository_id
-                and r.owner_session_id == owner_session_id
+                if r.repository_id == repository_id and r.owner_session_id == owner_session_id
                 else r
             )
             for r in self.records
@@ -70,9 +89,7 @@ class InMemoryIndexingJobRepository:
     def __init__(self, records: list[IndexingJobRecord] | None = None) -> None:
         self.records: list[IndexingJobRecord] = records or []
 
-    def get_by_id(
-        self, owner_session_id: str, job_id: str
-    ) -> IndexingJobRecord | None:
+    def get_by_id(self, owner_session_id: str, job_id: str) -> IndexingJobRecord | None:
         for j in self.records:
             if j.owner_session_id == owner_session_id and j.job_id == job_id:
                 return j
@@ -94,11 +111,7 @@ class InMemoryIndexingJobRepository:
         job = self.get_by_id(owner_session_id, job_id)
         if job is None or job.repository_id != repository_id:
             return None
-        allowed = (
-            (expected_status,)
-            if isinstance(expected_status, str)
-            else expected_status
-        )
+        allowed = (expected_status,) if isinstance(expected_status, str) else expected_status
         if job.status not in allowed:
             return None
         updated_job = IndexingJobRecord(
@@ -108,9 +121,7 @@ class InMemoryIndexingJobRepository:
             status=new_status,  # type: ignore[arg-type]
             current_step=current_step if current_step is not None else job.current_step,
             progress_percentage=(
-                progress_percentage
-                if progress_percentage is not None
-                else job.progress_percentage
+                progress_percentage if progress_percentage is not None else job.progress_percentage
             ),
             error_message=error_message if error_message is not None else job.error_message,
             completed_at=completed_at if completed_at is not None else job.completed_at,
@@ -871,5 +882,3 @@ def test_run_github_indexing_cloud_mode_calls_provider_factory(tmp_path: Any) ->
         )
 
     factory.assert_called_once()
-
-

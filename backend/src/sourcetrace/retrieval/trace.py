@@ -17,21 +17,9 @@ import posixpath
 from dataclasses import dataclass, field
 
 from sourcetrace.models.domain import CodeChunk, EndpointEvidence, ReferenceEvidence
+from sourcetrace.parsers.flow_evidence import EVIDENCE_PARSER_VERSIONS
 from sourcetrace.storage.mongo_repositories import tokenize_identifier
 from sourcetrace.storage.repositories import CodeChunkRepository
-
-# Parser versions whose chunks carry flow evidence. Older v2 chunks are
-# still valid evidence — v3 only adds router-prefix/mount folding into
-# normalized_path (and, for JS/TS, top-level Express registration recovery),
-# so v2 indexes lose some HTTP-edge matches but never lie.
-EVIDENCE_PARSER_VERSIONS: frozenset[str] = frozenset(
-    {
-        "python-ast-v2",
-        "python-ast-v3",
-        "js-ts-treesitter-v2",
-        "js-ts-treesitter-v3",
-    }
-)
 
 MAX_TRACE_DEPTH: int = 8
 MAX_TRACE_NODES: int = 50
@@ -220,30 +208,22 @@ def resolve_reference(
                 candidates.append(candidate)
     candidates.sort(key=chunk_sort_key)
 
-    binding = next(
-        (imp for imp in source.imports if imp.local_name in (name, base)), None
-    )
+    binding = next((imp for imp in source.imports if imp.local_name in (name, base)), None)
 
     if binding is not None:
         path_matched = [
             c
             for c in candidates
-            if _module_matches_path(
-                binding.source_module, source.relative_path, c.relative_path
-            )
+            if _module_matches_path(binding.source_module, source.relative_path, c.relative_path)
         ]
         if len(path_matched) == 1:
             return ReferenceResolution(path_matched[0], "high", (), False)
         if len(path_matched) > 1:
-            return ReferenceResolution(
-                path_matched[0], "low", tuple(path_matched[1:]), False
-            )
+            return ReferenceResolution(path_matched[0], "low", tuple(path_matched[1:]), False)
         if not candidates:
             # Bound but unresolvable: internal modules are a real gap,
             # external packages are expected to be absent from the index.
-            return ReferenceResolution(
-                None, "", (), _is_relative_module(binding.source_module)
-            )
+            return ReferenceResolution(None, "", (), _is_relative_module(binding.source_module))
 
     if not candidates:
         # No declaration and no import binding: builtin, stdlib, or a local
@@ -317,9 +297,7 @@ class FlowTraceService:
 
         state = _TraceState()
 
-        stale_count = sum(
-            1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS
-        )
+        stale_count = sum(1 for c in all_chunks if c.parser_version not in EVIDENCE_PARSER_VERSIONS)
         if stale_count:
             state.gaps.append(
                 TraceGap(
@@ -389,9 +367,7 @@ class FlowTraceService:
             query_text=entry_query,
             limit=MAX_ENTRY_CANDIDATES,
         )
-        ordered = sorted(
-            results, key=lambda r: (-r.score,) + chunk_sort_key(r.chunk)
-        )
+        ordered = sorted(results, key=lambda r: (-r.score,) + chunk_sort_key(r.chunk))
         candidates = tuple(r.chunk.chunk_id for r in ordered)
         resolved = candidates[0] if candidates else None
         return TraceEntry(entry_query, resolved, candidates)
@@ -486,9 +462,7 @@ class FlowTraceService:
                         unresolved_names.append(evidence.local_name)
                     continue
             else:
-                edge, target = self._resolve_endpoint_call(
-                    chunk, evidence, state, indexes
-                )
+                edge, target = self._resolve_endpoint_call(chunk, evidence, state, indexes)
                 if edge is None:
                     continue
 
@@ -615,6 +589,4 @@ class FlowTraceService:
 
     @staticmethod
     def _sorted_gaps(state: _TraceState) -> tuple[TraceGap, ...]:
-        return tuple(
-            sorted(state.gaps, key=lambda g: (g.kind, g.node_id or "", g.detail))
-        )
+        return tuple(sorted(state.gaps, key=lambda g: (g.kind, g.node_id or "", g.detail)))
