@@ -321,25 +321,27 @@ export class ApiClient {
   }
 
   async createGitHubRepository(githubUrl: string, indexMode?: string): Promise<CreateRepositoryResponse> {
+    const effectiveMode = indexMode === 'ai_assist' ? 'static' : (indexMode ?? 'static')
     return this.request<CreateRepositoryResponse>(
       '/repositories',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ github_url: githubUrl, index_mode: indexMode ?? 'static' }),
+        body: JSON.stringify({ github_url: githubUrl, index_mode: effectiveMode }),
       },
       'protected',
     )
   }
 
   async uploadZipRepository(file: File, name?: string, indexMode?: string): Promise<CreateRepositoryResponse> {
+    const effectiveMode = indexMode === 'ai_assist' ? 'static' : indexMode
     const formData = new FormData()
     formData.append('file', file)
     if (name && name.trim()) {
       formData.append('name', name.trim())
     }
-    if (indexMode) {
-      formData.append('index_mode', indexMode)
+    if (effectiveMode) {
+      formData.append('index_mode', effectiveMode)
     }
     return this.request<CreateRepositoryResponse>(
       '/repositories/upload',

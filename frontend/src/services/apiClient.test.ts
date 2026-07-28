@@ -839,4 +839,42 @@ describe('ApiClient', () => {
     expect(res.repository.indexed_commit_sha).toBe('abc1234def5678')
     expect(res.repository.indexed_branch).toBe('main')
   })
+
+  it('createGitHubRepository with indexMode "ai_assist" safely sends index_mode: "static" in payload', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_ai_assist_token')
+
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        repository: {
+          repository_id: 'repo_ai_123',
+          name: 'Hello-World',
+          source_type: 'github',
+          github_url: 'https://github.com/octocat/Hello-World',
+          status: 'pending',
+          file_count: 0,
+          chunk_count: 0,
+          created_at: '2026-07-28T00:00:00Z',
+          updated_at: '2026-07-28T00:00:00Z',
+          index_mode: 'static',
+        },
+        indexing_job: {
+          job_id: 'job_ai_123',
+          repository_id: 'repo_ai_123',
+          status: 'queued',
+          progress_percentage: 0,
+          current_step: 'Queued',
+          created_at: '2026-07-28T00:00:00Z',
+          updated_at: '2026-07-28T00:00:00Z',
+        },
+      }),
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    await client.createGitHubRepository('https://github.com/octocat/Hello-World', 'ai_assist')
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1]?.body as string)
+    expect(body.index_mode).toBe('static')
+    expect(body.github_url).toBe('https://github.com/octocat/Hello-World')
+  })
 })

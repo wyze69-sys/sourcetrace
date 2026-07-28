@@ -6,7 +6,6 @@ import type {
   EvidenceSearchItem,
   HealthResponse,
   IndexingJob,
-  IndexMode,
   Message,
   Repository,
   ServerCapabilities,
@@ -157,7 +156,7 @@ export function App({ client = defaultApiClient }: AppProps) {
   const [healthData, setHealthData] = useState<HealthResponse | null>(null)
   const [errorDetails, setErrorDetails] = useState<string | null>(null)
   const [capabilities, setCapabilities] = useState<ServerCapabilities | null>(null)
-  const [selectedIndexMode, setSelectedIndexMode] = useState<IndexMode>('static')
+  const [selectedIndexMode, setSelectedIndexMode] = useState<'static' | 'ai_assist'>('static')
 
   // Repositories & Indexing jobs state
   const [repositories, setRepositories] = useState<Repository[]>([])
@@ -209,8 +208,10 @@ export function App({ client = defaultApiClient }: AppProps) {
       try {
         const caps = await client.getCapabilities()
         setCapabilities(caps)
-        if (caps.default_index_mode === 'static' || caps.default_index_mode === 'cloud_ai') {
-          setSelectedIndexMode(caps.default_index_mode as IndexMode)
+        if (caps.generation_available) {
+          setSelectedIndexMode('ai_assist')
+        } else {
+          setSelectedIndexMode('static')
         }
       } catch {
         // Fallback capabilities if getCapabilities not reachable yet
@@ -624,7 +625,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                   Import a public repository to begin evidence-grounded analysis.
                 </p>
 
-                <div className="form-group" style={{ marginBottom: '16px', maxWidth: '300px' }}>
+                <div className="form-group" style={{ marginBottom: '16px', maxWidth: '400px' }}>
                   <label htmlFor="index-mode-select" className="form-label">
                     Indexing Mode
                   </label>
@@ -632,13 +633,22 @@ export function App({ client = defaultApiClient }: AppProps) {
                     id="index-mode-select"
                     className="input-text"
                     value={selectedIndexMode}
-                    onChange={(e) => setSelectedIndexMode(e.target.value as IndexMode)}
+                    onChange={(e) => setSelectedIndexMode(e.target.value as 'static' | 'ai_assist')}
                   >
-                    <option value="static">Static Inspection (No AI Tokens)</option>
-                    {capabilities?.semantic_search_available && (
-                      <option value="cloud_ai">Cloud AI (Embeddings + LLM)</option>
+                    <option value="static">Static</option>
+                    {capabilities?.generation_available && (
+                      <option value="ai_assist">AI Assist (Free)</option>
                     )}
                   </select>
+                  {capabilities?.generation_available ? (
+                    <div className="form-help-text" style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted, #888)' }}>
+                      Code is indexed with static analysis and AI is used afterward for &quot;Explain this flow.&quot;
+                    </div>
+                  ) : (
+                    <div className="form-help-text" style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted, #888)' }}>
+                      AI explanation assist unavailable (no LLM generation capability).
+                    </div>
+                  )}
                 </div>
 
                 <div className="import-grid">

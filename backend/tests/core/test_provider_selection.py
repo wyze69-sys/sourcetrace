@@ -35,27 +35,27 @@ from sourcetrace.generation.client import (
 
 
 def test_default_llm_provider_is_gemini() -> None:
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.llm_provider == "gemini"
 
 
 def test_default_embedding_provider_is_gemini() -> None:
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.embedding_provider == "gemini"
 
 
 def test_default_gemini_model_is_configured() -> None:
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.gemini_model == "gemini-2.5-flash"
 
 
 def test_default_gemini_embedding_model_is_configured() -> None:
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.gemini_embedding_model == "gemini-embedding-001"
 
 
 def test_default_embedding_dimensions_are_1536() -> None:
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.embedding_dimensions == 1536
 
 
@@ -274,7 +274,7 @@ def test_gemini_selected_openai_api_key_not_needed(
     monkeypatch.delenv("SOURCETRACE_LLM_API_KEY", raising=False)
     monkeypatch.setenv("SOURCETRACE_LLM_PROVIDER", "gemini")
     monkeypatch.setenv("SOURCETRACE_GEMINI_API_KEY", "gemini-test-key")
-    settings = Settings()
+    settings = Settings(_env_file=None)
     assert settings.llm_api_key is None
     # Gemini adapter constructs without OpenAI key
     adapter = GeminiGenerationAdapter(settings=settings)

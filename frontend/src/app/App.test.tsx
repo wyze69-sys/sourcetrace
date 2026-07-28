@@ -402,4 +402,99 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
       { timeout: 4000 },
     )
   })
+
+  it('renders AI Assist (Free) option and guidance text when generation_available is true', async () => {
+    const createGitHubMock = vi.fn().mockResolvedValue({
+      repository: {
+        repository_id: 'repo_ai_1',
+        name: 'AI-Repo',
+        source_type: 'github',
+        status: 'pending',
+        file_count: 0,
+        chunk_count: 0,
+        created_at: '2026-07-28T00:00:00Z',
+        updated_at: '2026-07-28T00:00:00Z',
+      },
+      indexing_job: {
+        job_id: 'job_ai_1',
+        repository_id: 'repo_ai_1',
+        status: 'queued',
+        progress_percentage: 0,
+        current_step: 'Queued',
+        created_at: '2026-07-28T00:00:00Z',
+        updated_at: '2026-07-28T00:00:00Z',
+      },
+    })
+
+    const mockClient = {
+      getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-28' }),
+      getCapabilities: vi.fn().mockResolvedValue({
+        allowed_index_modes: ['static'],
+        default_index_mode: 'static',
+        lexical_search_available: true,
+        semantic_search_available: true,
+        generation_available: true,
+      }),
+      listRepositories: vi.fn().mockResolvedValue({ repositories: [] }),
+      createGitHubRepository: createGitHubMock,
+    } as unknown as ApiClient
+
+    render(<App client={mockClient} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('API Online (1.0.0)')).toBeInTheDocument()
+    })
+
+    const select = screen.getByLabelText(/Indexing Mode/i) as HTMLSelectElement
+    expect(select).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Static' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'AI Assist (Free)' })).toBeInTheDocument()
+    expect(select.value).toBe('ai_assist')
+
+    expect(
+      screen.getByText(/Code is indexed with static analysis and AI is used afterward for "Explain this flow."/i),
+    ).toBeInTheDocument()
+
+    // Technical terms should not be present in the select options
+    expect(screen.queryByText(/Cloud AI/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Embeddings \+ LLM/i)).not.toBeInTheDocument()
+
+    const githubInput = screen.getByLabelText(/Public GitHub Repository URL/i)
+    const githubBtn = screen.getByRole('button', { name: /Import GitHub Repository/i })
+
+    await userEvent.type(githubInput, 'https://github.com/octocat/AI-Repo')
+    await userEvent.click(githubBtn)
+
+    expect(createGitHubMock).toHaveBeenCalledWith('https://github.com/octocat/AI-Repo', 'ai_assist')
+  })
+
+  it('renders Static option only with unavailable message when generation_available is false', async () => {
+    const mockClient = {
+      getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-28' }),
+      getCapabilities: vi.fn().mockResolvedValue({
+        allowed_index_modes: ['static'],
+        default_index_mode: 'static',
+        lexical_search_available: true,
+        semantic_search_available: false,
+        generation_available: false,
+      }),
+      listRepositories: vi.fn().mockResolvedValue({ repositories: [] }),
+    } as unknown as ApiClient
+
+    render(<App client={mockClient} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('API Online (1.0.0)')).toBeInTheDocument()
+    })
+
+    const select = screen.getByLabelText(/Indexing Mode/i) as HTMLSelectElement
+    expect(select).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Static' })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'AI Assist (Free)' })).not.toBeInTheDocument()
+    expect(select.value).toBe('static')
+
+    expect(
+      screen.getByText('AI explanation assist unavailable (no LLM generation capability).'),
+    ).toBeInTheDocument()
+  })
 })

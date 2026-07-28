@@ -86,3 +86,31 @@ def test_capabilities_endpoint_openai_configured():
     assert data["semantic_search_available"] is True
     assert data["generation_available"] is True
     assert "sk-fake" not in response.text
+
+
+def test_capabilities_endpoint_openrouter_llm_only():
+    """Verify capabilities route when OpenRouter/OpenAI LLM key is set without embedding key."""
+    test_settings = Settings(
+        gemini_api_key=None,
+        embedding_api_key=None,
+        llm_api_key=SecretStr("sk-or-v1-fake-openrouter-key"),
+        llm_provider="openai",
+        llm_base_url="https://openrouter.ai/api/v1",
+        embedding_provider="gemini",
+    )
+
+    app = create_app()
+    app.dependency_overrides[get_settings] = lambda: test_settings
+
+    client = TestClient(app)
+    response = client.get("/api/v1/capabilities")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["allowed_index_modes"] == ["static"]
+    assert data["semantic_search_available"] is False
+    assert data["generation_available"] is True
+    # Verify no secret or internal provider data is exposed
+    assert "sk-or-v1" not in response.text
+    assert "openrouter.ai" not in response.text
+    assert "openai" not in response.text
