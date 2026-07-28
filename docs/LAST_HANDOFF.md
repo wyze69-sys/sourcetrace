@@ -1,48 +1,48 @@
 # SourceTrace — Last Agent Handoff
 
-Task: AI-CHAT-001 — Grounded Chat without Embeddings (Static Evidence Fallback)
+Task: RUNTIME-UX-001 — Repository Deletion and Quota Recovery
 Status: completed
 
 Files changed:
-- `backend/src/sourcetrace/retrieval/service.py` (optional `embedding_provider: EmbeddingProvider | None = None`)
-- `backend/src/sourcetrace/generation/service.py` (LLM provider exception handling returns safe static evidence result with all retrieved citations/snippets, 0 HTTP 500)
-- `backend/src/sourcetrace/api/dependencies.py` (evaluate capabilities in `get_semantic_retrieval_service` to bypass embedding provider construction when `semantic_search_available` is False; fallback provider in `get_grounded_answer_service`)
-- `backend/src/sourcetrace/api/schemas.py` (`retrieval_mode: Literal["static", "semantic"]` in `RequestMetadata`)
-- `backend/src/sourcetrace/api/routes/conversations.py` (capability check raises 422 if generation unconfigured; populates `retrieval_mode` metadata)
-- `frontend/src/app/App.tsx` (renders "AI Assist (Static Evidence Mode)" status badge and role label)
-- `frontend/src/app/App.test.tsx` (unit test for static evidence mode chat panel)
-- `backend/tests/generation/test_service.py` (updated provider failure test to verify static evidence response)
-- `backend/tests/generation/test_static_chat_fallback.py` (6 unit/integration tests for lexical fallback, zero embedding adapter construction, scoping, citations, no evidence, LLM failure safety)
-- `docs/AGENT_TASKS.yaml` (updated task status to completed)
-- `docs/PROJECT_STATE.md` (updated project state)
+- `backend/src/sourcetrace/api/routes/repositories.py` (added `DELETE /api/v1/repositories/{repository_id}` route with owner authorization, uniform 404, dependency-order cascading record deletion, and session slot release)
+- `backend/src/sourcetrace/api/schemas.py` (added `DeleteRepositoryResponse` schema)
+- `frontend/src/services/types.ts` (added `repository_id: string` to `DeleteRepositoryResponse` interface)
+- `frontend/src/app/App.tsx` (updated `handleDeleteRepo` for loading state, visible success notice, safe error surface, and HTTP 429 quota error mapping)
+- `backend/tests/api/test_delete_repository_route.py` (4 unit/integration tests for success, 404 nonexistent, 404 non-owned, failed repo deletion, and quota recovery)
+- `frontend/src/app/App.test.tsx` (added vitest tests for repository deletion UI and quota error mapping)
+- `docs/AGENT_TASKS.yaml` (updated RUNTIME-UX-001 status to completed)
+- `docs/PROJECT_STATE.md` (updated project state with RUNTIME-UX-001 capability)
 
 Behavior added/changed:
-- Grounded Chat operates cleanly when LLM generation is available even if semantic vector embeddings are unavailable.
-- In fallback mode, retrieval uses bounded deterministic lexical search scoped to owner, repository, and active generation ID.
-- Zero embedding provider objects are constructed during static-evidence chat requests.
-- LLM provider failures return the retrieved static evidence with an "AI answer unavailable" notice and evidence citations/snippets.
-- Grounded Chat API response includes `retrieval_mode: "static"` (or `"semantic"`).
-- Frontend Chat UI surfaces "AI Assist (Static Evidence Mode)" badge and role indicators.
+- Restored `DELETE /api/v1/repositories/{repository_id}` endpoint for authenticated anonymous session owners.
+- Missing or non-owned repositories return uniform HTTP 404 Not Found response.
+- Deletion removes messages, conversations, code chunks, indexing jobs, and repository record in strict dependency order.
+- Decrements anonymous session's `active_repository_count`, immediately freeing quota for new repository imports.
+- Frontend deletion flow provides loading state ('Deleting...'), visible success banner ('Repository deleted successfully.'), and safe error messages; never silently swallows failures.
+- HTTP 429 quota errors during GitHub or ZIP imports are mapped in UI to: "Repository limit reached (3 max). Delete an existing repository before importing another."
 
 Commands run:
-- `uv run pytest tests/generation/test_static_chat_fallback.py tests/generation/test_service.py` (22 passed)
-- `uv run pytest` (1371 passed, 5 skipped)
-- `npm test -- --run` (71 passed across 4 test files)
-- `uv run ruff check --fix src/ tests/` (All checks passed!)
-- `npm run lint` (0 errors, 2 fast-refresh warnings)
+- `uv run pytest tests/api/test_delete_repository_route.py` (4 passed)
+- `uv run pytest` (1375 passed, 5 skipped)
+- `npx vitest run` (73 passed across 4 test files)
+- `uv run ruff check .` (All checks passed!)
+- `npm run lint` (0 errors)
 - `npm run build` (32 modules transformed, tsc -b clean)
 - `git diff --check` (0 whitespace errors)
-- `uv run python test_live_chat_fallback.py` (Real live acceptance test against local MongoDB and OpenRouter LLM: HTTP 201 OK, `retrieval_mode: "static"`, grounded response)
+- `uv run python C:\Users\User\.gemini\antigravity\brain\0418d695-03cc-464d-a06a-61e555bf299f\scratch\test_live_delete_repo_and_quota.py` (Live acceptance test: 429 quota enforcement, 200 repo deletion, DB cleanup, slot release, 202 import recovery)
+
+Commit:
+- Local commit: `2445492` (`fix(repositories): restore deletion and quota recovery`)
 
 Verification results:
-- pytest: 1371 passed, 0 failures
-- vitest: 71 passed, 0 failures
+- pytest: 1375 passed, 0 failures
+- vitest: 73 passed, 0 failures
 - build: clean
 - ruff/lint: clean
-- Live chat acceptance: HTTP 201 OK, `retrieval_mode=static`
+- Live deletion & quota acceptance: PASSED
 
 Known limitations:
-- If no lexical chunks match the user question keywords, chat returns the standard truthful no-evidence response.
+- Active background indexing jobs for a repository should ideally be cancelled before deletion; current deletion removes job records directly from DB.
 
 Recommended next task:
 Select next ready task from `docs/AGENT_TASKS.yaml`.

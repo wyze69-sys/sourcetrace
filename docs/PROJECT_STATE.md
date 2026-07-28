@@ -1,13 +1,13 @@
 # SourceTrace — Project State
 
 **Recorded By**: AI Agent
-**Last Updated**: 2026-07-28 (post AI-CHAT-001)
+**Last Updated**: 2026-07-28 (post RUNTIME-UX-001)
 
 ---
 
 ## Current Stage
 
-AI-CHAT-001 implemented and verified. Grounded Chat uses bounded deterministic lexical static evidence for active repository generation when generation is available but semantic embeddings are unavailable. Zero embedding adapters constructed in fallback path. Returns grounded citations, truthful no-evidence responses when 0 chunks match, and safe static evidence notice on LLM provider failure (0 HTTP 500 errors). Updated frontend chat status label to "AI Assist (Static Evidence Mode)".
+RUNTIME-UX-001 implemented and verified. Restored owner-scoped repository deletion (`DELETE /api/v1/repositories/{repository_id}`) with uniform HTTP 404 for missing/non-owned repositories. Safely deletes messages, conversations, code chunks, indexing jobs, and repository record in strict dependency order, and releases anonymous session quota slot (`active_repository_count` decremented). Mapped HTTP 429 quota error during import to a clear user message explaining deletion requirement. Verified with backend pytest (4 passed in `test_delete_repository_route.py`, 1375 passed full suite), frontend vitest (73 passed), clean vite build, ruff linter, git diff --check, and a live acceptance test (`test_live_delete_repo_and_quota.py`) proving deletion releases quota and allows subsequent import.
 
 ---
 
@@ -19,7 +19,7 @@ AI-CHAT-001 implemented and verified. Grounded Chat uses bounded deterministic l
 | Anonymous session management (signed cookie) | ✅ Verified | pytest |
 | Repository record domain model + validation | ✅ Verified | pytest |
 | MongoDB Atlas storage layer (repositories, chunks, sessions) | ✅ Verified | pytest |
-| Ownership-scoped API routes (repository CRUD) | ✅ Verified | pytest |
+| Ownership-scoped API routes (repository CRUD + DELETE) | ✅ Verified | `test_delete_repository_route.py`, `test_live_delete_repo_and_quota.py` |
 | ZIP/GitHub source acquisition (safety-first) | ✅ Verified | pytest |
 | Repository indexing service | ✅ Verified | pytest |
 | Code chunking (Python AST + Subprocess-Isolated Tree-Sitter AST) | ✅ Verified | pytest |
@@ -69,15 +69,14 @@ AI-CHAT-001 implemented and verified. Grounded Chat uses bounded deterministic l
 | **On-Demand GitHub Freshness Detection (REPO-001 Phase 5)** | ✅ Verified | `freshness.py`, `config.py`, `routes/repositories.py`, `test_refresh_staleness_phase5.py` (5 passed); pytest 0 failures (`cfa686e`) |
 | **Complete Frontend Index Freshness UX (REPO-001 Phase 6)** | ✅ Verified | `types.ts`, `apiClient.ts`, `App.tsx`, `FlowTracePanel.tsx`, `ImpactPanel.tsx`, `index.css`, 67 vitest passed, vite build clean (`4764de2`) |
 | **Repository-Staleness Gaps for Flow Trace & Impact (REPO-001 Phase 7)** | ✅ Verified | `retrieval/trace.py`, `retrieval/impact.py`, `routes/trace.py`, `routes/impact.py`, `test_repo_stale_gaps_phase7.py` (3 passed), `trace-impact.md` |
+| **Static Evidence Fallback Mode for Grounded Chat (AI-CHAT-001)** | ✅ Verified | `retrieval/service.py`, `generation/service.py`, `routes/conversations.py`, `App.tsx`, `test_static_chat_fallback.py` (`7c90ee4`) |
+| **Repository Deletion & Quota Recovery (RUNTIME-UX-001)** | ✅ Verified | `routes/repositories.py`, `schemas.py`, `types.ts`, `App.tsx`, `test_delete_repository_route.py`, `test_live_delete_repo_and_quota.py` (`2445492`) |
 
 ---
 
 ## Active Task
 
-**REPO-001 Phase 7 completed.** Flagged stale repository snapshots in Flow Trace and Change
-Impact responses with explicit `repo_stale` gaps, passing repository freshness metadata into trace and impact
-services, and optimizing `stale_index` gap detection via authoritative `parser_versions` metadata while preserving
-chunk-level fallback for legacy snapshots.
+**RUNTIME-UX-001 completed.** Implemented owner-scoped `DELETE /api/v1/repositories/{repository_id}`, uniform HTTP 404 for missing/non-owned repositories, cascading record deletion in strict dependency order (messages, conversations, code_chunks, indexing_jobs, repository_record), and session quota slot release. Mapped HTTP 429 quota error to clear recovery message in UI.
 
 ---
 
@@ -87,17 +86,17 @@ chunk-level fallback for legacy snapshots.
 2. **BackgroundTasks Non-Durability**: Background indexing runs via FastAPI `BackgroundTasks`. If the backend process crashes or restarts, active jobs in `processing` status must be retried.
 3. **No GC Sweeper**: Old-generation chunk deletion happens synchronously inside the worker after pointer switch. A background sweeper for orphaned generations (e.g. from crashed workers) is not implemented.
 4. **Flow-Evidence Gaps**: module-fallback chunks carry no evidence; mounts/prefixes in other files are not resolved. Same-file prefixes are folded for Python and Express. Repos indexed under old parsers keep valid but less-linkable evidence until refreshed.
-5. **API Contract Doc Drift**: `docs/api/` contracts updated for `repo_stale` gap kinds in `trace-impact.md`.
 
 ---
 
-## Verification Facts (Fresh, 2026-07-27 post-REPO-001 Phase 7)
+## Verification Facts (Fresh, 2026-07-28 post-RUNTIME-UX-001)
 
 ```
-pytest tests/retrieval/test_repo_stale_gaps_phase7.py                                → 3 passed
-pytest                                                                                → 0 failures (all passed)
-npm test -- --run (frontend)                                                         → 67 passed (4 test files)
-npm run build (frontend)                                                             → 32 modules, tsc -b clean
-ruff check src/ tests/                                                               → All checks passed!
-git diff --check                                                                      → 0 whitespace errors
+pytest tests/api/test_delete_repository_route.py                    → 4 passed
+pytest                                                                → 1375 passed, 5 skipped
+npx vitest run (frontend)                                            → 73 passed (4 test files)
+npm run build (frontend)                                             → 32 modules, tsc -b clean
+uv run ruff check .                                                  → All checks passed!
+git diff --check                                                      → 0 whitespace errors
+live acceptance test (scratch/test_live_delete_repo_and_quota.py)  → PASSED
 ```

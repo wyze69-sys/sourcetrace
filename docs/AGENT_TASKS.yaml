@@ -1379,7 +1379,7 @@ tasks:
       - frontend/**
       - docs/**
     completion_evidence:
-      commits: []  # local commit pending
+      commits: [7c90ee4]
       implementation_paths:
         - backend/src/sourcetrace/retrieval/service.py
         - backend/src/sourcetrace/generation/service.py
@@ -1396,3 +1396,30 @@ tasks:
         - npm run build clean (32 modules, tsc -b clean)
         - ruff check clean, eslint clean, git diff --check clean
         - Real live acceptance script (test_live_chat_fallback.py PASSED, HTTP 201, retrieval_mode=static)
+
+  - id: RUNTIME-UX-001
+    title: Repository deletion and quota recovery
+    phase: 8
+    status: completed
+    dependencies:
+      - AI-CHAT-001
+    owner: agent
+    allowed_paths:
+      - backend/**
+      - frontend/**
+      - docs/**
+    completion_evidence:
+      commits: [2445492]
+      implementation_paths:
+        - backend/src/sourcetrace/api/routes/repositories.py
+        - backend/src/sourcetrace/api/schemas.py
+        - frontend/src/services/types.ts
+        - frontend/src/app/App.tsx
+        - backend/tests/api/test_delete_repository_route.py
+        - frontend/src/app/App.test.tsx
+      verified_by:
+        - pytest (1375 passed, 0 failures)
+        - vitest (73 passed, 4 test files)
+        - npm run build clean (32 modules, tsc -b clean)
+        - ruff check clean, eslint clean, git diff --check clean
+        - Real live acceptance script (test_live_delete_repo_and_quota.py PASSED)
