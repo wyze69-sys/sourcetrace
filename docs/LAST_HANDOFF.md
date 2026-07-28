@@ -1,44 +1,41 @@
 # SourceTrace — Last Agent Handoff
 
-Task: RUNTIME-UX-003 — Repository Explorer, Part 2/3: Explorer-first file tree
+Task: RUNTIME-UX-004-FIX — Truthful source completeness and generation-safe file retrieval
 Status: completed
 
 Files changed:
-- `frontend/src/services/types.ts` (added `RepositoryFileItem` and `RepositoryFileListResponse` interfaces)
-- `frontend/src/services/apiClient.ts` (added `listRepositoryFiles(repositoryId: string)` client method)
-- `frontend/src/app/RepoExplorerPanel.tsx` (created Explorer-first file tree component with tree transformation, folder-before-file alphabetical sorting, folder expand/collapse state, selection highlighting, language/chunk badges, first-use guidance, loading/empty/error states with retry, and race-condition guards)
-- `frontend/src/app/RepoExplorerPanel.test.tsx` (created Vitest unit and integration tests for file tree building, folder-before-file sorting, selection state, loading/empty/error states, repo selection request trigger, and stale request cancellation)
-- `frontend/src/app/App.tsx` (integrated `RepoExplorerPanel` into workspace when a repository is selected)
-- `frontend/src/styles/index.css` (added styles for `.repo-explorer-panel`, `.file-tree-container`, `.tree-item`, `.tree-file.selected`, `.file-lang-badge`, `.file-chunk-badge`)
-- `docs/AGENT_TASKS.yaml` (marked RUNTIME-UX-003 completed, updated RUNTIME-UX-002 commit SHA to 9dc94c1, unblocked RUNTIME-UX-004 to ready)
-- `docs/PROJECT_STATE.md` (updated project state and verified capabilities)
-- `docs/CODEBASE_MAP.md` (added RepoExplorerPanel.tsx and RepoExplorerPanel.test.tsx)
-- `docs/FEATURE_REGISTRY.yaml` (registered REPOSITORY-EXPLORER-FILE-TREE capability)
+- `backend/src/sourcetrace/api/schemas.py` (added `completeness_reason` field to `RepositoryFileContentResponse`)
+- `backend/src/sourcetrace/api/routes/repositories.py` (removed `ALL_GENERATIONS` fallback from user-facing file routes so `record.active_generation_id` is passed directly; implemented truthful completeness check setting `is_complete=False` with `completeness_reason="source_boundary_unavailable"` for unverified EOF or `"unindexed_line_gaps"` for missing lines)
+- `backend/tests/api/test_repository_file_content_route.py` (added tests for legacy `generation_id=None` handling, unverified EOF boundary, and line gaps reason)
+- `backend/tests/api/test_repository_files_route.py` (added test proving `active_generation_id=None` passes `generation_id=None` directly)
+- `frontend/src/services/types.ts` (added `completeness_reason` to `RepositoryFileContentResponse` interface)
+- `frontend/src/app/RepoExplorerPanel.tsx` (updated partial notice banner text to explain unverified EOF coverage)
+- `frontend/src/app/RepoExplorerPanel.test.tsx` (updated assertions for unverified EOF notice text and completeness_reason; fixed React `act(...)` test warning)
+- `docs/AGENT_TASKS.yaml` (added completed task `RUNTIME-UX-004-FIX`)
+- `docs/PROJECT_STATE.md` (updated stage description for `RUNTIME-UX-004-FIX`)
 
 Behavior added/changed:
-- Frontend API client support for `GET /api/v1/repositories/{repository_id}/files`.
-- Automatic transformation of flat API paths into expandable nested folder and file tree nodes.
-- Tree nodes sort folders before files, alphabetically within each group using locale-aware comparison.
-- Folder expand/collapse controls with "Expand All" and "Collapse All" toggle buttons; default folder paths start expanded for instant file visibility.
-- File names display lightweight language badges (e.g. `typescript`, `python`) and chunk counts (`3 chunks`).
-- File selection visually highlights the selected item (`.selected` class and `aria-selected="true"`).
-- Concise first-use guidance: *"Choose a file to orient yourself, or search/ask a question about the repository."*
-- Full support for empty repo, loading, and error states with a visible retry button.
-- Race-condition guard: stale file-list responses from previously selected repositories are discarded if the active selection changes before the request resolves.
+- Removed `ALL_GENERATIONS` fallback from `GET /files` and `GET /files/content`. Legacy repositories with `active_generation_id=None` query specifically for `generation_id=None`, avoiding cross-generation chunk pollution.
+- Truthful completeness contract: `is_complete=False` is returned whenever EOF cannot be verified from persisted data. Contiguous lines starting at 1 return `completeness_reason="source_boundary_unavailable"`. Missing leading/interior line ranges return `completeness_reason="unindexed_line_gaps"`.
+- Viewer notice text clearly states: *"Notice: Displayed source content is indexed chunks only and may be incomplete (original end-of-file boundary is unverified)."*
+- React `act(...)` test warnings in `RepoExplorerPanel.test.tsx` resolved cleanly.
 
 Commands run:
-- `npx vitest run` (83 passed across 5 test files, 0 failures)
+- `uv run pytest tests/api/test_repository_file_content_route.py tests/api/test_repository_files_route.py` (13 passed)
+- `uv run pytest` (1388 passed, 5 skipped, 0 failures)
+- `uv run ruff check .` (All checks passed!)
+- `npx vitest run` (89 passed across 5 test files, 0 failures)
 - `npm run lint` (0 errors)
-- `npm run build` (built in 1.59s, 33 modules transformed, tsc -b clean)
+- `npm run build` (built in 2.24s)
 - `git diff --check` (0 whitespace errors)
-- `uv run python scratch/test_live_explorer.py` (PASSED live acceptance check against API endpoint)
 
 Verification results:
-- Vitest: 83 passed across 5 test files (100% pass)
+- Pytest: 1388 passed (100% pass)
+- Backend Ruff: clean
+- Vitest: 89 passed across 5 test files (100% pass)
 - ESLint: 0 errors
 - Vite build: clean
 - Git diff check: clean
-- Real live acceptance script: PASSED
 
 Recommended next task:
-- `RUNTIME-UX-004` — Repository Explorer, Part 3/3: Source Code Viewer & Evidence Navigation
+- Evidence / Citation Navigation: Wire citation clicks in Chat, Trace, and Impact panels into the Repository Explorer Code Viewer.

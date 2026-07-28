@@ -666,4 +666,28 @@ capabilities:
       alphabetical sorting, folder expand/collapse state, selection highlighting, lightweight badges,
       first-use guidance, empty/loading/error states with retry, and race-condition guards for repository switching.
 
+  - id: REPOSITORY-EXPLORER-SOURCE-VIEWER
+    name: Safe line-numbered real source code viewer and content endpoint
+    lifecycle: implemented_verified
+    owning_task: RUNTIME-UX-004
+    canonical_target:
+      backend: backend/src/sourcetrace/api/routes/repositories.py
+      api: GET /api/v1/repositories/{repository_id}/files/content
+      frontend: frontend/src/app/RepoExplorerPanel.tsx
+      storage: code_chunks (read-only)
+    existing_paths:
+      - backend/src/sourcetrace/api/schemas.py
+      - backend/src/sourcetrace/api/routes/repositories.py
+      - backend/tests/api/test_repository_file_content_route.py
+      - frontend/src/services/types.ts
+      - frontend/src/services/apiClient.ts
+      - frontend/src/app/RepoExplorerPanel.tsx
+      - frontend/src/app/RepoExplorerPanel.test.tsx
+      - frontend/src/styles/index.css
+    notes: >
+      RUNTIME-UX-004 completed. Implemented owner-scoped endpoint GET /files/content with relative path
+      safety validation, deterministic chunk reconstruction, line ordering, and partial content flag.
+      Extended RepoExplorerPanel with line-numbered plain-text viewer, language badge, partial content notice banner,
+      loading/error states with retry, HTML injection safety, and request cancellation guards.
+
 

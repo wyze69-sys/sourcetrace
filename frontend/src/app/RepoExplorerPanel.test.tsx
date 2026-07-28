@@ -8,7 +8,11 @@ import {
   type TreeNodeFolder,
 } from './RepoExplorerPanel'
 import { ApiError, type ApiClient } from '../services/apiClient'
-import type { RepositoryFileItem, RepositoryFileListResponse } from '../services/types'
+import type {
+  RepositoryFileContentResponse,
+  RepositoryFileItem,
+  RepositoryFileListResponse,
+} from '../services/types'
 
 describe('RepoExplorerPanel - buildFileTree unit tests', () => {
   it('converts flat paths into nested folders and files', () => {
@@ -84,6 +88,7 @@ describe('RepoExplorerPanel - Component Integration & State Tests', () => {
   function createMockClient(): ApiClient {
     return {
       listRepositoryFiles: vi.fn(),
+      getRepositoryFileContent: vi.fn(),
     } as unknown as ApiClient
   }
 
@@ -130,7 +135,7 @@ describe('RepoExplorerPanel - Component Integration & State Tests', () => {
     })
 
     expect(screen.getByTestId('file-tree-container')).toBeInTheDocument()
-    expect(screen.getByText('src/')).toBeInTheDocument()
+    expect(screen.getByText('src')).toBeInTheDocument()
     expect(screen.getByText('app.py')).toBeInTheDocument()
     expect(screen.getByText('README.md')).toBeInTheDocument()
     expect(screen.getByText('3 chunks')).toBeInTheDocument()
@@ -251,6 +256,15 @@ describe('RepoExplorerPanel - Component Integration & State Tests', () => {
       repository_id: 'repo_interactive',
       files: [{ path: 'src/utils/math.py', language: 'python', chunk_count: 2 }],
     })
+    vi.mocked(mockClient.getRepositoryFileContent).mockResolvedValue({
+      repository_id: 'repo_interactive',
+      path: 'src/utils/math.py',
+      language: 'python',
+      content: 'def add(): pass',
+      line_count: 1,
+      is_complete: false,
+      completeness_reason: 'source_boundary_unavailable',
+    })
 
     const onSelectFile = vi.fn()
     render(
@@ -270,9 +284,12 @@ describe('RepoExplorerPanel - Component Integration & State Tests', () => {
 
     fireEvent.click(fileButton)
 
-    expect(fileButton).toHaveClass('selected')
-    expect(fileButton).toHaveAttribute('aria-selected', 'true')
-    expect(onSelectFile).toHaveBeenCalledWith('src/utils/math.py')
+    await waitFor(() => {
+      expect(fileButton).toHaveClass('selected')
+      expect(fileButton).toHaveAttribute('aria-selected', 'true')
+      expect(onSelectFile).toHaveBeenCalledWith('src/utils/math.py')
+      expect(screen.getByTestId('code-viewer-container')).toBeInTheDocument()
+    })
 
     // Test folder collapse
     const folderButton = screen.getByTestId('folder-src').querySelector('button')!
@@ -332,5 +349,161 @@ describe('RepoExplorerPanel - Component Integration & State Tests', () => {
 
     expect(screen.queryByText('repo_A_stale_retry.py')).not.toBeInTheDocument()
     expect(screen.getByText('repo_B_file.py')).toBeInTheDocument()
+  })
+
+  it('selecting a file requests the correct repository ID and path and renders content with line numbers', async () => {
+    const mockClient = createMockClient()
+    vi.mocked(mockClient.listRepositoryFiles).mockResolvedValue({
+      repository_id: 'repo_123',
+      files: [{ path: 'src/main.py', language: 'python', chunk_count: 2 }],
+    })
+    vi.mocked(mockClient.getRepositoryFileContent).mockResolvedValue({
+      repository_id: 'repo_123',
+      path: 'src/main.py',
+      language: 'python',
+      content: 'def foo():\n    return 42',
+      line_count: 2,
+      is_complete: false,
+      completeness_reason: 'source_boundary_unavailable',
+    })
+
+    render(<RepoExplorerPanel client={mockClient} repositoryId="repo_123" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('main.py')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('main.py'))
+
+    await waitFor(() => {
+      expect(mockClient.getRepositoryFileContent).toHaveBeenCalledWith('repo_123', 'src/main.py')
+      expect(screen.getByTestId('code-viewer-container')).toBeInTheDocument()
+      expect(screen.getByText('def foo():')).toBeInTheDocument()
+      expect(screen.getByText('return 42')).toBeInTheDocument()
+      expect(screen.getByText('2 lines')).toBeInTheDocument()
+    })
+  })
+
+  it('renders unverified end-of-file boundary notice when is_complete is false', async () => {
+    const mockClient = createMockClient()
+    vi.mocked(mockClient.listRepositoryFiles).mockResolvedValue({
+      repository_id: 'repo_123',
+      files: [{ path: 'src/partial.py', language: 'python', chunk_count: 1 }],
+    })
+    vi.mocked(mockClient.getRepositoryFileContent).mockResolvedValue({
+      repository_id: 'repo_123',
+      path: 'src/partial.py',
+      language: 'python',
+      content: '\n\n\ndef partial(): pass',
+      line_count: 4,
+      is_complete: false,
+      completeness_reason: 'unindexed_line_gaps',
+    })
+
+    render(<RepoExplorerPanel client={mockClient} repositoryId="repo_123" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('partial.py')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('partial.py'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('partial-content-notice')).toBeInTheDocument()
+      expect(screen.getByText(/original end-of-file boundary is unverified/i)).toBeInTheDocument()
+    })
+  })
+
+  it('stale file content responses from a previously selected file do not overwrite newly selected file', async () => {
+    const mockClient = createMockClient()
+    vi.mocked(mockClient.listRepositoryFiles).mockResolvedValue({
+      repository_id: 'repo_123',
+      files: [
+        { path: 'src/fileA.py', language: 'python', chunk_count: 1 },
+        { path: 'src/fileB.py', language: 'python', chunk_count: 1 },
+      ],
+    })
+
+    let resolveFileA: (val: RepositoryFileContentResponse) => void = () => {}
+
+    vi.mocked(mockClient.getRepositoryFileContent).mockImplementation((_repoId: string, path: string) => {
+      if (path === 'src/fileA.py') {
+        return new Promise((res) => {
+          resolveFileA = res
+        })
+      }
+      return Promise.resolve({
+        repository_id: 'repo_123',
+        path: 'src/fileB.py',
+        language: 'python',
+        content: 'content of file B',
+        line_count: 1,
+        is_complete: false,
+        completeness_reason: 'source_boundary_unavailable',
+      })
+    })
+
+    render(<RepoExplorerPanel client={mockClient} repositoryId="repo_123" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('fileA.py')).toBeInTheDocument()
+    })
+
+    // Click file A (pending promise)
+    fireEvent.click(screen.getByText('fileA.py'))
+
+    // Immediately click file B
+    fireEvent.click(screen.getByText('fileB.py'))
+
+    await waitFor(() => {
+      expect(screen.getByText('content of file B')).toBeInTheDocument()
+    })
+
+    // Late resolve file A
+    await act(async () => {
+      resolveFileA({
+        repository_id: 'repo_123',
+        path: 'src/fileA.py',
+        language: 'python',
+        content: 'stale content of file A',
+        line_count: 1,
+        is_complete: false,
+        completeness_reason: 'source_boundary_unavailable',
+      })
+    })
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(screen.queryByText('stale content of file A')).not.toBeInTheDocument()
+    expect(screen.getByText('content of file B')).toBeInTheDocument()
+  })
+
+  it('renders source text as plain text safely without HTML injection', async () => {
+    const mockClient = createMockClient()
+    vi.mocked(mockClient.listRepositoryFiles).mockResolvedValue({
+      repository_id: 'repo_123',
+      files: [{ path: 'src/xss.html', language: 'html', chunk_count: 1 }],
+    })
+    vi.mocked(mockClient.getRepositoryFileContent).mockResolvedValue({
+      repository_id: 'repo_123',
+      path: 'src/xss.html',
+      language: 'html',
+      content: '<script>alert("xss")</script><img src=x onerror=alert(1)>',
+      line_count: 1,
+      is_complete: false,
+      completeness_reason: 'source_boundary_unavailable',
+    })
+
+    render(<RepoExplorerPanel client={mockClient} repositoryId="repo_123" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('xss.html')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByText('xss.html'))
+
+    await waitFor(() => {
+      expect(screen.getByText('<script>alert("xss")</script><img src=x onerror=alert(1)>')).toBeInTheDocument()
+    })
   })
 })

@@ -422,6 +422,36 @@ describe('ApiClient', () => {
     expect(body).toEqual({ entry: 'x', mode: 'static' })
   })
 
+  it('getRepositoryFileContent() fetches content for an encoded file path with Bearer auth', async () => {
+    sessionStorage.setItem('sourcetrace.access_token', 'jwt_file_content_token')
+
+    const fileContentBody = {
+      repository_id: 'repo_123',
+      path: 'src/components/Button.tsx',
+      language: 'typescript',
+      content: 'export const Button = () => <button>Click</button>;',
+      line_count: 1,
+      is_complete: true,
+    }
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => fileContentBody,
+    })
+
+    const client = new ApiClient({ customFetch: mockFetch as unknown as typeof fetch })
+    const res = await client.getRepositoryFileContent('repo_123', 'src/components/Button.tsx')
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [reqUrl, reqInit] = mockFetch.mock.calls[0]
+    expect(reqUrl).toBe(
+      '/api/v1/repositories/repo_123/files/content?path=src%2Fcomponents%2FButton.tsx',
+    )
+    expect(reqInit.method).toBe('GET')
+    const reqHeaders = reqInit.headers as Headers
+    expect(reqHeaders.get('Authorization')).toBe('Bearer jwt_file_content_token')
+    expect(res).toEqual(fileContentBody)
+  })
+
   it('deduplicates concurrent protected requests to share a single provisioning call', async () => {
     const mockFetch = vi
       .fn()

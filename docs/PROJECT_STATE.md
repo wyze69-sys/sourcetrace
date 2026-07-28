@@ -7,7 +7,7 @@
 
 ## Current Stage
 
-RUNTIME-UX-003 implemented and verified. Built the Explorer-first repository file tree UI using `GET /api/v1/repositories/{repository_id}/files`. Added frontend API client support, flat-to-nested file tree transformation with folder-before-file alphabetical sorting, expand/collapse folder controls, file selection state, lightweight language/chunk indicators, first-use guidance, clear empty/loading/error states with retry, and race-condition guards for repository selection. Verified with Vitest (83 passed across 5 test files, 0 failures), ESLint (0 errors), Vite production build (33 modules, tsc -b clean), git diff --check (clean), and live API endpoint verification (`scratch/test_live_explorer.py` PASSED).
+RUNTIME-UX-004-FIX completed and verified. Fixed generation scoping and truthful source completeness. Removed `ALL_GENERATIONS` fallback from user-facing file routes so legacy `active_generation_id=None` passes `generation_id=None` directly without risk of cross-generation chunk pollution. Enforced conservative completeness reporting (`is_complete=False`) with machine-readable `completeness_reason` (`source_boundary_unavailable` for contiguous chunks lacking EOF verification, and `unindexed_line_gaps` for missing line ranges). Updated frontend viewer wording to explain unverified EOF coverage. Cleared all Vitest `act(...)` test warnings. Verified with Pytest (1388 passed, 0 failures), backend ruff (clean), Vitest (89 passed across 5 test files, 0 failures, clean logs), ESLint (0 errors), Vite build (33 modules transformed), and git diff --check (clean).
 
 ---
 
@@ -19,7 +19,8 @@ RUNTIME-UX-003 implemented and verified. Built the Explorer-first repository fil
 | Anonymous session management (signed cookie) | ✅ Verified | pytest |
 | Repository record domain model + validation | ✅ Verified | pytest |
 | MongoDB Atlas storage layer (repositories, chunks, sessions) | ✅ Verified | pytest |
-| Ownership-scoped API routes (repository CRUD + DELETE + files list) | ✅ Verified | `test_delete_repository_route.py`, `test_repository_files_route.py` |
+| Ownership-scoped API routes (repository CRUD + DELETE + files list + file content) | ✅ Verified | `test_delete_repository_route.py`, `test_repository_files_route.py`, `test_repository_file_content_route.py` |
+| Real Source Code Viewer (`GET /files/content` + line numbers + partial notice) | ✅ Verified | `test_repository_file_content_route.py` (6 passed), Vitest 89 passed, `npm run build` |
 | ZIP/GitHub source acquisition (safety-first) | ✅ Verified | pytest |
 | Repository indexing service | ✅ Verified | pytest |
 | Code chunking (Python AST + Subprocess-Isolated Tree-Sitter AST) | ✅ Verified | pytest |

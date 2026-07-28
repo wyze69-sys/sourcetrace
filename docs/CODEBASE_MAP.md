@@ -43,10 +43,10 @@ Current status: React TypeScript application foundation (`FE-001`) completed und
 - `frontend/src/app/FlowTracePanel.test.tsx` — unit tests for trace panel rendering, mode handling, explanation display, and degradation states.
 - `frontend/src/app/ImpactPanel.tsx` — Change Impact Preview workspace panel (symbol input, risk card with transparent factors, upstream/downstream lists with distance/confidence badges, expandable evidence citations, affected endpoints/tests, gaps, honest empty/loading/error states).
 - `frontend/src/app/ImpactPanel.test.tsx` — unit tests for impact panel submission, rendering, citation expansion, unresolved/zero-impact states, error handling, loading state, and repository-change reset.
-- `frontend/src/app/RepoExplorerPanel.tsx` — Repository Explorer file tree panel (expandable folders, folder-before-file sorting, file selection state, language/chunk badges, first-use guidance, empty/loading/error states with retry, race-condition protection).
-- `frontend/src/app/RepoExplorerPanel.test.tsx` — unit and integration tests for flat-to-nested file tree conversion, folder-before-file sorting, selection state, loading/empty/error states, repo selection request trigger, and stale request cancellation.
-- `frontend/src/services/types.ts` — TypeScript types matching OpenAPI 3.1 HTTP contract (including `RepositoryFileItem` and `RepositoryFileListResponse`).
-- `frontend/src/services/apiClient.ts` — typed API client (`getHealth()`, `listRepositoryFiles()`, `credentials: 'include'`, safe `ErrorEnvelope` handling).
+- `frontend/src/app/RepoExplorerPanel.tsx` — Repository Explorer panel with file tree and safe line-numbered source code viewer (expandable folders, folder-before-file sorting, file selection state, plain-text code view with line-number gutter, language badge, partial content gap notice banner, loading/error states with retry, race-condition protection).
+- `frontend/src/app/RepoExplorerPanel.test.tsx` — unit and integration tests for flat-to-nested file tree conversion, folder-before-file sorting, selection state, code viewer rendering, line numbers, partial content notice, plain-text HTML safety, loading/empty/error states, repo selection request trigger, and stale request cancellation.
+- `frontend/src/services/types.ts` — TypeScript types matching OpenAPI 3.1 HTTP contract (including `RepositoryFileItem`, `RepositoryFileListResponse`, and `RepositoryFileContentResponse`).
+- `frontend/src/services/apiClient.ts` — typed API client (`getHealth()`, `listRepositoryFiles()`, `getRepositoryFileContent()`, `credentials: 'include'`, safe `ErrorEnvelope` handling).
 - `frontend/src/services/apiClient.test.ts` — unit tests for `ApiClient` and `ApiError`.
 - `frontend/src/styles/index.css` — forensic workspace design tokens and CSS styles.
 - `frontend/src/test/setup.ts` — Vitest setup with `@testing-library/jest-dom/vitest`.
@@ -186,6 +186,7 @@ Current status: early prototype; review before reusing. Work from `backend/` for
 - `backend/tests/retrieval/test_impact_service.py` — offline unit tests for `ChangeImpactService` (upstream/downstream discovery, alternative-edge dependents, classification, risk factors, bounds, gaps, determinism).
 - `backend/tests/api/test_impact_route.py` — offline route tests for POST impact and POST impact/diff (auth, uniform 404, readiness, 422 on non-diff input, response shapes, zero-provider-call proofs).
 - `backend/tests/retrieval/test_diff_impact.py` — offline unit tests for unified-diff parsing (old-coordinate mapping, /dev/null, prefixes, malformed input) and `preview_diff()` (target seeding, aggregation, seed exclusion, diff_file_unmatched/diff_lines_uncovered/diff_stale gaps, suffix path matching, ambiguity refusal, determinism).
+- `backend/tests/api/test_repository_file_content_route.py` — offline route and unit tests for GET /api/v1/repositories/{id}/files/content (auth, uniform 404, path safety validation, line ordering, and partial content flag).
 
 
 - `backend/tests/fixtures/parser_fixtures/` — 11 synthetic Python test fixtures for AST parser and scanner testing.

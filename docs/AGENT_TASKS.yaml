@@ -1474,17 +1474,64 @@ tasks:
         - Real live acceptance script (scratch/test_live_explorer.py PASSED against live endpoint)
 
   - id: RUNTIME-UX-004
-    title: Repository Explorer, Part 3/3: Source Code Viewer & Evidence Navigation
+    title: Repository Explorer, Part 3/3: Real Source Code Viewer
     phase: 8
-    status: ready
+    status: completed
     dependencies:
       - RUNTIME-UX-003
-    owner: unassigned
+    owner: agent
     allowed_paths:
       - frontend/**
       - backend/**
       - docs/**
-    objective: >-
-      Implement source-file content viewing and citation jumping within the Explorer-first workspace.
+    completion_evidence:
+      implementation_paths:
+        - backend/src/sourcetrace/api/schemas.py
+        - backend/src/sourcetrace/api/routes/repositories.py
+        - backend/tests/api/test_repository_file_content_route.py
+        - backend/tests/api/test_resource_auth.py
+        - frontend/src/services/types.ts
+        - frontend/src/services/apiClient.ts
+        - frontend/src/services/apiClient.test.ts
+        - frontend/src/app/RepoExplorerPanel.tsx
+        - frontend/src/app/RepoExplorerPanel.test.tsx
+        - frontend/src/styles/index.css
+      verified_by:
+        - pytest tests/api/test_repository_file_content_route.py (6 passed)
+        - pytest (1386 passed, 0 failures)
+        - uv run ruff check . (clean)
+        - npx vitest run (89 passed across 5 test files)
+        - npm run lint (0 errors)
+        - npm run build (built in 1.72s)
+        - git diff --check (clean)
+
+  - id: RUNTIME-UX-004-FIX
+    title: Truthful source completeness and generation-safe file retrieval
+    phase: 8
+    status: completed
+    dependencies:
+      - RUNTIME-UX-004
+    owner: agent
+    allowed_paths:
+      - frontend/**
+      - backend/**
+      - docs/**
+    completion_evidence:
+      implementation_paths:
+        - backend/src/sourcetrace/api/schemas.py
+        - backend/src/sourcetrace/api/routes/repositories.py
+        - backend/tests/api/test_repository_file_content_route.py
+        - backend/tests/api/test_repository_files_route.py
+        - frontend/src/services/types.ts
+        - frontend/src/app/RepoExplorerPanel.tsx
+        - frontend/src/app/RepoExplorerPanel.test.tsx
+      verified_by:
+        - pytest tests/api/test_repository_file_content_route.py tests/api/test_repository_files_route.py (13 passed)
+        - pytest (1388 passed, 0 failures)
+        - uv run ruff check . (clean)
+        - npx vitest run (89 passed across 5 test files, 0 act warnings)
+        - npm run lint (0 errors)
+        - npm run build (built in 2.24s)
+        - git diff --check (clean)
 
 

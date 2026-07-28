@@ -127,6 +127,33 @@ def test_list_repository_files_successful_unique_sorted() -> None:
     )
 
 
+def test_list_repository_files_legacy_generation_passes_none_directly() -> None:
+    """Verify active_generation_id=None passes generation_id=None directly to list_by_repository."""
+    session = _make_session()
+    repo_record = _make_repo(active_generation_id=None)
+
+    mock_repo_repo = MagicMock()
+    mock_repo_repo.get_by_id.return_value = repo_record
+
+    mock_chunk_repo = MagicMock()
+    mock_chunk_repo.list_by_repository.return_value = []
+
+    app = create_app()
+    app.dependency_overrides[get_current_owner_id] = lambda: session.owner_session_id
+    app.dependency_overrides[get_repository_repository] = lambda: mock_repo_repo
+    app.dependency_overrides[get_code_chunk_repository] = lambda: mock_chunk_repo
+
+    client = TestClient(app)
+    response = client.get("/api/v1/repositories/repo_files_123/files")
+
+    assert response.status_code == 200
+    mock_chunk_repo.list_by_repository.assert_called_once_with(
+        owner_session_id=session.owner_session_id,
+        repository_id="repo_files_123",
+        generation_id=None,
+    )
+
+
 def test_list_repository_files_owner_isolation_and_404() -> None:
     """Verify non-existent or non-owned repositories return uniform HTTP 404."""
     session = _make_session("owner_A")

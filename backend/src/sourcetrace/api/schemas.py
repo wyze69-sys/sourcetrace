@@ -146,6 +146,22 @@ class RepositoryFileListResponse(BaseModel):
     files: list[RepositoryFileItem]
 
 
+class RepositoryFileContentResponse(BaseModel):
+    """Response payload containing reconstructed source content for an indexed file."""
+
+    repository_id: str = Field(description="Unique repository identifier")
+    path: str = Field(description="Relative file path within the repository")
+    language: str = Field(description="Programming language or file type identifier")
+    content: str = Field(description="Reconstructed raw source code text")
+    line_count: int = Field(ge=0, description="Total line count of the reconstructed content")
+    is_complete: bool = Field(
+        description="True if all lines from line 1 were reconstructed without gaps"
+    )
+    completeness_reason: str = Field(
+        description="Reason for completeness status (e.g. source_boundary_unavailable)"
+    )
+
+
 
 class Citation(BaseModel):
     """Citation metadata for a cited code symbol and file location."""

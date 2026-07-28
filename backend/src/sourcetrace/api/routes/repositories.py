@@ -39,6 +39,7 @@ from sourcetrace.api.schemas import (
     DeleteRepositoryResponse,
     ErrorEnvelope,
     Repository,
+    RepositoryFileContentResponse,
     RepositoryFileItem,
     RepositoryFileListResponse,
     RepositoryListResponse,
@@ -616,6 +617,171 @@ def list_repository_files(
     return RepositoryFileListResponse(
         repository_id=clean_repo_id,
         files=sorted_files,
+    )
+
+
+def _validate_safe_relative_path(path: str) -> str:
+    """Validate relative path to prevent traversal, absolute paths, or drive prefixes."""
+    if not path or not path.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Query parameter 'path' is required.",
+        )
+
+    clean_path = path.strip()
+
+    if "\x00" in clean_path or "%00" in clean_path.lower() or ":" in clean_path:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file path format.",
+        )
+
+    if clean_path.startswith("/") or clean_path.startswith("\\"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Absolute file paths are not allowed.",
+        )
+
+    normalized = clean_path.replace("\\", "/")
+    segments = normalized.split("/")
+
+    for seg in segments:
+        if seg == "..":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Path traversal segments are not allowed.",
+            )
+
+    return normalized
+
+
+@router.get(
+    "/repositories/{repository_id}/files/content",
+    response_model=RepositoryFileContentResponse,
+    operation_id="getRepositoryFileContent",
+    responses={
+        **UNAUTHORIZED_RESPONSE,
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorEnvelope,
+            "description": "Invalid query parameter or path traversal attempt",
+        },
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Repository or file not found",
+        },
+        status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {
+            "model": ErrorEnvelope,
+            "description": "File content exceeds maximum payload size",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
+)
+def get_repository_file_content(
+    repository_id: str,
+    path: str,
+    owner_session_id: CurrentOwnerId,
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
+    code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
+) -> RepositoryFileContentResponse:
+    """Retrieve reconstructed source code text for an indexed file in a repository."""
+    clean_repo_id = repository_id.strip()
+    safe_path = _validate_safe_relative_path(path)
+
+    try:
+        record = repository_repo.get_by_id(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    if record is None or record.owner_session_id != owner_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository or file not found",
+        )
+
+    try:
+        chunks = code_chunk_repo.list_by_repository(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+            generation_id=record.active_generation_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    file_chunks = [c for c in chunks if c.relative_path == safe_path]
+    if not file_chunks:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository or file not found",
+        )
+
+    file_chunks.sort(key=lambda c: (c.start_line, c.end_line, c.chunk_id))
+    language = file_chunks[0].language or "plaintext"
+
+    line_map: dict[int, str] = {}
+    for chunk in file_chunks:
+        snippet_lines = chunk.content.splitlines()
+        for idx, line_text in enumerate(snippet_lines):
+            line_no = chunk.start_line + idx
+            line_map[line_no] = line_text
+
+    if not line_map:
+        return RepositoryFileContentResponse(
+            repository_id=clean_repo_id,
+            path=safe_path,
+            language=language,
+            content="",
+            line_count=0,
+            is_complete=False,
+            completeness_reason="source_boundary_unavailable",
+        )
+
+    min_line = min(line_map.keys())
+    max_line = max(line_map.keys())
+
+    has_gaps = (min_line != 1) or not all(
+        line_num in line_map for line_num in range(1, max_line + 1)
+    )
+
+    if has_gaps:
+        is_complete = False
+        completeness_reason = "unindexed_line_gaps"
+    else:
+        is_complete = False
+        completeness_reason = "source_boundary_unavailable"
+
+    reconstructed_lines: list[str] = []
+    for line_num in range(1, max_line + 1):
+        reconstructed_lines.append(line_map.get(line_num, ""))
+
+    reconstructed_content = "\n".join(reconstructed_lines)
+
+    MAX_FILE_BYTES = 2 * 1024 * 1024
+    if len(reconstructed_content.encode("utf-8")) > MAX_FILE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File content exceeds maximum viewer payload size limit (2 MB).",
+        )
+
+    return RepositoryFileContentResponse(
+        repository_id=clean_repo_id,
+        path=safe_path,
+        language=language,
+        content=reconstructed_content,
+        line_count=max_line,
+        is_complete=is_complete,
+        completeness_reason=completeness_reason,
     )
 
 

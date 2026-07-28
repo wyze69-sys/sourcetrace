@@ -109,6 +109,16 @@ export interface RepositoryFileListResponse {
   files: RepositoryFileItem[]
 }
 
+export interface RepositoryFileContentResponse {
+  repository_id: string
+  path: string
+  language: string
+  content: string
+  line_count: number
+  is_complete: boolean
+  completeness_reason: string
+}
+
 export interface Citation {
   relative_path: string
   start_line: number

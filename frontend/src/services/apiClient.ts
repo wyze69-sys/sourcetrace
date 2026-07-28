@@ -13,6 +13,7 @@ import type {
   ImpactMode,
   IndexingJob,
   Repository,
+  RepositoryFileContentResponse,
   RepositoryFileListResponse,
   RepositoryListResponse,
   SendMessageRequest,
@@ -324,6 +325,17 @@ export class ApiClient {
   async listRepositoryFiles(repositoryId: string): Promise<RepositoryFileListResponse> {
     return this.request<RepositoryFileListResponse>(
       `/repositories/${encodeURIComponent(repositoryId)}/files`,
+      { method: 'GET' },
+      'protected',
+    )
+  }
+
+  async getRepositoryFileContent(
+    repositoryId: string,
+    path: string,
+  ): Promise<RepositoryFileContentResponse> {
+    return this.request<RepositoryFileContentResponse>(
+      `/repositories/${encodeURIComponent(repositoryId)}/files/content?path=${encodeURIComponent(path)}`,
       { method: 'GET' },
       'protected',
     )

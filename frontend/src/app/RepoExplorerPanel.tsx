@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient as defaultApiClient, ApiError, type ApiClient } from '../services/apiClient'
-import type { RepositoryFileItem } from '../services/types'
+import type { RepositoryFileContentResponse, RepositoryFileItem } from '../services/types'
 
 export interface RepoExplorerPanelProps {
   client?: ApiClient
@@ -99,26 +99,32 @@ export function buildFileTree(files: RepositoryFileItem[]): TreeNode[] {
       a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
     )
 
-    const folderNodes: TreeNodeFolder[] = sortedSubfolders.map((sf) => ({
-      type: 'folder',
-      name: sf.name,
-      path: sf.path,
-      children: convertRawToTree(sf.subfolders, sf.files),
-    }))
+    const result: TreeNode[] = []
 
-    return [...folderNodes, ...sortedFiles]
+    for (const sub of sortedSubfolders) {
+      result.push({
+        type: 'folder',
+        name: sub.name,
+        path: sub.path,
+        children: convertRawToTree(sub.subfolders, sub.files),
+      })
+    }
+
+    for (const file of sortedFiles) {
+      result.push(file)
+    }
+
+    return result
   }
 
   return convertRawToTree(rootSubfolders, rootFiles)
 }
 
-/**
- * Extracts all folder paths from flat file items.
- */
+/** Helper to extract all folder paths recursively for expand all */
 export function extractAllFolderPaths(files: RepositoryFileItem[]): Set<string> {
   const folderPaths = new Set<string>()
-  for (const item of files) {
-    const parts = item.path.split('/').filter(Boolean)
+  for (const file of files) {
+    const parts = file.path.split('/').filter(Boolean)
     let accum = ''
     for (let i = 0; i < parts.length - 1; i++) {
       accum = accum ? `${accum}/${parts[i]}` : parts[i]
@@ -128,31 +134,33 @@ export function extractAllFolderPaths(files: RepositoryFileItem[]): Set<string> 
   return folderPaths
 }
 
-function TreeItemView({
+interface TreeItemProps {
+  node: TreeNode
+  expandedFolders: Set<string>
+  toggleFolder: (path: string) => void
+  selectedFilePath: string | null
+  onSelectFile: (path: string) => void
+}
+
+export function TreeItemView({
   node,
   expandedFolders,
   toggleFolder,
   selectedFilePath,
   onSelectFile,
-}: {
-  node: TreeNode
-  expandedFolders: Set<string>
-  toggleFolder: (path: string) => void
-  selectedFilePath: string | null
-  onSelectFile: (filePath: string) => void
-}) {
+}: TreeItemProps) {
   if (node.type === 'folder') {
     const isExpanded = expandedFolders.has(node.path)
     return (
-      <div className="tree-folder-group" data-testid={`folder-${node.path}`}>
+      <div className="tree-node tree-folder" data-testid={`folder-${node.path}`}>
         <button
           type="button"
-          className="tree-item tree-folder"
+          className="tree-node-row folder-row"
           onClick={() => toggleFolder(node.path)}
           aria-expanded={isExpanded}
         >
-          <span className="tree-icon">{isExpanded ? '▾' : '▸'}</span>
-          <span className="tree-name folder-name">{node.name}/</span>
+          <span className="tree-icon folder-icon">{isExpanded ? '📂' : '📁'}</span>
+          <span className="tree-name folder-name">{node.name}</span>
         </button>
         {isExpanded && (
           <div className="tree-children">
@@ -176,7 +184,7 @@ function TreeItemView({
   return (
     <button
       type="button"
-      className={`tree-item tree-file ${isSelected ? 'selected' : ''}`}
+      className={`tree-node-row file-row ${isSelected ? 'selected' : ''}`}
       onClick={() => onSelectFile(node.path)}
       aria-selected={isSelected}
       data-testid={`file-${node.path}`}
@@ -193,6 +201,94 @@ function TreeItemView({
   )
 }
 
+interface CodeViewerProps {
+  selectedPath: string
+  contentData: RepositoryFileContentResponse | null
+  loading: boolean
+  error: string | null
+  onRetry: () => void
+}
+
+export function CodeViewer({
+  selectedPath,
+  contentData,
+  loading,
+  error,
+  onRetry,
+}: CodeViewerProps) {
+  if (loading) {
+    return (
+      <div className="code-viewer-panel loading-state" data-testid="code-viewer-loading">
+        <span className="status-dot loading" />
+        <span className="panel-text" style={{ margin: 0 }}>
+          Loading source code for <span className="mono">{selectedPath}</span>...
+        </span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="code-viewer-panel error-state" data-testid="code-viewer-error">
+        <div className="form-error" style={{ marginBottom: '12px' }}>
+          {error}
+        </div>
+        <button type="button" className="btn-action btn-retry" onClick={onRetry}>
+          Retry Loading Content
+        </button>
+      </div>
+    )
+  }
+
+  if (!contentData) {
+    return null
+  }
+
+  const lines = contentData.content ? contentData.content.split('\n') : []
+
+  return (
+    <div className="code-viewer-panel" data-testid="code-viewer-container">
+      <div className="code-viewer-header">
+        <div className="code-viewer-title">
+          <span className="mono bold">{contentData.path}</span>
+          <span className="file-lang-badge">{contentData.language}</span>
+          <span className="file-chunk-badge">
+            {contentData.line_count} {contentData.line_count === 1 ? 'line' : 'lines'}
+          </span>
+        </div>
+        {!contentData.is_complete && (
+          <div className="partial-notice-badge" data-testid="partial-content-notice">
+            ⚠️ Notice: Displayed source content is indexed chunks only and may be incomplete (original end-of-file boundary is unverified).
+          </div>
+        )}
+      </div>
+
+      {lines.length === 0 ? (
+        <div className="state-box">This file is empty.</div>
+      ) : (
+        <div className="code-viewer-body">
+          <div className="line-numbers-gutter" aria-hidden="true">
+            {lines.map((_, idx) => (
+              <span key={idx + 1} className="line-number">
+                {idx + 1}
+              </span>
+            ))}
+          </div>
+          <pre className="code-text-pre">
+            <code>
+              {lines.map((line, idx) => (
+                <div key={idx + 1} className="code-line">
+                  {line || ' '}
+                </div>
+              ))}
+            </code>
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function RepoExplorerPanel({
   client = defaultApiClient,
   repositoryId,
@@ -205,23 +301,78 @@ export function RepoExplorerPanel({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
 
+  // State for source code content viewer
+  const [fileContent, setFileContent] = useState<RepositoryFileContentResponse | null>(null)
+  const [contentLoading, setContentLoading] = useState(false)
+  const [contentError, setContentError] = useState<string | null>(null)
+
   const requestIdRef = useRef(0)
+  const contentRequestIdRef = useRef(0)
+
+  const loadFileContent = useCallback(
+    async (targetRepoId: string, filePath: string) => {
+      const currentRequestId = ++contentRequestIdRef.current
+
+      if (typeof client.getRepositoryFileContent !== 'function') {
+        setFileContent(null)
+        setContentLoading(false)
+        setContentError(null)
+        return
+      }
+
+      setContentLoading(true)
+      setContentError(null)
+
+      try {
+        const res = await client.getRepositoryFileContent(targetRepoId, filePath)
+        if (contentRequestIdRef.current !== currentRequestId) {
+          return
+        }
+        if (res.repository_id !== targetRepoId || res.path !== filePath) {
+          return
+        }
+        setFileContent(res)
+        setContentError(null)
+      } catch (err) {
+        if (contentRequestIdRef.current !== currentRequestId) {
+          return
+        }
+        if (err instanceof ApiError) {
+          setContentError(err.message)
+        } else {
+          setContentError('Failed to load file content.')
+        }
+      } finally {
+        if (contentRequestIdRef.current === currentRequestId) {
+          setContentLoading(false)
+        }
+      }
+    },
+    [client],
+  )
 
   const loadFiles = useCallback(
     async (targetRepoId: string | null) => {
       const currentRequestId = ++requestIdRef.current
+      contentRequestIdRef.current++
 
       if (!targetRepoId || typeof client.listRepositoryFiles !== 'function') {
         setFiles([])
         setLoading(false)
         setError(null)
         setSelectedFilePath(null)
+        setFileContent(null)
+        setContentLoading(false)
+        setContentError(null)
         return
       }
 
       setLoading(true)
       setError(null)
       setSelectedFilePath(null)
+      setFileContent(null)
+      setContentLoading(false)
+      setContentError(null)
 
       try {
         const res = await client.listRepositoryFiles(targetRepoId)
@@ -257,12 +408,20 @@ export function RepoExplorerPanel({
     return () => {
       // eslint-disable-next-line react-hooks/exhaustive-deps
       requestIdRef.current++
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      contentRequestIdRef.current++
     }
   }, [repositoryId, loadFiles])
 
-  const handleRetry = useCallback(() => {
+  const handleRetryFiles = useCallback(() => {
     loadFiles(repositoryId)
   }, [repositoryId, loadFiles])
+
+  const handleRetryContent = useCallback(() => {
+    if (repositoryId && selectedFilePath) {
+      loadFileContent(repositoryId, selectedFilePath)
+    }
+  }, [repositoryId, selectedFilePath, loadFileContent])
 
   const toggleFolder = useCallback((folderPath: string) => {
     setExpandedFolders((prev) => {
@@ -288,8 +447,11 @@ export function RepoExplorerPanel({
     (filePath: string) => {
       setSelectedFilePath(filePath)
       onSelectFile?.(filePath)
+      if (repositoryId) {
+        loadFileContent(repositoryId, filePath)
+      }
     },
-    [onSelectFile],
+    [repositoryId, onSelectFile, loadFileContent],
   )
 
   if (!repositoryId) {
@@ -339,7 +501,7 @@ export function RepoExplorerPanel({
           <div className="form-error" style={{ marginBottom: '12px' }}>
             {error}
           </div>
-          <button type="button" className="btn-action btn-retry" onClick={handleRetry}>
+          <button type="button" className="btn-action btn-retry" onClick={handleRetryFiles}>
             Retry Loading Files
           </button>
         </div>
@@ -364,6 +526,16 @@ export function RepoExplorerPanel({
             />
           ))}
         </div>
+      )}
+
+      {selectedFilePath && (
+        <CodeViewer
+          selectedPath={selectedFilePath}
+          contentData={fileContent}
+          loading={contentLoading}
+          error={contentError}
+          onRetry={handleRetryContent}
+        />
       )}
     </section>
   )
