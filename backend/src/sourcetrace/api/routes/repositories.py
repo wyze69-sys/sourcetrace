@@ -20,11 +20,15 @@ from sourcetrace.api.dependencies import (
     GitHubIndexingScheduler,
     GitHubRefreshScheduler,
     ZipIndexingScheduler,
+    get_code_chunk_repository,
+    get_conversation_repository,
     get_github_indexing_scheduler,
     get_github_refresh_scheduler,
     get_indexing_job_repository,
     get_ingestion_service,
+    get_message_repository,
     get_repository_repository,
+    get_session_repository,
     get_upload_staging_store,
     get_zip_indexing_scheduler,
 )
@@ -32,6 +36,7 @@ from sourcetrace.api.schemas import (
     UNAUTHORIZED_RESPONSE,
     CreateGitHubRepositoryRequest,
     CreateRepositoryResponse,
+    DeleteRepositoryResponse,
     ErrorEnvelope,
     Repository,
     RepositoryListResponse,
@@ -57,7 +62,11 @@ from sourcetrace.models.domain import (
     RepositoryRecord,
 )
 from sourcetrace.storage.repositories import (
+    AnonymousSessionRepository,
+    CodeChunkRepository,
+    ConversationRepository,
     IndexingJobRepository,
+    MessageRepository,
     RepositoryRepository,
 )
 
@@ -525,6 +534,87 @@ def get_repository(
                 pass
 
     return repository_record_to_schema(record)
+
+
+@router.delete(
+    "/repositories/{repository_id}",
+    response_model=DeleteRepositoryResponse,
+    operation_id="deleteRepository",
+    responses={
+        **UNAUTHORIZED_RESPONSE,
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Repository not found",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
+)
+def delete_repository(
+    repository_id: str,
+    owner_session_id: CurrentOwnerId,
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
+    job_repo: Annotated[IndexingJobRepository, Depends(get_indexing_job_repository)],
+    code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
+    conversation_repo: Annotated[ConversationRepository, Depends(get_conversation_repository)],
+    message_repo: Annotated[MessageRepository, Depends(get_message_repository)],
+    session_repo: Annotated[AnonymousSessionRepository, Depends(get_session_repository)],
+) -> DeleteRepositoryResponse:
+    """Delete a repository and all its associated data owned by the caller's session."""
+    clean_repo_id = repository_id.strip()
+
+    try:
+        repo = repository_repo.get_by_id(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    if repo is None or repo.owner_session_id != owner_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+
+    try:
+        # Delete associated records in strict dependency order
+        message_repo.delete_by_repository(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+        conversation_repo.delete_by_repository(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+        code_chunk_repo.delete_by_repository(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+        job_repo.delete_by_repository(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+        repository_repo.delete(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+        session_repo.release_repository_slot(owner_session_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    return DeleteRepositoryResponse(
+        message="Repository deleted successfully.",
+        repository_id=clean_repo_id,
+    )
 
 
 @router.post(

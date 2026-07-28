@@ -95,6 +95,7 @@ export interface RepositoryListResponse {
 
 export interface DeleteRepositoryResponse {
   message: string
+  repository_id: string
 }
 
 export interface Citation {

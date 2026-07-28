@@ -124,6 +124,13 @@ class RepositoryListResponse(BaseModel):
     repositories: list[Repository]
 
 
+class DeleteRepositoryResponse(BaseModel):
+    """Response payload returned when a repository is deleted."""
+
+    message: str
+    repository_id: str
+
+
 class Citation(BaseModel):
     """Citation metadata for a cited code symbol and file location."""
 

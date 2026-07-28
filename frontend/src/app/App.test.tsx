@@ -545,4 +545,80 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
       screen.getByText('Ask natural-language questions grounded in verified static code evidence.'),
     ).toBeInTheDocument()
   })
+
+  it('deletes repository, removes it from list, and displays success banner', async () => {
+    const mockFailedRepo = {
+      repository_id: 'repo_del_test_1',
+      name: 'Failed-Import-Repo',
+      source_type: 'github' as const,
+      github_url: 'https://github.com/octocat/Failed-Import-Repo',
+      status: 'failed' as const,
+      file_count: 0,
+      chunk_count: 0,
+      created_at: '2026-07-28T00:00:00Z',
+      updated_at: '2026-07-28T00:00:00Z',
+    }
+
+    const deleteMock = vi.fn().mockResolvedValue({
+      message: 'Repository deleted successfully.',
+      repository_id: 'repo_del_test_1',
+    })
+
+    const mockClient = {
+      getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-28' }),
+      listRepositories: vi.fn().mockResolvedValue({ repositories: [mockFailedRepo] }),
+      deleteRepository: deleteMock,
+    } as unknown as ApiClient
+
+    render(<App client={mockClient} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('API Online (1.0.0)')).toBeInTheDocument()
+      expect(screen.getByText('Failed-Import-Repo')).toBeInTheDocument()
+    })
+
+    const repoCard = screen.getByRole('button', { name: /Failed-Import-Repo/i })
+    await userEvent.click(repoCard)
+
+    const deleteBtn = await screen.findByRole('button', { name: /Delete Repository/i })
+    await userEvent.click(deleteBtn)
+
+    expect(deleteMock).toHaveBeenCalledWith('repo_del_test_1')
+
+    await waitFor(() => {
+      expect(screen.getByText('Repository deleted successfully.')).toBeInTheDocument()
+    })
+  })
+
+  it('maps HTTP 429 quota error during import to clear quota recovery message', async () => {
+    const createGitHubMock = vi
+      .fn()
+      .mockRejectedValue(new ApiError('Repository quota exceeded', 'QUOTA_EXCEEDED', 429))
+
+    const mockClient = {
+      getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-28' }),
+      listRepositories: vi.fn().mockResolvedValue({ repositories: [] }),
+      createGitHubRepository: createGitHubMock,
+    } as unknown as ApiClient
+
+    render(<App client={mockClient} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('API Online (1.0.0)')).toBeInTheDocument()
+    })
+
+    const githubInput = screen.getByLabelText(/Public GitHub Repository URL/i)
+    const githubBtn = screen.getByRole('button', { name: /Import GitHub Repository/i })
+
+    await userEvent.type(githubInput, 'https://github.com/octocat/Quota-Repo')
+    await userEvent.click(githubBtn)
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'Repository limit reached (3 max). Delete an existing repository before importing another.',
+        ),
+      ).toBeInTheDocument()
+    })
+  })
 })

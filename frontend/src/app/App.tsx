@@ -353,16 +353,30 @@ export function App({ client = defaultApiClient }: AppProps) {
     }
   }
 
+  const [deletingRepoId, setDeletingRepoId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteSuccess, setDeleteSuccess] = useState<string | null>(null)
+
   const handleDeleteRepo = async (repoId: string) => {
+    setDeletingRepoId(repoId)
+    setDeleteError(null)
+    setDeleteSuccess(null)
     try {
-      await client.deleteRepository(repoId)
+      const res = await client.deleteRepository(repoId)
       setRepositories((prev) => prev.filter((r) => r.repository_id !== repoId))
       if (selectedRepoId === repoId) {
         setSelectedRepoId(null)
       }
+      setDeleteSuccess(res.message || 'Repository deleted successfully.')
       setAriaLiveMsg('Repository deleted.')
-    } catch {
-      // Ignore quiet failure
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setDeleteError(err.message)
+      } else {
+        setDeleteError(SAFE_NETWORK_ERROR_MESSAGE)
+      }
+    } finally {
+      setDeletingRepoId(null)
     }
   }
 
@@ -388,7 +402,11 @@ export function App({ client = defaultApiClient }: AppProps) {
       setGithubUrl('')
     } catch (err) {
       if (err instanceof ApiError) {
-        setGithubError(err.message)
+        if (err.status === 429 || err.code === 'QUOTA_EXCEEDED') {
+          setGithubError('Repository limit reached (3 max). Delete an existing repository before importing another.')
+        } else {
+          setGithubError(err.message)
+        }
       } else {
         setGithubError(SAFE_NETWORK_ERROR_MESSAGE)
       }
@@ -423,7 +441,11 @@ export function App({ client = defaultApiClient }: AppProps) {
       }
     } catch (err) {
       if (err instanceof ApiError) {
-        setZipError(err.message)
+        if (err.status === 429 || err.code === 'QUOTA_EXCEEDED') {
+          setZipError('Repository limit reached (3 max). Delete an existing repository before importing another.')
+        } else {
+          setZipError(err.message)
+        }
       } else {
         setZipError(SAFE_NETWORK_ERROR_MESSAGE)
       }
@@ -619,6 +641,17 @@ export function App({ client = defaultApiClient }: AppProps) {
 
           {state === 'ready' && (
             <>
+              {deleteSuccess && (
+                <div className="form-success" style={{ marginBottom: '16px', color: '#4ade80', background: '#064e3b', border: '1px solid #059669', padding: '8px 12px', borderRadius: '6px' }}>
+                  {deleteSuccess}
+                </div>
+              )}
+              {deleteError && (
+                <div className="form-error" style={{ marginBottom: '16px' }}>
+                  {deleteError}
+                </div>
+              )}
+
               <section className="card-panel">
                 <h2 className="panel-header">API Boundary Reachable</h2>
                 <p className="panel-text">
@@ -640,15 +673,11 @@ export function App({ client = defaultApiClient }: AppProps) {
                       <option value="ai_assist">AI Assist (Free)</option>
                     )}
                   </select>
-                  {capabilities?.generation_available ? (
-                    <div className="form-help-text" style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted, #888)' }}>
-                      Code is indexed with static analysis and AI is used afterward for &quot;Explain this flow.&quot;
-                    </div>
-                  ) : (
-                    <div className="form-help-text" style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted, #888)' }}>
-                      AI explanation assist unavailable (no LLM generation capability).
-                    </div>
-                  )}
+                  <div className="form-help-text" style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted, #888)' }}>
+                    {capabilities?.generation_available
+                      ? 'Code is indexed with static analysis and AI is used afterward for "Explain this flow."'
+                      : 'AI explanation assist unavailable (no LLM generation capability).'}
+                  </div>
                 </div>
 
                 <div className="import-grid">
@@ -758,8 +787,9 @@ export function App({ client = defaultApiClient }: AppProps) {
                       className="btn-action"
                       style={{ backgroundColor: 'transparent', border: '1px solid var(--color-border)' }}
                       onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
+                      disabled={deletingRepoId === selectedRepo.repository_id}
                     >
-                      Delete Repository
+                      {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
                     </button>
                   </div>
                 </section>
@@ -802,6 +832,15 @@ export function App({ client = defaultApiClient }: AppProps) {
                             ↻ Refresh
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="btn-action"
+                          style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'transparent', border: '1px solid var(--color-border)' }}
+                          onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
+                          disabled={deletingRepoId === selectedRepo.repository_id}
+                        >
+                          {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
+                        </button>
                         <span className="static-banner" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
                           Static inspection — no AI token required.
                         </span>
@@ -890,28 +929,39 @@ export function App({ client = defaultApiClient }: AppProps) {
                           </span>
                         )}
                       </h2>
-                      {selectedRepo.source_type === 'github' && (
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {selectedRepo.source_type === 'github' && (
+                          <button
+                            id="btn-refresh-repo-ai"
+                            type="button"
+                            className="btn-action"
+                            style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                            onClick={() => handleRefreshRepo(selectedRepo)}
+                            disabled={
+                              !!Object.values(activeJobs).find(
+                                (j) => j.repository_id === selectedRepo.repository_id && j.status !== 'ready' && j.status !== 'failed',
+                              )
+                            }
+                            title={selectedRepo.indexed_commit_sha ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
+                          >
+                            ↻ Refresh
+                          </button>
+                        )}
                         <button
-                          id="btn-refresh-repo-ai"
                           type="button"
                           className="btn-action"
-                          style={{ fontSize: '0.8rem', padding: '4px 12px' }}
-                          onClick={() => handleRefreshRepo(selectedRepo)}
-                          disabled={
-                            !!Object.values(activeJobs).find(
-                              (j) => j.repository_id === selectedRepo.repository_id && j.status !== 'ready' && j.status !== 'failed',
-                            )
-                          }
-                          title={selectedRepo.indexed_commit_sha ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
+                          style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'transparent', border: '1px solid var(--color-border)' }}
+                          onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
+                          disabled={deletingRepoId === selectedRepo.repository_id}
                         >
-                          ↻ Refresh
+                          {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
                         </button>
-                      )}
                       {capabilities?.generation_available && !capabilities?.semantic_search_available && (
                         <span className="static-chat-badge" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, marginLeft: '8px' }}>
                           AI Assist (Static Evidence Mode)
                         </span>
                       )}
+                      </div>
                     </div>
                     {selectedRepo.source_type === 'github' && (
                       <div className="repo-meta-bar mono" style={{ fontSize: '0.78rem', color: 'var(--color-muted)', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
