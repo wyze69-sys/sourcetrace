@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient as defaultApiClient, ApiError, type ApiClient } from '../services/apiClient'
 import type { RepositoryFileItem } from '../services/types'
 
@@ -205,74 +205,64 @@ export function RepoExplorerPanel({
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
 
-  const fetchFiles = useCallback(async () => {
-    if (!repositoryId || typeof client.listRepositoryFiles !== 'function') {
-      setFiles([])
-      setLoading(false)
-      setError(null)
-      setSelectedFilePath(null)
-      return
-    }
+  const requestIdRef = useRef(0)
 
-    setLoading(true)
-    setError(null)
+  const loadFiles = useCallback(
+    async (targetRepoId: string | null) => {
+      const currentRequestId = ++requestIdRef.current
 
-    try {
-      const res = await client.listRepositoryFiles(repositoryId)
-      if (res.repository_id !== repositoryId) {
+      if (!targetRepoId || typeof client.listRepositoryFiles !== 'function') {
+        setFiles([])
+        setLoading(false)
+        setError(null)
+        setSelectedFilePath(null)
         return
       }
-      setFiles(res.files || [])
-      setExpandedFolders(extractAllFolderPaths(res.files || []))
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setError(err.message)
-      } else {
-        setError('Failed to load repository files.')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [client, repositoryId])
 
-  useEffect(() => {
-    let isCancelled = false
-
-    if (!repositoryId || typeof client.listRepositoryFiles !== 'function') {
-      setFiles([])
-      setLoading(false)
+      setLoading(true)
       setError(null)
       setSelectedFilePath(null)
-      return
-    }
 
-    setLoading(true)
-    setError(null)
-    setSelectedFilePath(null)
-
-    client
-      .listRepositoryFiles(repositoryId)
-      .then((res) => {
-        if (isCancelled) return
-        if (res.repository_id !== repositoryId) return
+      try {
+        const res = await client.listRepositoryFiles(targetRepoId)
+        if (requestIdRef.current !== currentRequestId) {
+          return
+        }
+        if (res.repository_id !== targetRepoId) {
+          return
+        }
         setFiles(res.files || [])
         setExpandedFolders(extractAllFolderPaths(res.files || []))
-        setLoading(false)
-      })
-      .catch((err) => {
-        if (isCancelled) return
-        setLoading(false)
+        setError(null)
+      } catch (err) {
+        if (requestIdRef.current !== currentRequestId) {
+          return
+        }
         if (err instanceof ApiError) {
           setError(err.message)
         } else {
           setError('Failed to load repository files.')
         }
-      })
+      } finally {
+        if (requestIdRef.current === currentRequestId) {
+          setLoading(false)
+        }
+      }
+    },
+    [client],
+  )
 
+  useEffect(() => {
+    loadFiles(repositoryId)
     return () => {
-      isCancelled = true
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      requestIdRef.current++
     }
-  }, [client, repositoryId])
+  }, [repositoryId, loadFiles])
+
+  const handleRetry = useCallback(() => {
+    loadFiles(repositoryId)
+  }, [repositoryId, loadFiles])
 
   const toggleFolder = useCallback((folderPath: string) => {
     setExpandedFolders((prev) => {
@@ -349,7 +339,7 @@ export function RepoExplorerPanel({
           <div className="form-error" style={{ marginBottom: '12px' }}>
             {error}
           </div>
-          <button type="button" className="btn-action btn-retry" onClick={fetchFiles}>
+          <button type="button" className="btn-action btn-retry" onClick={handleRetry}>
             Retry Loading Files
           </button>
         </div>

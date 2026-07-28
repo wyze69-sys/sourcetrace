@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildFileTree,
@@ -282,5 +282,55 @@ describe('RepoExplorerPanel - Component Integration & State Tests', () => {
 
     expect(folderButton).toHaveAttribute('aria-expanded', 'false')
     expect(screen.queryByText('math.py')).not.toBeInTheDocument()
+  })
+
+  it('prevents stale retry responses from overwriting the active repository explorer', async () => {
+    const mockClient = createMockClient()
+
+    let resolveRepoARetry: (val: RepositoryFileListResponse) => void = () => {}
+
+    let repoACallCount = 0
+    vi.mocked(mockClient.listRepositoryFiles).mockImplementation((repoId: string) => {
+      if (repoId === 'repo_A') {
+        repoACallCount++
+        if (repoACallCount === 1) {
+          return Promise.reject(new ApiError('Failed to load repo_A', 'ERROR', 500))
+        }
+        return new Promise<RepositoryFileListResponse>((res) => {
+          resolveRepoARetry = res
+        })
+      }
+      return Promise.resolve({
+        repository_id: 'repo_B',
+        files: [{ path: 'repo_B_file.py', language: 'python', chunk_count: 1 }],
+      })
+    })
+
+    const { rerender } = render(<RepoExplorerPanel client={mockClient} repositoryId="repo_A" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to load repo_A')).toBeInTheDocument()
+    })
+
+    const retryButton = screen.getByRole('button', { name: /Retry Loading Files/i })
+    fireEvent.click(retryButton)
+
+    rerender(<RepoExplorerPanel client={mockClient} repositoryId="repo_B" />)
+
+    await waitFor(() => {
+      expect(screen.getByText('repo_B_file.py')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      resolveRepoARetry({
+        repository_id: 'repo_A',
+        files: [{ path: 'repo_A_stale_retry.py', language: 'python', chunk_count: 1 }],
+      })
+    })
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(screen.queryByText('repo_A_stale_retry.py')).not.toBeInTheDocument()
+    expect(screen.getByText('repo_B_file.py')).toBeInTheDocument()
   })
 })
