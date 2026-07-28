@@ -100,20 +100,38 @@ class GroundedAnswerService:
         )
 
         # 5. Call LLM Generation Provider
+        raw_answer: str | None = None
         try:
             raw_answer = self._generation_provider.generate(prompt_messages)
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception:
-            raise GenerationError("Generation failed safely.") from None
+            raw_answer = None
 
         # 6. Validate Generated Answer String
-        if type(raw_answer) is not str or not raw_answer.strip():
-            raise GenerationError("Generation failed safely.")
+        is_valid_answer = (
+            raw_answer is not None
+            and type(raw_answer) is str
+            and bool(raw_answer.strip())
+            and "\x00" not in raw_answer
+            and len(raw_answer.strip()) <= self._max_answer_chars
+        )
+
+        if not is_valid_answer:
+            all_citations = tuple(item.citation for item in evidence_result.items)
+            all_snippets = tuple(item.snippet for item in evidence_result.items)
+            return GroundedAnswerResult(
+                answer=(
+                    "AI answer unavailable. Below is the retrieved static evidence "
+                    "from the indexed repository."
+                ),
+                citations=all_citations,
+                evidence=all_snippets,
+                insufficient_evidence=False,
+                chunks_retrieved=evidence_result.total_retrieved,
+            )
 
         clean_answer = raw_answer.strip()
-        if "\x00" in clean_answer or len(clean_answer) > self._max_answer_chars:
-            raise GenerationError("Generation failed safely.")
 
         # 7. Extract and Map Valid Evidence Markers
         matched_items = self._extract_valid_evidence_items(clean_answer, evidence_result.items)

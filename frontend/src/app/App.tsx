@@ -907,6 +907,11 @@ export function App({ client = defaultApiClient }: AppProps) {
                           ↻ Refresh
                         </button>
                       )}
+                      {capabilities?.generation_available && !capabilities?.semantic_search_available && (
+                        <span className="static-chat-badge" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, marginLeft: '8px' }}>
+                          AI Assist (Static Evidence Mode)
+                        </span>
+                      )}
                     </div>
                     {selectedRepo.source_type === 'github' && (
                       <div className="repo-meta-bar mono" style={{ fontSize: '0.78rem', color: 'var(--color-muted)', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
@@ -918,7 +923,9 @@ export function App({ client = defaultApiClient }: AppProps) {
                     )}
                   </div>
                   <p className="panel-text">
-                    Ask natural-language questions grounded in verified source code.
+                    {capabilities?.semantic_search_available
+                      ? 'Ask natural-language questions grounded in verified source code.'
+                      : 'Ask natural-language questions grounded in verified static code evidence.'}
                   </p>
 
                   <div className="chat-history">
@@ -928,7 +935,9 @@ export function App({ client = defaultApiClient }: AppProps) {
                         className={`chat-bubble ${msg.role === 'user' ? 'user' : 'assistant'}`}
                       >
                         <div className="bubble-role">
-                          {msg.role === 'user' ? 'Question' : 'Assistant (Grounded Evidence)'}
+                          {msg.role === 'user'
+                            ? 'Question'
+                            : `Assistant (${capabilities?.semantic_search_available ? 'Semantic Evidence' : 'Static Evidence'})`}
                         </div>
                         <div className="bubble-content">{msg.content}</div>
 

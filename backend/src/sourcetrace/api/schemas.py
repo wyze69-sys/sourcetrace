@@ -162,6 +162,10 @@ class RequestMetadata(BaseModel):
 
     latency_ms: int = Field(ge=0)
     chunks_retrieved: int = Field(ge=0)
+    retrieval_mode: Literal["static", "semantic"] = Field(
+        default="static",
+        description="Evidence retrieval mode used for this AI response ('static' or 'semantic')",
+    )
 
 
 class CreateConversationRequest(BaseModel):

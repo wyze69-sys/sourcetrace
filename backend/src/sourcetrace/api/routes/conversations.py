@@ -29,6 +29,8 @@ from sourcetrace.api.schemas import (
     message_record_to_schema,
     validate_question,
 )
+from sourcetrace.core.capabilities import evaluate_capabilities
+from sourcetrace.core.config import Settings, get_settings
 from sourcetrace.core.security import (
     SESSION_MAX_AGE_SECONDS,
     generate_conversation_id,
@@ -109,6 +111,9 @@ def _refresh_session_activity_quietly(
         pass
 
 
+
+
+
 @router.post(
     "/repositories/{repository_id}/conversations",
     response_model=CreateConversationResponse,
@@ -119,6 +124,10 @@ def _refresh_session_activity_quietly(
         status.HTTP_404_NOT_FOUND: {
             "model": ErrorEnvelope,
             "description": "Repository missing or not ready",
+        },
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {
+            "model": ErrorEnvelope,
+            "description": "Validation error or LLM provider unconfigured",
         },
         status.HTTP_500_INTERNAL_SERVER_ERROR: {
             "model": ErrorEnvelope,
@@ -136,8 +145,16 @@ def create_conversation(
     ],
     session_repo: Annotated[AnonymousSessionRepository, Depends(get_session_repository)],
     answer_service: Annotated[GroundedAnswerService, Depends(get_grounded_answer_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> CreateConversationResponse:
     """Create a new conversation and generate a grounded answer."""
+    caps = evaluate_capabilities(settings)
+    if not caps.generation_available:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="AI assistance requires a configured LLM provider.",
+        )
+
     repo = repository_repo.get_by_id(owner_session_id=owner_session_id, repository_id=repository_id)
     if repo is None or repo.status != "ready":
         raise HTTPException(
@@ -160,6 +177,7 @@ def create_conversation(
         question=validated_question,
     )
     latency_ms = max(0, int((time.monotonic() - start_time) * 1000))
+    retrieval_mode = "semantic" if caps.semantic_search_available else "static"
 
     conv_id = generate_conversation_id()
     user_msg_id = generate_message_id()
@@ -221,6 +239,7 @@ def create_conversation(
         request_metadata=RequestMetadata(
             latency_ms=latency_ms,
             chunks_retrieved=result.chunks_retrieved,
+            retrieval_mode=retrieval_mode,
         ),
     )
 
@@ -308,8 +327,16 @@ def send_message(
     ],
     session_repo: Annotated[AnonymousSessionRepository, Depends(get_session_repository)],
     answer_service: Annotated[GroundedAnswerService, Depends(get_grounded_answer_service)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> SendMessageResponse:
     """Send message in existing conversation and generate a grounded answer."""
+    caps = evaluate_capabilities(settings)
+    if not caps.generation_available:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="AI assistance requires a configured LLM provider.",
+        )
+
     repo = repository_repo.get_by_id(owner_session_id=owner_session_id, repository_id=repository_id)
     if repo is None or repo.status != "ready":
         raise HTTPException(
@@ -351,6 +378,7 @@ def send_message(
         conversation_context=history,
     )
     latency_ms = max(0, int((time.monotonic() - start_time) * 1000))
+    retrieval_mode = "semantic" if caps.semantic_search_available else "static"
 
     user_msg_id = generate_message_id()
     assistant_msg_id = generate_message_id()
@@ -409,5 +437,6 @@ def send_message(
         request_metadata=RequestMetadata(
             latency_ms=latency_ms,
             chunks_retrieved=result.chunks_retrieved,
+            retrieval_mode=retrieval_mode,
         ),
     )

@@ -1,52 +1,48 @@
-# Last Handoff
+# SourceTrace — Last Agent Handoff
 
-**Task**: REPO-001 Phase 7 — Repository-staleness gaps for Flow Trace and Impact
-**Status**: completed
-**Date**: 2026-07-27
+Task: AI-CHAT-001 — Grounded Chat without Embeddings (Static Evidence Fallback)
+Status: completed
 
----
+Files changed:
+- `backend/src/sourcetrace/retrieval/service.py` (optional `embedding_provider: EmbeddingProvider | None = None`)
+- `backend/src/sourcetrace/generation/service.py` (LLM provider exception handling returns safe static evidence result with all retrieved citations/snippets, 0 HTTP 500)
+- `backend/src/sourcetrace/api/dependencies.py` (evaluate capabilities in `get_semantic_retrieval_service` to bypass embedding provider construction when `semantic_search_available` is False; fallback provider in `get_grounded_answer_service`)
+- `backend/src/sourcetrace/api/schemas.py` (`retrieval_mode: Literal["static", "semantic"]` in `RequestMetadata`)
+- `backend/src/sourcetrace/api/routes/conversations.py` (capability check raises 422 if generation unconfigured; populates `retrieval_mode` metadata)
+- `frontend/src/app/App.tsx` (renders "AI Assist (Static Evidence Mode)" status badge and role label)
+- `frontend/src/app/App.test.tsx` (unit test for static evidence mode chat panel)
+- `backend/tests/generation/test_service.py` (updated provider failure test to verify static evidence response)
+- `backend/tests/generation/test_static_chat_fallback.py` (6 unit/integration tests for lexical fallback, zero embedding adapter construction, scoping, citations, no evidence, LLM failure safety)
+- `docs/AGENT_TASKS.yaml` (updated task status to completed)
+- `docs/PROJECT_STATE.md` (updated project state)
 
-## Files Changed
+Behavior added/changed:
+- Grounded Chat operates cleanly when LLM generation is available even if semantic vector embeddings are unavailable.
+- In fallback mode, retrieval uses bounded deterministic lexical search scoped to owner, repository, and active generation ID.
+- Zero embedding provider objects are constructed during static-evidence chat requests.
+- LLM provider failures return the retrieved static evidence with an "AI answer unavailable" notice and evidence citations/snippets.
+- Grounded Chat API response includes `retrieval_mode: "static"` (or `"semantic"`).
+- Frontend Chat UI surfaces "AI Assist (Static Evidence Mode)" badge and role indicators.
 
-- `backend/src/sourcetrace/retrieval/trace.py` — Updated `FlowTraceService.trace(...)` to accept `repository: RepositoryRecord | None = None`, append `repo_stale` gap when `repository.is_stale is True`, and optimize `stale_index` detection via authoritative `repository.parser_versions`
-- `backend/src/sourcetrace/retrieval/impact.py` — Updated `ChangeImpactService.impact(...)` and `preview_diff(...)` to accept `repository: RepositoryRecord | None = None`, append `repo_stale` gap when `repository.is_stale is True`, and optimize `stale_index` detection via `repository.parser_versions`
-- `backend/src/sourcetrace/api/routes/trace.py` — Passed `repository=repo` into `service.trace(...)`
-- `backend/src/sourcetrace/api/routes/impact.py` — Passed `repository=repo` into `service.impact(...)` and `service.preview_diff(...)`
-- `docs/api/v1/trace-impact.md` — Documented `repo_stale` gap kind in Flow Trace and Change Impact contract specifications
-- `backend/tests/retrieval/test_repo_stale_gaps_phase7.py` — Added unit and integration test suite covering `repo_stale` gaps, fresh/unknown handling, and legacy metadata fallback
+Commands run:
+- `uv run pytest tests/generation/test_static_chat_fallback.py tests/generation/test_service.py` (22 passed)
+- `uv run pytest` (1371 passed, 5 skipped)
+- `npm test -- --run` (71 passed across 4 test files)
+- `uv run ruff check --fix src/ tests/` (All checks passed!)
+- `npm run lint` (0 errors, 2 fast-refresh warnings)
+- `npm run build` (32 modules transformed, tsc -b clean)
+- `git diff --check` (0 whitespace errors)
+- `uv run python test_live_chat_fallback.py` (Real live acceptance test against local MongoDB and OpenRouter LLM: HTTP 201 OK, `retrieval_mode: "static"`, grounded response)
 
----
+Verification results:
+- pytest: 1371 passed, 0 failures
+- vitest: 71 passed, 0 failures
+- build: clean
+- ruff/lint: clean
+- Live chat acceptance: HTTP 201 OK, `retrieval_mode=static`
 
-## Behavior Added / Changed
+Known limitations:
+- If no lexical chunks match the user question keywords, chat returns the standard truthful no-evidence response.
 
-- **`repo_stale` Gap Detection**: When `repository.is_stale is True`, Flow Trace and Change Impact (symbol and diff preview) append a `repo_stale` gap. Detail text includes the indexed commit SHA and last-indexed timestamp when present (e.g. `Repository index is out of date (indexed commit abc1234; last indexed 2026-07-27T12:00:00+00:00); refresh repository to update.`).
-- **`stale_index` Optimization**: When `repository.parser_versions` is non-empty and `flow_evidence_complete` is `True`, `stale_index` gap scanning is bypassed. If `flow_evidence_complete` is `False`, only actual outdated chunks trigger `stale_index`.
-- **Legacy Fallback**: Legacy repositories with empty `parser_versions` retain chunk-level `stale_index` checks and are not falsely marked stale merely because `flow_evidence_complete` defaults `False`.
-- **Preserved Invariants**: Zero-token static mode, confidence scores, symbol citations, explain-mode degradation, and ownership controls are unchanged.
-
----
-
-## Commands Run & Results
-
-```
-pytest tests/retrieval/test_repo_stale_gaps_phase7.py  -> 3 passed
-pytest (backend)                                       -> 0 failures (all passed)
-npm test -- --run (frontend)                           -> 67 passed (4 test files)
-npm run build (frontend)                               -> 32 modules, tsc -b clean
-ruff check src/ tests/                                 -> All checks passed!
-git diff --check                                       -> 0 whitespace errors
-```
-
----
-
-## API / Schema Impact
-
-- Flow Trace and Change Impact responses may include gap kind `repo_stale`.
-- Documented in `docs/api/v1/trace-impact.md`.
-
----
-
-## Security Considerations
-
-- Flow Trace and Change Impact analysis remains owner-isolated and deterministic.
-- Zero external calls made during static mode trace/impact analysis.
+Recommended next task:
+Select next ready task from `docs/AGENT_TASKS.yaml`.

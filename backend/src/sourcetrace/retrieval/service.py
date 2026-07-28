@@ -34,7 +34,7 @@ class SemanticRetrievalService:
         self,
         repository_repo: RepositoryRepository,
         code_chunk_repo: CodeChunkRepository,
-        embedding_provider: EmbeddingProvider,
+        embedding_provider: EmbeddingProvider | None = None,
         *,
         max_evidence_results: int = 5,
         max_snippet_chars: int = 2000,

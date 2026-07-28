@@ -1340,3 +1340,59 @@ tasks:
       verified_by:
         - pytest tests/retrieval/test_repo_stale_gaps_phase7.py → 3 passed
         - pytest → 0 failures; ruff clean; git diff --check clean
+
+  - id: AI-UX-001
+    title: Add simple free AI option to SourceTrace import
+    phase: 8
+    status: completed
+    dependencies:
+      - REPO-001-P7
+    owner: agent
+    allowed_paths:
+      - frontend/**
+      - backend/**
+    completion_evidence:
+      commits: [7081bec]
+      implementation_paths:
+        - frontend/src/app/App.tsx
+        - frontend/src/services/apiClient.ts
+        - frontend/src/app/App.test.tsx
+        - frontend/src/services/apiClient.test.ts
+        - backend/tests/api/test_capabilities_route.py
+        - backend/tests/core/test_provider_selection.py
+      verified_by:
+        - pytest (1365 passed, 0 failures)
+        - vitest (70 passed, 4 test files)
+        - npm run build clean (32 modules, tsc -b clean)
+        - ruff check clean, eslint clean, git diff --check clean
+        - Real browser acceptance script (browser_acceptance.py PASSED)
+
+  - id: AI-CHAT-001
+    title: Grounded Chat without Embeddings (Static Evidence Fallback)
+    phase: 8
+    status: completed
+    dependencies:
+      - AI-UX-001
+    owner: agent
+    allowed_paths:
+      - backend/**
+      - frontend/**
+      - docs/**
+    completion_evidence:
+      commits: []  # local commit pending
+      implementation_paths:
+        - backend/src/sourcetrace/retrieval/service.py
+        - backend/src/sourcetrace/generation/service.py
+        - backend/src/sourcetrace/api/dependencies.py
+        - backend/src/sourcetrace/api/schemas.py
+        - backend/src/sourcetrace/api/routes/conversations.py
+        - frontend/src/app/App.tsx
+        - frontend/src/app/App.test.tsx
+        - backend/tests/generation/test_service.py
+        - backend/tests/generation/test_static_chat_fallback.py
+      verified_by:
+        - pytest (1371 passed, 0 failures)
+        - vitest (71 passed, 4 test files)
+        - npm run build clean (32 modules, tsc -b clean)
+        - ruff check clean, eslint clean, git diff --check clean
+        - Real live acceptance script (test_live_chat_fallback.py PASSED, HTTP 201, retrieval_mode=static)

@@ -275,17 +275,20 @@ def test_retrieval_error_conversion() -> None:
     assert str(exc_info.value) == "Generation failed safely."
 
 
-def test_provider_failure_conversion() -> None:
+def test_provider_failure_returns_static_evidence() -> None:
     ev = _make_evidence()
     retrieval_service = FakeRetrievalService(GroundedEvidenceResult(items=(ev,), total_retrieved=1))
     provider = FakeGenerationProvider(RuntimeError("API Secret Key Leak"))
     service = GroundedAnswerService(retrieval_service, provider)
 
-    with pytest.raises(GenerationError) as exc_info:
-        service.generate_answer("sess_001", "repo_001", "Question")
+    res = service.generate_answer("sess_001", "repo_001", "Question")
 
-    assert str(exc_info.value) == "Generation failed safely."
-    assert "Secret Key" not in str(exc_info.value)
+    assert res.insufficient_evidence is False
+    assert "AI answer unavailable" in res.answer
+    assert "API Secret Key Leak" not in res.answer
+    assert len(res.citations) == 1
+    assert res.citations[0].relative_path == "sourcetrace/core/config.py"
+    assert len(res.evidence) == 1
 
 
 # ---------------------------------------------------------------------------

@@ -390,6 +390,9 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
       expect(screen.getByText('Active-Repo')).toBeInTheDocument()
     })
 
+    const repoCard = screen.getByRole('button', { name: /Active-Repo/i })
+    await userEvent.click(repoCard)
+
     const refreshBtn = screen.getByRole('button', { name: /↻ Refresh/i })
     await userEvent.click(refreshBtn)
 
@@ -495,6 +498,51 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
 
     expect(
       screen.getByText('AI explanation assist unavailable (no LLM generation capability).'),
+    ).toBeInTheDocument()
+  })
+
+  it('renders AI Assist (Static Evidence Mode) badge in chat panel when generation is available but semantic search is false', async () => {
+    const mockReadyRepo = {
+      repository_id: 'repo_static_chat_1',
+      name: 'Static-Chat-Repo',
+      source_type: 'github' as const,
+      github_url: 'https://github.com/octocat/Static-Chat-Repo',
+      status: 'ready' as const,
+      file_count: 10,
+      chunk_count: 25,
+      index_mode: 'ai_assist' as const,
+      created_at: '2026-07-28T00:00:00Z',
+      updated_at: '2026-07-28T00:00:00Z',
+    }
+
+    const mockClient = {
+      getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-28' }),
+      getCapabilities: vi.fn().mockResolvedValue({
+        allowed_index_modes: ['static'],
+        default_index_mode: 'static',
+        lexical_search_available: true,
+        semantic_search_available: false,
+        generation_available: true,
+      }),
+      listRepositories: vi.fn().mockResolvedValue({ repositories: [mockReadyRepo] }),
+      getConversation: vi.fn().mockResolvedValue(null),
+    } as unknown as ApiClient
+
+    render(<App client={mockClient} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('API Online (1.0.0)')).toBeInTheDocument()
+      expect(screen.getByText('Static-Chat-Repo')).toBeInTheDocument()
+    })
+
+    const repoCard = screen.getByRole('button', { name: /Static-Chat-Repo/i })
+    await userEvent.click(repoCard)
+
+    await waitFor(() => {
+      expect(screen.getByText('AI Assist (Static Evidence Mode)')).toBeInTheDocument()
+    })
+    expect(
+      screen.getByText('Ask natural-language questions grounded in verified static code evidence.'),
     ).toBeInTheDocument()
   })
 })

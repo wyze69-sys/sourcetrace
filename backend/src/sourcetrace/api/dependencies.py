@@ -1,7 +1,7 @@
 """FastAPI dependencies for SourceTrace application endpoints."""
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Annotated, Protocol
+from typing import TYPE_CHECKING, Annotated, Any, Protocol
 
 from fastapi import BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -325,16 +325,39 @@ def get_code_chunk_repository() -> CodeChunkRepository:
     return MongoCodeChunkRepository()
 
 
+class _UnconfiguredGenerationProvider:
+    """Fallback generation provider when LLM adapter cannot be constructed."""
+
+    @property
+    def model_identifier(self) -> str:
+        return "unconfigured"
+
+    def generate(self, messages: Any) -> str:
+        from sourcetrace.core.exceptions import GenerationError
+
+        raise GenerationError("LLM generation provider is not configured.")
+
+
 def get_semantic_retrieval_service(
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
     code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SemanticRetrievalService:
     """Dependency provider for SemanticRetrievalService.
 
-    Selects the embedding provider based on SOURCETRACE_EMBEDDING_PROVIDER
-    (default: "gemini"). No OpenAI client is constructed when Gemini is selected.
+    When semantic embeddings are unavailable (semantic_search_available=False),
+    returns SemanticRetrievalService with embedding_provider=None (0 embedding client created).
     """
+    from sourcetrace.core.capabilities import evaluate_capabilities
     from sourcetrace.retrieval.service import SemanticRetrievalService
+
+    caps = evaluate_capabilities(settings)
+    if not caps.semantic_search_available:
+        return SemanticRetrievalService(
+            repository_repo=repository_repo,
+            code_chunk_repo=code_chunk_repo,
+            embedding_provider=None,
+        )
 
     provider_name = (settings.embedding_provider or "").strip().lower()
 
@@ -350,6 +373,7 @@ def get_semantic_retrieval_service(
         raise RuntimeError(f"Unsupported embedding provider: {provider_name!r}")
 
     return SemanticRetrievalService(
+        repository_repo=repository_repo,
         code_chunk_repo=code_chunk_repo,
         embedding_provider=embedding_adapter,
     )
@@ -382,9 +406,14 @@ def get_grounded_answer_service(
     """Dependency provider for GroundedAnswerService."""
     from sourcetrace.generation.service import GroundedAnswerService
 
+    try:
+        gen_adapter = build_generation_adapter(settings)
+    except Exception:
+        gen_adapter = _UnconfiguredGenerationProvider()
+
     return GroundedAnswerService(
         retrieval_service=retrieval_service,
-        generation_provider=build_generation_adapter(settings),
+        generation_provider=gen_adapter,
     )
 
 

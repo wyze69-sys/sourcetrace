@@ -1,16 +1,13 @@
 # SourceTrace — Project State
 
 **Recorded By**: AI Agent
-**Last Updated**: 2026-07-27 (post REPO-001 Phase 4 commit 09e7b04)
+**Last Updated**: 2026-07-28 (post AI-CHAT-001)
 
 ---
 
 ## Current Stage
 
-REPO-001 all four phases implemented and verified. The repository refresh
-feature is complete: metadata (Phase 1), generation-aware storage (Phase 2),
-GitHub SHA metadata capture (Phase 3), and the refresh route + generation-safe
-worker with atomic pointer switch (Phase 4).
+AI-CHAT-001 implemented and verified. Grounded Chat uses bounded deterministic lexical static evidence for active repository generation when generation is available but semantic embeddings are unavailable. Zero embedding adapters constructed in fallback path. Returns grounded citations, truthful no-evidence responses when 0 chunks match, and safe static evidence notice on LLM provider failure (0 HTTP 500 errors). Updated frontend chat status label to "AI Assist (Static Evidence Mode)".
 
 ---
 
