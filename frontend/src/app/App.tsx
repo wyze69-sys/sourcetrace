@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient as defaultApiClient, ApiError, type ApiClient } from '../services/apiClient'
 import { FlowTracePanel } from './FlowTracePanel'
 import { ImpactPanel } from './ImpactPanel'
+import { RepoExplorerPanel } from './RepoExplorerPanel'
 import type {
   EvidenceSearchItem,
   HealthResponse,
@@ -751,6 +752,14 @@ export function App({ client = defaultApiClient }: AppProps) {
                   </form>
                 </div>
               </section>
+
+              {selectedRepo && (
+                <RepoExplorerPanel
+                  client={client}
+                  repositoryId={selectedRepo.repository_id}
+                  repositoryName={selectedRepo.name}
+                />
+              )}
 
               {/* Selected Repo Search, Chat, Failed Error Display, or Empty Status */}
               {selectedRepo && selectedRepo.status === 'failed' ? (

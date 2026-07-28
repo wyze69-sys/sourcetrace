@@ -1435,7 +1435,7 @@ tasks:
       - backend/**
       - docs/**
     completion_evidence:
-      commits: []  # local commit pending
+      commits: [9dc94c1]
       implementation_paths:
         - backend/src/sourcetrace/api/routes/repositories.py
         - backend/src/sourcetrace/api/schemas.py
@@ -1446,4 +1446,45 @@ tasks:
         - pytest (1380 passed, 0 failures)
         - uv run ruff check . (clean)
         - git diff --check (clean)
+
+  - id: RUNTIME-UX-003
+    title: Repository Explorer, Part 2/3: Explorer-first file tree
+    phase: 8
+    status: completed
+    dependencies:
+      - RUNTIME-UX-002
+    owner: agent
+    allowed_paths:
+      - frontend/**
+      - docs/**
+    completion_evidence:
+      commits: [00886af]
+      implementation_paths:
+        - frontend/src/services/types.ts
+        - frontend/src/services/apiClient.ts
+        - frontend/src/app/RepoExplorerPanel.tsx
+        - frontend/src/app/RepoExplorerPanel.test.tsx
+        - frontend/src/app/App.tsx
+        - frontend/src/styles/index.css
+      verified_by:
+        - npx vitest run (83 passed across 5 test files, 0 failures)
+        - npm run lint (0 errors)
+        - npm run build (dist bundle created, 33 modules, tsc -b clean)
+        - git diff --check (clean)
+        - Real live acceptance script (scratch/test_live_explorer.py PASSED against live endpoint)
+
+  - id: RUNTIME-UX-004
+    title: Repository Explorer, Part 3/3: Source Code Viewer & Evidence Navigation
+    phase: 8
+    status: ready
+    dependencies:
+      - RUNTIME-UX-003
+    owner: unassigned
+    allowed_paths:
+      - frontend/**
+      - backend/**
+      - docs/**
+    objective: >-
+      Implement source-file content viewing and citation jumping within the Explorer-first workspace.
+
 

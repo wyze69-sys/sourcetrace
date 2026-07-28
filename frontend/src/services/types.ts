@@ -98,6 +98,17 @@ export interface DeleteRepositoryResponse {
   repository_id: string
 }
 
+export interface RepositoryFileItem {
+  path: string
+  language: string
+  chunk_count: number
+}
+
+export interface RepositoryFileListResponse {
+  repository_id: string
+  files: RepositoryFileItem[]
+}
+
 export interface Citation {
   relative_path: string
   start_line: number

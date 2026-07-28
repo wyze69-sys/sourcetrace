@@ -13,6 +13,7 @@ import type {
   ImpactMode,
   IndexingJob,
   Repository,
+  RepositoryFileListResponse,
   RepositoryListResponse,
   SendMessageRequest,
   SendMessageResponse,
@@ -318,6 +319,14 @@ export class ApiClient {
 
   async listRepositories(): Promise<RepositoryListResponse> {
     return this.request<RepositoryListResponse>('/repositories', { method: 'GET' }, 'protected')
+  }
+
+  async listRepositoryFiles(repositoryId: string): Promise<RepositoryFileListResponse> {
+    return this.request<RepositoryFileListResponse>(
+      `/repositories/${encodeURIComponent(repositoryId)}/files`,
+      { method: 'GET' },
+      'protected',
+    )
   }
 
   async createGitHubRepository(githubUrl: string, indexMode?: string): Promise<CreateRepositoryResponse> {

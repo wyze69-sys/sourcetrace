@@ -1,57 +1,44 @@
 # SourceTrace — Last Agent Handoff
 
-Task: RUNTIME-UX-002 — Repository Explorer, Part 1/3: real file-list API
+Task: RUNTIME-UX-003 — Repository Explorer, Part 2/3: Explorer-first file tree
 Status: completed
 
 Files changed:
-- `backend/src/sourcetrace/api/schemas.py` (added `RepositoryFileItem` and `RepositoryFileListResponse` schemas)
-- `backend/src/sourcetrace/api/routes/repositories.py` (added authenticated, owner-scoped `GET /api/v1/repositories/{repository_id}/files` endpoint)
-- `backend/tests/api/test_repository_files_route.py` (added 5 route unit and contract tests)
-- `backend/tests/api/test_resource_auth.py` (added `GET /api/v1/repositories/{repository_id}/files` to protected endpoints list)
-- `docs/CODEBASE_MAP.md` (updated map with file list endpoint and test file)
-- `docs/FEATURE_REGISTRY.yaml` (registered `REPOSITORY-EXPLORER-FILE-LIST` capability)
-- `docs/AGENT_TASKS.yaml` (updated RUNTIME-UX-002 status to completed)
+- `frontend/src/services/types.ts` (added `RepositoryFileItem` and `RepositoryFileListResponse` interfaces)
+- `frontend/src/services/apiClient.ts` (added `listRepositoryFiles(repositoryId: string)` client method)
+- `frontend/src/app/RepoExplorerPanel.tsx` (created Explorer-first file tree component with tree transformation, folder-before-file alphabetical sorting, folder expand/collapse state, selection highlighting, language/chunk badges, first-use guidance, loading/empty/error states with retry, and race-condition guards)
+- `frontend/src/app/RepoExplorerPanel.test.tsx` (created Vitest unit and integration tests for file tree building, folder-before-file sorting, selection state, loading/empty/error states, repo selection request trigger, and stale request cancellation)
+- `frontend/src/app/App.tsx` (integrated `RepoExplorerPanel` into workspace when a repository is selected)
+- `frontend/src/styles/index.css` (added styles for `.repo-explorer-panel`, `.file-tree-container`, `.tree-item`, `.tree-file.selected`, `.file-lang-badge`, `.file-chunk-badge`)
+- `docs/AGENT_TASKS.yaml` (marked RUNTIME-UX-003 completed, updated RUNTIME-UX-002 commit SHA to 9dc94c1, unblocked RUNTIME-UX-004 to ready)
 - `docs/PROJECT_STATE.md` (updated project state and verified capabilities)
+- `docs/CODEBASE_MAP.md` (added RepoExplorerPanel.tsx and RepoExplorerPanel.test.tsx)
+- `docs/FEATURE_REGISTRY.yaml` (registered REPOSITORY-EXPLORER-FILE-TREE capability)
 
 Behavior added/changed:
-- Added `GET /api/v1/repositories/{repository_id}/files` authenticated endpoint for anonymous session owners.
-- Missing or non-owned repositories return uniform HTTP 404 Not Found response (`detail="Repository not found"`).
-- Returns a deterministic, unique list of indexed files derived strictly from persisted code chunks for the repository's `active_generation_id`.
-- Each file entry includes `path`, `language`, and `chunk_count` metadata.
-- Duplicate chunks for the same file path collapse into a single file item with aggregated `chunk_count`.
-- Returns files sorted alphabetically by `path`.
-- An owned repository with no indexed files returns `200 OK` with `files: []` (not an error).
-
-Endpoint / Response shape:
-`GET /api/v1/repositories/{repository_id}/files`
-Response 200 OK:
-```json
-{
-  "repository_id": "repo_123",
-  "files": [
-    {
-      "path": "src/main.py",
-      "language": "python",
-      "chunk_count": 3
-    }
-  ]
-}
-```
+- Frontend API client support for `GET /api/v1/repositories/{repository_id}/files`.
+- Automatic transformation of flat API paths into expandable nested folder and file tree nodes.
+- Tree nodes sort folders before files, alphabetically within each group using locale-aware comparison.
+- Folder expand/collapse controls with "Expand All" and "Collapse All" toggle buttons; default folder paths start expanded for instant file visibility.
+- File names display lightweight language badges (e.g. `typescript`, `python`) and chunk counts (`3 chunks`).
+- File selection visually highlights the selected item (`.selected` class and `aria-selected="true"`).
+- Concise first-use guidance: *"Choose a file to orient yourself, or search/ask a question about the repository."*
+- Full support for empty repo, loading, and error states with a visible retry button.
+- Race-condition guard: stale file-list responses from previously selected repositories are discarded if the active selection changes before the request resolves.
 
 Commands run:
-- `uv run pytest tests/api/test_repository_files_route.py` (5 passed)
-- `uv run pytest` (1380 passed, 5 skipped)
-- `uv run ruff check .` (All checks passed!)
+- `npx vitest run` (83 passed across 5 test files, 0 failures)
+- `npm run lint` (0 errors)
+- `npm run build` (built in 1.59s, 33 modules transformed, tsc -b clean)
 - `git diff --check` (0 whitespace errors)
-
-Commit:
-- Local commit: pending (to be created before handoff)
+- `uv run python scratch/test_live_explorer.py` (PASSED live acceptance check against API endpoint)
 
 Verification results:
-- pytest: 1380 passed, 0 failures
-- ruff: clean
-- git diff --check: clean
+- Vitest: 83 passed across 5 test files (100% pass)
+- ESLint: 0 errors
+- Vite build: clean
+- Git diff check: clean
+- Real live acceptance script: PASSED
 
-Constraints affecting Part 2 (frontend tree UI):
-- Files returned by `GET /files` are flat relative paths (e.g. `backend/src/main.py`). Part 2 tree UI should split these paths by `/` to render directory hierarchy nodes.
-- Minimal file item schema properties are: `path: string`, `language: string`, `chunk_count: number`.
+Recommended next task:
+- `RUNTIME-UX-004` — Repository Explorer, Part 3/3: Source Code Viewer & Evidence Navigation
