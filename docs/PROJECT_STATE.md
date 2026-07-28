@@ -1,13 +1,13 @@
 # SourceTrace — Project State
 
 **Recorded By**: AI Agent
-**Last Updated**: 2026-07-28 (post RUNTIME-UX-001)
+**Last Updated**: 2026-07-28 (post RUNTIME-UX-002)
 
 ---
 
 ## Current Stage
 
-RUNTIME-UX-001 implemented and verified. Restored owner-scoped repository deletion (`DELETE /api/v1/repositories/{repository_id}`) with uniform HTTP 404 for missing/non-owned repositories. Safely deletes messages, conversations, code chunks, indexing jobs, and repository record in strict dependency order, and releases anonymous session quota slot (`active_repository_count` decremented). Mapped HTTP 429 quota error during import to a clear user message explaining deletion requirement. Verified with backend pytest (4 passed in `test_delete_repository_route.py`, 1375 passed full suite), frontend vitest (73 passed), clean vite build, ruff linter, git diff --check, and a live acceptance test (`test_live_delete_repo_and_quota.py`) proving deletion releases quota and allows subsequent import.
+RUNTIME-UX-002 implemented and verified. Added authenticated, owner-scoped `GET /api/v1/repositories/{repository_id}/files` endpoint returning a deterministic list of unique, path-sorted indexed files for the active generation, with minimal language and chunk_count metadata. Derived strictly from persisted code chunks (0 GitHub API calls, 0 filesystem scans, 0 synthetic trees). Enforces owner isolation with uniform 404 for missing/non-owned repositories, and returns 200 OK with empty files list for repositories with no indexed files. Verified with focused pytest suite (5 passed in `test_repository_files_route.py`), full pytest suite (1380 passed), ruff linter, and git diff --check.
 
 ---
 
@@ -19,7 +19,7 @@ RUNTIME-UX-001 implemented and verified. Restored owner-scoped repository deleti
 | Anonymous session management (signed cookie) | ✅ Verified | pytest |
 | Repository record domain model + validation | ✅ Verified | pytest |
 | MongoDB Atlas storage layer (repositories, chunks, sessions) | ✅ Verified | pytest |
-| Ownership-scoped API routes (repository CRUD + DELETE) | ✅ Verified | `test_delete_repository_route.py`, `test_live_delete_repo_and_quota.py` |
+| Ownership-scoped API routes (repository CRUD + DELETE + files list) | ✅ Verified | `test_delete_repository_route.py`, `test_repository_files_route.py` |
 | ZIP/GitHub source acquisition (safety-first) | ✅ Verified | pytest |
 | Repository indexing service | ✅ Verified | pytest |
 | Code chunking (Python AST + Subprocess-Isolated Tree-Sitter AST) | ✅ Verified | pytest |
@@ -76,7 +76,7 @@ RUNTIME-UX-001 implemented and verified. Restored owner-scoped repository deleti
 
 ## Active Task
 
-**RUNTIME-UX-001 completed.** Implemented owner-scoped `DELETE /api/v1/repositories/{repository_id}`, uniform HTTP 404 for missing/non-owned repositories, cascading record deletion in strict dependency order (messages, conversations, code_chunks, indexing_jobs, repository_record), and session quota slot release. Mapped HTTP 429 quota error to clear recovery message in UI.
+**RUNTIME-UX-002 completed.** Implemented `GET /api/v1/repositories/{repository_id}/files` endpoint returning a unique, path-sorted list of indexed files for the repository's active generation, with `path`, `language`, and `chunk_count` metadata. Derived exclusively from stored code chunk records. Returns uniform HTTP 404 for non-owned or missing repositories, and 200 OK with empty files list for repositories with no indexed files.
 
 ---
 
@@ -89,14 +89,11 @@ RUNTIME-UX-001 implemented and verified. Restored owner-scoped repository deleti
 
 ---
 
-## Verification Facts (Fresh, 2026-07-28 post-RUNTIME-UX-001)
+## Verification Facts (Fresh, 2026-07-28 post-RUNTIME-UX-002)
 
 ```
-pytest tests/api/test_delete_repository_route.py                    → 4 passed
-pytest                                                                → 1375 passed, 5 skipped
-npx vitest run (frontend)                                            → 73 passed (4 test files)
-npm run build (frontend)                                             → 32 modules, tsc -b clean
+pytest tests/api/test_repository_files_route.py                     → 5 passed
+pytest                                                                → 1380 passed, 5 skipped
 uv run ruff check .                                                  → All checks passed!
 git diff --check                                                      → 0 whitespace errors
-live acceptance test (scratch/test_live_delete_repo_and_quota.py)  → PASSED
 ```

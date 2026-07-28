@@ -46,6 +46,7 @@ PROTECTED_ENDPOINTS = [
     ),
     ("GET", "/api/v1/repositories", {}),
     ("GET", "/api/v1/repositories/repo_123", {}),
+    ("GET", "/api/v1/repositories/repo_123/files", {}),
     (
         "POST",
         "/api/v1/repositories",

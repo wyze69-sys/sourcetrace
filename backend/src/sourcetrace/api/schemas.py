@@ -131,6 +131,22 @@ class DeleteRepositoryResponse(BaseModel):
     repository_id: str
 
 
+class RepositoryFileItem(BaseModel):
+    """Metadata for an indexed file within a repository."""
+
+    path: str = Field(description="Relative file path within the repository")
+    language: str = Field(description="Programming language or file type identifier")
+    chunk_count: int = Field(ge=1, description="Number of indexed code chunks for this file")
+
+
+class RepositoryFileListResponse(BaseModel):
+    """Response payload containing a list of indexed files for a repository."""
+
+    repository_id: str
+    files: list[RepositoryFileItem]
+
+
+
 class Citation(BaseModel):
     """Citation metadata for a cited code symbol and file location."""
 

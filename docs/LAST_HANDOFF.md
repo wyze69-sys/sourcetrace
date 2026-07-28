@@ -1,48 +1,57 @@
 # SourceTrace — Last Agent Handoff
 
-Task: RUNTIME-UX-001 — Repository Deletion and Quota Recovery
+Task: RUNTIME-UX-002 — Repository Explorer, Part 1/3: real file-list API
 Status: completed
 
 Files changed:
-- `backend/src/sourcetrace/api/routes/repositories.py` (added `DELETE /api/v1/repositories/{repository_id}` route with owner authorization, uniform 404, dependency-order cascading record deletion, and session slot release)
-- `backend/src/sourcetrace/api/schemas.py` (added `DeleteRepositoryResponse` schema)
-- `frontend/src/services/types.ts` (added `repository_id: string` to `DeleteRepositoryResponse` interface)
-- `frontend/src/app/App.tsx` (updated `handleDeleteRepo` for loading state, visible success notice, safe error surface, and HTTP 429 quota error mapping)
-- `backend/tests/api/test_delete_repository_route.py` (4 unit/integration tests for success, 404 nonexistent, 404 non-owned, failed repo deletion, and quota recovery)
-- `frontend/src/app/App.test.tsx` (added vitest tests for repository deletion UI and quota error mapping)
-- `docs/AGENT_TASKS.yaml` (updated RUNTIME-UX-001 status to completed)
-- `docs/PROJECT_STATE.md` (updated project state with RUNTIME-UX-001 capability)
+- `backend/src/sourcetrace/api/schemas.py` (added `RepositoryFileItem` and `RepositoryFileListResponse` schemas)
+- `backend/src/sourcetrace/api/routes/repositories.py` (added authenticated, owner-scoped `GET /api/v1/repositories/{repository_id}/files` endpoint)
+- `backend/tests/api/test_repository_files_route.py` (added 5 route unit and contract tests)
+- `backend/tests/api/test_resource_auth.py` (added `GET /api/v1/repositories/{repository_id}/files` to protected endpoints list)
+- `docs/CODEBASE_MAP.md` (updated map with file list endpoint and test file)
+- `docs/FEATURE_REGISTRY.yaml` (registered `REPOSITORY-EXPLORER-FILE-LIST` capability)
+- `docs/AGENT_TASKS.yaml` (updated RUNTIME-UX-002 status to completed)
+- `docs/PROJECT_STATE.md` (updated project state and verified capabilities)
 
 Behavior added/changed:
-- Restored `DELETE /api/v1/repositories/{repository_id}` endpoint for authenticated anonymous session owners.
-- Missing or non-owned repositories return uniform HTTP 404 Not Found response.
-- Deletion removes messages, conversations, code chunks, indexing jobs, and repository record in strict dependency order.
-- Decrements anonymous session's `active_repository_count`, immediately freeing quota for new repository imports.
-- Frontend deletion flow provides loading state ('Deleting...'), visible success banner ('Repository deleted successfully.'), and safe error messages; never silently swallows failures.
-- HTTP 429 quota errors during GitHub or ZIP imports are mapped in UI to: "Repository limit reached (3 max). Delete an existing repository before importing another."
+- Added `GET /api/v1/repositories/{repository_id}/files` authenticated endpoint for anonymous session owners.
+- Missing or non-owned repositories return uniform HTTP 404 Not Found response (`detail="Repository not found"`).
+- Returns a deterministic, unique list of indexed files derived strictly from persisted code chunks for the repository's `active_generation_id`.
+- Each file entry includes `path`, `language`, and `chunk_count` metadata.
+- Duplicate chunks for the same file path collapse into a single file item with aggregated `chunk_count`.
+- Returns files sorted alphabetically by `path`.
+- An owned repository with no indexed files returns `200 OK` with `files: []` (not an error).
+
+Endpoint / Response shape:
+`GET /api/v1/repositories/{repository_id}/files`
+Response 200 OK:
+```json
+{
+  "repository_id": "repo_123",
+  "files": [
+    {
+      "path": "src/main.py",
+      "language": "python",
+      "chunk_count": 3
+    }
+  ]
+}
+```
 
 Commands run:
-- `uv run pytest tests/api/test_delete_repository_route.py` (4 passed)
-- `uv run pytest` (1375 passed, 5 skipped)
-- `npx vitest run` (73 passed across 4 test files)
+- `uv run pytest tests/api/test_repository_files_route.py` (5 passed)
+- `uv run pytest` (1380 passed, 5 skipped)
 - `uv run ruff check .` (All checks passed!)
-- `npm run lint` (0 errors)
-- `npm run build` (32 modules transformed, tsc -b clean)
 - `git diff --check` (0 whitespace errors)
-- `uv run python C:\Users\User\.gemini\antigravity\brain\0418d695-03cc-464d-a06a-61e555bf299f\scratch\test_live_delete_repo_and_quota.py` (Live acceptance test: 429 quota enforcement, 200 repo deletion, DB cleanup, slot release, 202 import recovery)
 
 Commit:
-- Local commit: `2445492` (`fix(repositories): restore deletion and quota recovery`)
+- Local commit: pending (to be created before handoff)
 
 Verification results:
-- pytest: 1375 passed, 0 failures
-- vitest: 73 passed, 0 failures
-- build: clean
-- ruff/lint: clean
-- Live deletion & quota acceptance: PASSED
+- pytest: 1380 passed, 0 failures
+- ruff: clean
+- git diff --check: clean
 
-Known limitations:
-- Active background indexing jobs for a repository should ideally be cancelled before deletion; current deletion removes job records directly from DB.
-
-Recommended next task:
-Select next ready task from `docs/AGENT_TASKS.yaml`.
+Constraints affecting Part 2 (frontend tree UI):
+- Files returned by `GET /files` are flat relative paths (e.g. `backend/src/main.py`). Part 2 tree UI should split these paths by `/` to render directory hierarchy nodes.
+- Minimal file item schema properties are: `path: string`, `language: string`, `chunk_count: number`.

@@ -39,6 +39,8 @@ from sourcetrace.api.schemas import (
     DeleteRepositoryResponse,
     ErrorEnvelope,
     Repository,
+    RepositoryFileItem,
+    RepositoryFileListResponse,
     RepositoryListResponse,
     job_record_to_schema,
     repository_record_to_schema,
@@ -534,6 +536,87 @@ def get_repository(
                 pass
 
     return repository_record_to_schema(record)
+
+
+@router.get(
+    "/repositories/{repository_id}/files",
+    response_model=RepositoryFileListResponse,
+    operation_id="listRepositoryFiles",
+    responses={
+        **UNAUTHORIZED_RESPONSE,
+        status.HTTP_404_NOT_FOUND: {
+            "model": ErrorEnvelope,
+            "description": "Repository not found",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorEnvelope,
+            "description": "Unexpected internal server error",
+        },
+    },
+)
+def list_repository_files(
+    repository_id: str,
+    owner_session_id: CurrentOwnerId,
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
+    code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
+) -> RepositoryFileListResponse:
+    """List unique indexed files for a repository owned by the caller's session."""
+    clean_repo_id = repository_id.strip()
+
+    try:
+        record = repository_repo.get_by_id(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    if record is None or record.owner_session_id != owner_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Repository not found",
+        )
+
+    try:
+        chunks = code_chunk_repo.list_by_repository(
+            owner_session_id=owner_session_id,
+            repository_id=clean_repo_id,
+            generation_id=record.active_generation_id,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        ) from exc
+
+    files_map: dict[str, dict[str, Any]] = {}
+    for chunk in chunks:
+        path = chunk.relative_path
+        if path not in files_map:
+            files_map[path] = {
+                "path": path,
+                "language": chunk.language or "unknown",
+                "chunk_count": 1,
+            }
+        else:
+            files_map[path]["chunk_count"] += 1
+
+    sorted_files = [
+        RepositoryFileItem(
+            path=file_info["path"],
+            language=file_info["language"],
+            chunk_count=file_info["chunk_count"],
+        )
+        for file_info in sorted(files_map.values(), key=lambda f: f["path"])
+    ]
+
+    return RepositoryFileListResponse(
+        repository_id=clean_repo_id,
+        files=sorted_files,
+    )
 
 
 @router.delete(
