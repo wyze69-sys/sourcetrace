@@ -111,9 +111,6 @@ def _refresh_session_activity_quietly(
         pass
 
 
-
-
-
 @router.post(
     "/repositories/{repository_id}/conversations",
     response_model=CreateConversationResponse,
@@ -219,6 +216,7 @@ def create_conversation(
         citations=result.citations,
         evidence=result.evidence,
         insufficient_evidence=result.insufficient_evidence,
+        answer_mode=getattr(result, "answer_mode", "normal"),
     )
 
     # Persist exchange atomically / via scoped compensation
@@ -408,6 +406,7 @@ def send_message(
         citations=result.citations,
         evidence=result.evidence,
         insufficient_evidence=result.insufficient_evidence,
+        answer_mode=getattr(result, "answer_mode", "normal"),
     )
 
     updated_conv = ConversationRecord(

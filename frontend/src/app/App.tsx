@@ -17,9 +17,17 @@ export interface AppProps {
 }
 
 type AppState = 'loading' | 'ready' | 'error'
+export type WorkspaceSection = 'understand' | 'files' | 'find_code' | 'flow_trace' | 'change_impact'
 
 const SAFE_NETWORK_ERROR_MESSAGE =
   'Unable to reach the SourceTrace API. Check that the local service is running and try again.'
+
+const STARTER_QUESTIONS = [
+  'Where does the application start?',
+  'How does authentication work?',
+  'Where is data stored?',
+  'What should I read first?',
+]
 
 function validateGitHubUrl(url: string): string | null {
   const trimmed = url.trim()
@@ -164,6 +172,11 @@ export function App({ client = defaultApiClient }: AppProps) {
   const [activeJobs, setActiveJobs] = useState<Record<string, IndexingJob>>({})
   const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null)
   const [ariaLiveMsg, setAriaLiveMsg] = useState<string>('')
+  const [showImportTray, setShowImportTray] = useState<boolean>(false)
+
+  // Workspace Navigation state
+  const [activeSection, setActiveSection] = useState<WorkspaceSection>('understand')
+  const [isAdvancedExpanded, setIsAdvancedExpanded] = useState<boolean>(false)
 
   // GitHub Form State
   const [githubUrl, setGithubUrl] = useState('')
@@ -177,7 +190,7 @@ export function App({ client = defaultApiClient }: AppProps) {
   const [zipSubmitting, setZipSubmitting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Chat State
+  // Chat / Understand State
   const [conversations, setConversations] = useState<
     Record<string, { conversationId: string; messages: Message[] }>
   >({})
@@ -242,7 +255,6 @@ export function App({ client = defaultApiClient }: AppProps) {
       .filter((job) => job.status !== 'ready' && job.status !== 'failed')
       .map((job) => job.job_id)
 
-    // Also check repos that are pending/indexing without an explicit job tracked
     const pendingRepoIds = repositories
       .filter((r) => r.status === 'pending' || r.status === 'indexing')
       .map((r) => r.repository_id)
@@ -278,16 +290,29 @@ export function App({ client = defaultApiClient }: AppProps) {
     }
   }, [activeJobs, repositories, client, loadRepositories])
 
-  // Auto-select first repository if none selected
+  // Auto-select first repository if none selected & default workspace to Understand
   useEffect(() => {
     if (!selectedRepoId && repositories.length > 0) {
       const readyRepo = repositories.find((r) => r.status === 'ready')
       const targetRepo = readyRepo || repositories[0]
       if (targetRepo) {
         setSelectedRepoId(targetRepo.repository_id)
+        if (targetRepo.status === 'ready') {
+          setActiveSection('understand')
+        }
       }
     }
   }, [repositories, selectedRepoId])
+
+  // Select repository helper that resets active workspace to Understand for ready repos and closes import tray
+  const handleSelectRepo = (repoId: string) => {
+    setSelectedRepoId(repoId)
+    setShowImportTray(false)
+    const repo = repositories.find((r) => r.repository_id === repoId)
+    if (!repo || repo.status === 'ready') {
+      setActiveSection('understand')
+    }
+  }
 
   // Bounded opt-in freshness check once upon selecting a ready GitHub repository
   useEffect(() => {
@@ -338,11 +363,13 @@ export function App({ client = defaultApiClient }: AppProps) {
         ])
         setActiveJobs((prev) => ({ ...prev, [res.indexing_job.job_id]: res.indexing_job }))
         setSelectedRepoId(res.repository.repository_id)
+        setActiveSection('understand')
         setAriaLiveMsg(`Retrying indexing for ${res.repository.name}.`)
       } else {
         const res = await client.refreshRepository(repo.repository_id)
         setActiveJobs((prev) => ({ ...prev, [res.indexing_job.job_id]: res.indexing_job }))
         setSelectedRepoId(repo.repository_id)
+        setActiveSection('understand')
         setAriaLiveMsg(`Retrying indexing job for ${repo.name}.`)
       }
     } catch (err) {
@@ -399,6 +426,8 @@ export function App({ client = defaultApiClient }: AppProps) {
         ...prev.filter((r) => r.repository_id !== res.repository.repository_id),
       ])
       setActiveJobs((prev) => ({ ...prev, [res.indexing_job.job_id]: res.indexing_job }))
+      setSelectedRepoId(res.repository.repository_id)
+      setActiveSection('understand')
       setAriaLiveMsg(`Repository ${res.repository.name} accepted for indexing.`)
       setGithubUrl('')
     } catch (err) {
@@ -434,6 +463,8 @@ export function App({ client = defaultApiClient }: AppProps) {
         ...prev.filter((r) => r.repository_id !== res.repository.repository_id),
       ])
       setActiveJobs((prev) => ({ ...prev, [res.indexing_job.job_id]: res.indexing_job }))
+      setSelectedRepoId(res.repository.repository_id)
+      setActiveSection('understand')
       setAriaLiveMsg(`ZIP repository ${res.repository.name} accepted for indexing.`)
       setZipFile(null)
       setZipName('')
@@ -476,13 +507,12 @@ export function App({ client = defaultApiClient }: AppProps) {
     }
   }
 
-  const handleChatSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!selectedRepoId || !chatQuestion.trim()) return
+  const submitQuestion = async (text: string) => {
+    if (!selectedRepoId || !text.trim() || chatSubmitting) return
 
     setChatError(null)
     setChatSubmitting(true)
-    const questionText = chatQuestion.trim()
+    const questionText = text.trim()
     const activeConv = conversations[selectedRepoId]
 
     try {
@@ -519,6 +549,11 @@ export function App({ client = defaultApiClient }: AppProps) {
     }
   }
 
+  const handleChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await submitQuestion(chatQuestion)
+  }
+
   const selectedRepo = repositories.find((r) => r.repository_id === selectedRepoId)
   const currentConversation = selectedRepoId ? conversations[selectedRepoId] : undefined
 
@@ -531,27 +566,38 @@ export function App({ client = defaultApiClient }: AppProps) {
       <header className="app-header">
         <div className="brand-section">
           <h1>SourceTrace</h1>
-          <p className="subtitle">Evidence-grounded codebase intelligence</p>
+          <p className="subtitle">Understand a codebase before you change it.</p>
         </div>
-        <div className="status-indicator">
-          {state === 'loading' && (
-            <>
-              <span className="status-dot loading" />
-              <span>Checking API status...</span>
-            </>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {repositories.length > 0 && (
+            <button
+              type="button"
+              className="btn-action btn-import-toggle"
+              onClick={() => setShowImportTray((prev) => !prev)}
+            >
+              {showImportTray ? 'Close Import' : 'Import repository'}
+            </button>
           )}
-          {state === 'ready' && healthData && (
-            <>
-              <span className="status-dot healthy" />
-              <span className="mono">API Online ({healthData.version})</span>
-            </>
-          )}
-          {state === 'error' && (
-            <>
-              <span className="status-dot offline" />
-              <span className="mono">API Offline</span>
-            </>
-          )}
+          <div className="status-indicator">
+            {state === 'loading' && (
+              <>
+                <span className="status-dot loading" />
+                <span>Checking API status...</span>
+              </>
+            )}
+            {state === 'ready' && healthData && (
+              <>
+                <span className="status-dot healthy" />
+                <span className="mono">API Online ({healthData.version})</span>
+              </>
+            )}
+            {state === 'error' && (
+              <>
+                <span className="status-dot offline" />
+                <span className="mono">API Offline</span>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -575,9 +621,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                       <button
                         type="button"
                         className={`repo-card ${isSelected ? 'selected' : ''}`}
-                        onClick={() => {
-                          setSelectedRepoId(repo.repository_id)
-                        }}
+                        onClick={() => handleSelectRepo(repo.repository_id)}
                       >
                         <div className="repo-header">
                           <span className="repo-title">{repo.name}</span>
@@ -617,19 +661,84 @@ export function App({ client = defaultApiClient }: AppProps) {
             )}
           </div>
 
-          <div className="rail-section">
-            <span className="rail-label">Evidence rule</span>
-            <span className="rail-value">Citations strictly grounded in indexed code</span>
-          </div>
-
-          <div className="rail-section">
-            <span className="rail-label">Current service status</span>
-            <span className="rail-value mono">
-              {state === 'loading' && 'Checking...'}
-              {state === 'ready' && (healthData ? `Healthy (${healthData.status})` : 'Healthy')}
-              {state === 'error' && 'Unavailable'}
-            </span>
-          </div>
+          {selectedRepo && selectedRepo.status === 'ready' && (
+            <div className="rail-section rail-nav-section">
+              <span className="rail-label">Workspace</span>
+              <nav className="rail-workspace-nav" aria-label="Workspace Navigation">
+                <button
+                  type="button"
+                  className={`rail-nav-btn ${activeSection === 'understand' ? 'active' : ''}`}
+                  aria-current={activeSection === 'understand' ? 'page' : undefined}
+                  onClick={() => {
+                    setActiveSection('understand')
+                    setShowImportTray(false)
+                  }}
+                >
+                  Understand
+                </button>
+                <button
+                  type="button"
+                  className={`rail-nav-btn ${activeSection === 'files' ? 'active' : ''}`}
+                  aria-current={activeSection === 'files' ? 'page' : undefined}
+                  onClick={() => {
+                    setActiveSection('files')
+                    setShowImportTray(false)
+                  }}
+                >
+                  Files
+                </button>
+                <button
+                  type="button"
+                  className={`rail-nav-btn ${activeSection === 'find_code' ? 'active' : ''}`}
+                  aria-current={activeSection === 'find_code' ? 'page' : undefined}
+                  onClick={() => {
+                    setActiveSection('find_code')
+                    setShowImportTray(false)
+                  }}
+                >
+                  Find code
+                </button>
+                <div className="rail-nav-accordion">
+                  <button
+                    type="button"
+                    className="rail-accordion-header"
+                    aria-expanded={isAdvancedExpanded}
+                    aria-controls="rail-advanced-menu"
+                    onClick={() => setIsAdvancedExpanded((prev) => !prev)}
+                  >
+                    <span>Advanced analysis</span>
+                    <span className="accordion-icon">{isAdvancedExpanded ? '▲' : '▼'}</span>
+                  </button>
+                  {isAdvancedExpanded && (
+                    <div id="rail-advanced-menu" className="rail-accordion-body">
+                      <button
+                        type="button"
+                        className={`rail-nav-subbtn ${activeSection === 'flow_trace' ? 'active' : ''}`}
+                        aria-current={activeSection === 'flow_trace' ? 'page' : undefined}
+                        onClick={() => {
+                          setActiveSection('flow_trace')
+                          setShowImportTray(false)
+                        }}
+                      >
+                        Show how this works
+                      </button>
+                      <button
+                        type="button"
+                        className={`rail-nav-subbtn ${activeSection === 'change_impact' ? 'active' : ''}`}
+                        aria-current={activeSection === 'change_impact' ? 'page' : undefined}
+                        onClick={() => {
+                          setActiveSection('change_impact')
+                          setShowImportTray(false)
+                        }}
+                      >
+                        What could this change affect?
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </nav>
+            </div>
+          )}
         </aside>
 
         <main className="main-workspace">
@@ -643,7 +752,17 @@ export function App({ client = defaultApiClient }: AppProps) {
           {state === 'ready' && (
             <>
               {deleteSuccess && (
-                <div className="form-success" style={{ marginBottom: '16px', color: '#4ade80', background: '#064e3b', border: '1px solid #059669', padding: '8px 12px', borderRadius: '6px' }}>
+                <div
+                  className="form-success"
+                  style={{
+                    marginBottom: '16px',
+                    color: '#065f46',
+                    background: '#d1fae5',
+                    border: '1px solid #a7f3d0',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                  }}
+                >
                   {deleteSuccess}
                 </div>
               )}
@@ -653,115 +772,127 @@ export function App({ client = defaultApiClient }: AppProps) {
                 </div>
               )}
 
-              <section className="card-panel">
-                <h2 className="panel-header">API Boundary Reachable</h2>
-                <p className="panel-text">
-                  Import a public repository to begin evidence-grounded analysis.
-                </p>
-
-                <div className="form-group" style={{ marginBottom: '16px', maxWidth: '400px' }}>
-                  <label htmlFor="index-mode-select" className="form-label">
-                    Indexing Mode
-                  </label>
-                  <select
-                    id="index-mode-select"
-                    className="input-text"
-                    value={selectedIndexMode}
-                    onChange={(e) => setSelectedIndexMode(e.target.value as 'static' | 'ai_assist')}
+              {(showImportTray || repositories.length === 0) && (
+                <section className="card-panel import-tray-panel" aria-label="Repository Import">
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '12px',
+                    }}
                   >
-                    <option value="static">Static</option>
-                    {capabilities?.generation_available && (
-                      <option value="ai_assist">AI Assist (Free)</option>
+                    <h2 className="panel-header" style={{ margin: 0 }}>
+                      {repositories.length === 0
+                        ? 'Import a Repository to Begin'
+                        : 'Import Repository'}
+                    </h2>
+                    {repositories.length > 0 && (
+                      <button
+                        type="button"
+                        className="btn-action"
+                        style={{ fontSize: '0.8rem', padding: '4px 10px' }}
+                        onClick={() => setShowImportTray(false)}
+                      >
+                        ✕ Close
+                      </button>
                     )}
-                  </select>
-                  <div className="form-help-text" style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-text-muted, #888)' }}>
-                    {capabilities?.generation_available
-                      ? 'Code is indexed with static analysis and AI is used afterward for "Explain this flow."'
-                      : 'AI explanation assist unavailable (no LLM generation capability).'}
                   </div>
-                </div>
+                  <p className="panel-text">
+                    Import a public GitHub repository URL or ZIP archive to begin evidence-grounded analysis.
+                  </p>
 
-                <div className="import-grid">
-                  {/* GitHub Form */}
-                  <form onSubmit={handleGitHubSubmit} className="import-form">
-                    <div className="form-group">
-                      <label htmlFor="github-url-input" className="form-label">
-                        Public GitHub Repository URL
-                      </label>
-                      <input
-                        id="github-url-input"
-                        type="text"
-                        className="input-text"
-                        placeholder="https://github.com/owner/repo"
-                        value={githubUrl}
-                        onChange={(e) => setGithubUrl(e.target.value)}
-                        disabled={githubSubmitting}
-                      />
-                      {githubError && <div className="form-error">{githubError}</div>}
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={githubSubmitting}
-                      className="btn-action"
+                  <div className="form-group" style={{ marginBottom: '16px', maxWidth: '400px' }}>
+                    <label htmlFor="index-mode-select" className="form-label">
+                      Indexing Mode
+                    </label>
+                    <select
+                      id="index-mode-select"
+                      className="input-text"
+                      value={selectedIndexMode}
+                      onChange={(e) => setSelectedIndexMode(e.target.value as 'static' | 'ai_assist')}
                     >
-                      {githubSubmitting ? 'Importing...' : 'Import GitHub Repository'}
-                    </button>
-                  </form>
-
-                  {/* ZIP Upload Form */}
-                  <form onSubmit={handleZipSubmit} className="import-form">
-                    <div className="form-group">
-                      <label htmlFor="zip-file-input" className="form-label">
-                        ZIP Archive File (.zip)
-                      </label>
-                      <input
-                        ref={fileInputRef}
-                        id="zip-file-input"
-                        type="file"
-                        accept=".zip,application/zip,application/x-zip-compressed"
-                        className="input-file"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null
-                          setZipFile(file)
-                        }}
-                        disabled={zipSubmitting}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label htmlFor="zip-name-input" className="form-label">
-                        Display Name (Optional)
-                      </label>
-                      <input
-                        id="zip-name-input"
-                        type="text"
-                        className="input-text"
-                        placeholder="My Project"
-                        value={zipName}
-                        onChange={(e) => setZipName(e.target.value)}
-                        disabled={zipSubmitting}
-                      />
-                      {zipError && <div className="form-error">{zipError}</div>}
-                    </div>
-                    <button
-                      type="submit"
-                      disabled={zipSubmitting}
-                      className="btn-action"
+                      <option value="static">Static</option>
+                      {capabilities?.generation_available && (
+                        <option value="ai_assist">AI Assist (Free)</option>
+                      )}
+                    </select>
+                    <div
+                      className="form-help-text"
+                      style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-muted)' }}
                     >
-                      {zipSubmitting ? 'Uploading...' : 'Upload ZIP Archive'}
-                    </button>
-                  </form>
-                </div>
-              </section>
+                      {capabilities?.generation_available
+                        ? 'Code is indexed with static analysis and AI is used afterward for "Explain this flow."'
+                        : 'AI explanation assist unavailable (no LLM generation capability).'}
+                    </div>
+                  </div>
 
-              {selectedRepo && (
-                <RepoExplorerPanel
-                  client={client}
-                  repositoryId={selectedRepo.repository_id}
-                  repositoryName={selectedRepo.name}
-                />
+                  <div className="import-grid">
+                    {/* GitHub Form */}
+                    <form onSubmit={handleGitHubSubmit} className="import-form">
+                      <div className="form-group">
+                        <label htmlFor="github-url-input" className="form-label">
+                          Public GitHub Repository URL
+                        </label>
+                        <input
+                          id="github-url-input"
+                          type="text"
+                          className="input-text"
+                          placeholder="https://github.com/owner/repo"
+                          value={githubUrl}
+                          onChange={(e) => setGithubUrl(e.target.value)}
+                          disabled={githubSubmitting}
+                        />
+                        {githubError && <div className="form-error">{githubError}</div>}
+                      </div>
+                      <button type="submit" disabled={githubSubmitting} className="btn-action">
+                        {githubSubmitting ? 'Importing...' : 'Import GitHub Repository'}
+                      </button>
+                    </form>
+
+                    {/* ZIP Upload Form */}
+                    <form onSubmit={handleZipSubmit} className="import-form">
+                      <div className="form-group">
+                        <label htmlFor="zip-file-input" className="form-label">
+                          ZIP Archive File (.zip)
+                        </label>
+                        <input
+                          ref={fileInputRef}
+                          id="zip-file-input"
+                          type="file"
+                          accept=".zip,application/zip,application/x-zip-compressed"
+                          className="input-file"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] || null
+                            setZipFile(file)
+                          }}
+                          disabled={zipSubmitting}
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="zip-name-input" className="form-label">
+                          Display Name (Optional)
+                        </label>
+                        <input
+                          id="zip-name-input"
+                          type="text"
+                          className="input-text"
+                          placeholder="My Project"
+                          value={zipName}
+                          onChange={(e) => setZipName(e.target.value)}
+                          disabled={zipSubmitting}
+                        />
+                        {zipError && <div className="form-error">{zipError}</div>}
+                      </div>
+                      <button type="submit" disabled={zipSubmitting} className="btn-action">
+                        {zipSubmitting ? 'Uploading...' : 'Upload ZIP Archive'}
+                      </button>
+                    </form>
+                  </div>
+                </section>
               )}
 
-              {/* Selected Repo Search, Chat, Failed Error Display, or Empty Status */}
+              {/* Selected Ready Repository Workspace Views */}
               {selectedRepo && selectedRepo.status === 'failed' ? (
                 <section className="card-panel error-panel">
                   <h2 className="panel-header" style={{ color: 'var(--color-danger)' }}>
@@ -802,252 +933,467 @@ export function App({ client = defaultApiClient }: AppProps) {
                     </button>
                   </div>
                 </section>
-              ) : selectedRepo && selectedRepo.status === 'ready' && selectedRepo.index_mode === 'static' ? (
-                <section className="card-panel search-panel">
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <h2 className="panel-header" style={{ margin: 0 }}>
-                        Repository: <span className="mono">{selectedRepo.name}</span>
-                        {selectedRepo.source_type === 'github' && (
-                          <span
-                            className={`repo-badge ${getFreshnessState(
-                              selectedRepo,
-                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
-                            )}`}
-                            style={{ marginLeft: '10px', fontSize: '0.75rem', verticalAlign: 'middle' }}
-                          >
-                            {getFreshnessState(
-                              selectedRepo,
-                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
-                            )}
-                          </span>
-                        )}
-                      </h2>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {selectedRepo.source_type === 'github' && (
-                          <button
-                            id="btn-refresh-repo-static"
-                            type="button"
-                            className="btn-action"
-                            style={{ fontSize: '0.8rem', padding: '4px 12px' }}
-                            onClick={() => handleRefreshRepo(selectedRepo)}
-                            disabled={
-                              !!Object.values(activeJobs).find(
-                                (j) => j.repository_id === selectedRepo.repository_id && j.status !== 'ready' && j.status !== 'failed',
-                              )
-                            }
-                            title={selectedRepo.indexed_commit_sha ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
-                          >
-                            ↻ Refresh
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="btn-action"
-                          style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'transparent', border: '1px solid var(--color-border)' }}
-                          onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
-                          disabled={deletingRepoId === selectedRepo.repository_id}
+              ) : selectedRepo && selectedRepo.status === 'ready' && !showImportTray ? (
+                <div className="workspace-container">
+
+
+                  {/* Active Workspace Content Views */}
+                  {activeSection === 'understand' && (
+                    <section className="card-panel understand-panel">
+                      <div className="repo-meta-header" style={{ marginBottom: '16px' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '8px',
+                          }}
                         >
-                          {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
-                        </button>
-                        <span className="static-banner" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600 }}>
-                          Static inspection — no AI token required.
-                        </span>
-                      </div>
-                    </div>
-                    {selectedRepo.source_type === 'github' && (
-                      <div className="repo-meta-bar mono" style={{ fontSize: '0.78rem', color: 'var(--color-muted)', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                        {selectedRepo.indexed_branch && <span>Branch: <strong>{selectedRepo.indexed_branch}</strong></span>}
-                        {selectedRepo.indexed_commit_sha && <span>SHA: <strong>{selectedRepo.indexed_commit_sha.slice(0, 7)}</strong></span>}
-                        {selectedRepo.last_indexed_at && <span>Indexed: <strong>{formatRelativeTime(selectedRepo.last_indexed_at)}</strong></span>}
-                        {selectedRepo.stale_checked_at && <span>Checked: <strong>{formatRelativeTime(selectedRepo.stale_checked_at)}</strong></span>}
-                      </div>
-                    )}
-                  </div>
-                  <p className="panel-text" style={{ marginBottom: '16px' }}>
-                    Search code symbols, classes, functions, and relative file paths without AI tokens.
-                  </p>
-
-                  <form onSubmit={handleEvidenceSearch} className="search-form" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-                    <input
-                      type="text"
-                      className="input-text chat-input"
-                      placeholder="Search symbol name or relative path (e.g. User, parse_data, models/domain.py)..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      disabled={searchLoading}
-                    />
-                    <button
-                      type="submit"
-                      disabled={searchLoading || !searchQuery.trim()}
-                      className="btn-action"
-                    >
-                      {searchLoading ? 'Searching...' : 'Search Evidence'}
-                    </button>
-                  </form>
-
-                  {searchError && <div className="form-error" style={{ marginBottom: '16px' }}>{searchError}</div>}
-
-                  {searchResults !== null && (
-                    <div className="search-results">
-                      <h3 style={{ fontSize: '0.9rem', color: '#9ca3af', marginBottom: '12px' }}>
-                        Evidence Results ({searchResults.length}):
-                      </h3>
-                      {searchResults.length === 0 ? (
-                        <p className="panel-text" style={{ fontStyle: 'italic' }}>
-                          No code evidence matches "{searchQuery}".
-                        </p>
-                      ) : (
-                        searchResults.map((item) => (
-                          <div key={item.chunk_id} className="search-card" style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem' }}>
-                              <span className="mono" style={{ color: '#38bdf8' }}>
-                                {item.relative_path}:{item.start_line}-{item.end_line}
+                          <h2 className="panel-header" style={{ margin: 0 }}>
+                            Repository: <span className="mono">{selectedRepo.name}</span>
+                            {selectedRepo.source_type === 'github' && (
+                              <span
+                                className={`repo-badge ${getFreshnessState(
+                                  selectedRepo,
+                                  Object.values(activeJobs).find(
+                                    (j) => j.repository_id === selectedRepo.repository_id,
+                                  ),
+                                )}`}
+                                style={{
+                                  marginLeft: '10px',
+                                  fontSize: '0.75rem',
+                                  verticalAlign: 'middle',
+                                }}
+                              >
+                                {getFreshnessState(
+                                  selectedRepo,
+                                  Object.values(activeJobs).find(
+                                    (j) => j.repository_id === selectedRepo.repository_id,
+                                  ),
+                                )}
                               </span>
-                              <span style={{ color: '#94a3b8' }}>
-                                {item.symbol_type} <strong>{item.symbol_name}</strong>
+                            )}
+                          </h2>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {selectedRepo.source_type === 'github' && (
+                              <button
+                                id="btn-refresh-repo-understand"
+                                type="button"
+                                className="btn-action"
+                                style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                                onClick={() => handleRefreshRepo(selectedRepo)}
+                                disabled={
+                                  !!Object.values(activeJobs).find(
+                                    (j) =>
+                                      j.repository_id === selectedRepo.repository_id &&
+                                      j.status !== 'ready' &&
+                                      j.status !== 'failed',
+                                  )
+                                }
+                                title={
+                                  selectedRepo.indexed_commit_sha
+                                    ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}`
+                                    : 'Re-index this repository'
+                                }
+                              >
+                                ↻ Refresh
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn-action"
+                              style={{
+                                fontSize: '0.8rem',
+                                padding: '4px 12px',
+                                backgroundColor: 'transparent',
+                                border: '1px solid var(--color-border)',
+                              }}
+                              onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
+                              disabled={deletingRepoId === selectedRepo.repository_id}
+                            >
+                              {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
+                            </button>
+                            {selectedRepo.index_mode === 'static' ? (
+                              <span
+                                className="static-banner"
+                                style={{
+                                  background: '#f0f9ff',
+                                  color: '#0284c7',
+                                  border: '1px solid #bae6fd',
+                                  padding: '4px 12px',
+                                  borderRadius: '12px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Static inspection mode
                               </span>
-                            </div>
-                            <pre className="evidence-block" style={{ margin: 0, padding: '8px', background: '#020617', borderRadius: '4px', overflowX: 'auto', fontSize: '0.8rem' }}>
-                              <code>{item.snippet}</code>
-                            </pre>
+                            ) : (
+                              capabilities?.generation_available &&
+                              !capabilities?.semantic_search_available && (
+                                <span
+                                  className="static-chat-badge"
+                                  style={{
+                                    background: '#f0f9ff',
+                                    color: '#0284c7',
+                                    border: '1px solid #bae6fd',
+                                    padding: '4px 12px',
+                                    borderRadius: '12px',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                  }}
+                                >
+                                  AI Assist (Static Evidence Mode)
+                                </span>
+                              )
+                            )}
                           </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </section>
-              ) : selectedRepo && selectedRepo.status === 'ready' ? (
-                <section className="card-panel chat-panel">
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                      <h2 className="panel-header" style={{ margin: 0 }}>
-                        Repository: <span className="mono">{selectedRepo.name}</span>
-                        {selectedRepo.source_type === 'github' && (
-                          <span
-                            className={`repo-badge ${getFreshnessState(
-                              selectedRepo,
-                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
-                            )}`}
-                            style={{ marginLeft: '10px', fontSize: '0.75rem', verticalAlign: 'middle' }}
-                          >
-                            {getFreshnessState(
-                              selectedRepo,
-                              Object.values(activeJobs).find((j) => j.repository_id === selectedRepo.repository_id),
-                            )}
-                          </span>
-                        )}
-                      </h2>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {selectedRepo.source_type === 'github' && (
-                          <button
-                            id="btn-refresh-repo-ai"
-                            type="button"
-                            className="btn-action"
-                            style={{ fontSize: '0.8rem', padding: '4px 12px' }}
-                            onClick={() => handleRefreshRepo(selectedRepo)}
-                            disabled={
-                              !!Object.values(activeJobs).find(
-                                (j) => j.repository_id === selectedRepo.repository_id && j.status !== 'ready' && j.status !== 'failed',
-                              )
-                            }
-                            title={selectedRepo.indexed_commit_sha ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}` : 'Re-index this repository'}
-                          >
-                            ↻ Refresh
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          className="btn-action"
-                          style={{ fontSize: '0.8rem', padding: '4px 12px', backgroundColor: 'transparent', border: '1px solid var(--color-border)' }}
-                          onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
-                          disabled={deletingRepoId === selectedRepo.repository_id}
-                        >
-                          {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
-                        </button>
-                      {capabilities?.generation_available && !capabilities?.semantic_search_available && (
-                        <span className="static-chat-badge" style={{ background: '#0e2a35', color: '#38bdf8', border: '1px solid #0284c7', padding: '4px 12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 600, marginLeft: '8px' }}>
-                          AI Assist (Static Evidence Mode)
-                        </span>
-                      )}
-                      </div>
-                    </div>
-                    {selectedRepo.source_type === 'github' && (
-                      <div className="repo-meta-bar mono" style={{ fontSize: '0.78rem', color: 'var(--color-muted)', display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                        {selectedRepo.indexed_branch && <span>Branch: <strong>{selectedRepo.indexed_branch}</strong></span>}
-                        {selectedRepo.indexed_commit_sha && <span>SHA: <strong>{selectedRepo.indexed_commit_sha.slice(0, 7)}</strong></span>}
-                        {selectedRepo.last_indexed_at && <span>Indexed: <strong>{formatRelativeTime(selectedRepo.last_indexed_at)}</strong></span>}
-                        {selectedRepo.stale_checked_at && <span>Checked: <strong>{formatRelativeTime(selectedRepo.stale_checked_at)}</strong></span>}
-                      </div>
-                    )}
-                  </div>
-                  <p className="panel-text">
-                    {capabilities?.semantic_search_available
-                      ? 'Ask natural-language questions grounded in verified source code.'
-                      : 'Ask natural-language questions grounded in verified static code evidence.'}
-                  </p>
-
-                  <div className="chat-history">
-                    {currentConversation?.messages.map((msg) => (
-                      <div
-                        key={msg.message_id}
-                        className={`chat-bubble ${msg.role === 'user' ? 'user' : 'assistant'}`}
-                      >
-                        <div className="bubble-role">
-                          {msg.role === 'user'
-                            ? 'Question'
-                            : `Assistant (${capabilities?.semantic_search_available ? 'Semantic Evidence' : 'Static Evidence'})`}
                         </div>
-                        <div className="bubble-content">{msg.content}</div>
-
-                        {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
-                          <div className="citations-list">
-                            <span className="citation-heading">Citations:</span>
-                            {msg.citations.map((c, idx) => (
-                              <span key={idx} className="citation-item">
-                                {c.relative_path}:{c.start_line}-{c.end_line} ({c.symbol_name})
+                        {selectedRepo.source_type === 'github' && (
+                          <div
+                            className="repo-meta-bar mono"
+                            style={{
+                              fontSize: '0.78rem',
+                              color: 'var(--color-muted)',
+                              display: 'flex',
+                              gap: '16px',
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            {selectedRepo.indexed_branch && (
+                              <span>
+                                Branch: <strong>{selectedRepo.indexed_branch}</strong>
                               </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {msg.role === 'assistant' && msg.evidence && msg.evidence.length > 0 && (
-                          <div className="citations-list">
-                            <span className="citation-heading">Evidence Snippets:</span>
-                            {msg.evidence.map((e, idx) => (
-                              <pre key={idx} className="evidence-block">
-                                <code>
-                                  {e.relative_path}:{e.start_line}-{e.end_line} [{e.symbol_name}]:
-                                  {'\n'}
-                                  {e.snippet}
-                                </code>
-                              </pre>
-                            ))}
+                            )}
+                            {selectedRepo.indexed_commit_sha && (
+                              <span>
+                                SHA: <strong>{selectedRepo.indexed_commit_sha.slice(0, 7)}</strong>
+                              </span>
+                            )}
+                            {selectedRepo.last_indexed_at && (
+                              <span>
+                                Indexed: <strong>{formatRelativeTime(selectedRepo.last_indexed_at)}</strong>
+                              </span>
+                            )}
+                            {selectedRepo.stale_checked_at && (
+                              <span>
+                                Checked: <strong>{formatRelativeTime(selectedRepo.stale_checked_at)}</strong>
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
-                    ))}
-                  </div>
 
-                  <form onSubmit={handleChatSubmit} className="chat-form">
-                    <input
-                      type="text"
-                      className="input-text chat-input"
-                      placeholder="Ask a question about this codebase..."
-                      value={chatQuestion}
-                      onChange={(e) => setChatQuestion(e.target.value)}
-                      disabled={chatSubmitting}
+                      {/* Question Hero Section */}
+                      <div className="understand-hero">
+                        <h3 className="understand-title">
+                          What do you want to understand about {selectedRepo.name}?
+                        </h3>
+                        <p className="panel-text" style={{ marginBottom: '0.5rem' }}>
+                          {capabilities?.semantic_search_available
+                            ? 'Ask natural-language questions grounded in verified source code.'
+                            : 'Ask natural-language questions grounded in verified static code evidence.'}
+                        </p>
+                        <form onSubmit={handleChatSubmit} className="chat-form understand-form">
+                          <input
+                            type="text"
+                            className="input-text chat-input hero-input"
+                            placeholder="Ask about this repository..."
+                            value={chatQuestion}
+                            onChange={(e) => setChatQuestion(e.target.value)}
+                            disabled={chatSubmitting}
+                          />
+                          <button
+                            type="submit"
+                            disabled={chatSubmitting || !chatQuestion.trim()}
+                            className="btn-action hero-ask-btn"
+                          >
+                            {chatSubmitting ? 'Asking...' : 'Ask'}
+                          </button>
+                        </form>
+
+                        <div className="starter-questions-section">
+                          <span className="starter-questions-label">Try a starter question:</span>
+                          <div className="starter-questions-grid">
+                            {STARTER_QUESTIONS.map((q) => (
+                              <button
+                                key={q}
+                                type="button"
+                                className="starter-question-btn"
+                                onClick={() => submitQuestion(q)}
+                                disabled={chatSubmitting}
+                              >
+                                {q}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {chatError && <div className="form-error" style={{ marginTop: '12px' }}>{chatError}</div>}
+
+                      {/* Conversation / Investigation Workspace */}
+                      {currentConversation && currentConversation.messages.length > 0 && (
+                        <div className="chat-history" style={{ marginTop: '1.5rem' }}>
+                          {currentConversation.messages.map((msg) => (
+                            <div
+                              key={msg.message_id}
+                              className={`chat-bubble ${msg.role === 'user' ? 'user' : 'assistant'}`}
+                            >
+                              <div className="bubble-role">
+                                {msg.role === 'user'
+                                  ? 'Question'
+                                  : msg.answer_mode === 'static_guidance'
+                                  ? 'Start Here Reading Guide'
+                                  : msg.answer_mode === 'insufficient_orientation'
+                                  ? 'Orientation Status'
+                                  : msg.answer_mode === 'reindex_required'
+                                  ? 'Re-index Required'
+                                  : 'Investigation Result'}
+                              </div>
+                              <div className="bubble-content">{msg.content}
+
+                                {msg.role === 'assistant' && msg.answer_mode === 'reindex_required' && selectedRepo && (
+                                  <div style={{ marginTop: '12px' }}>
+                                    <button
+                                      type="button"
+                                      className="btn-action btn-refresh"
+                                      onClick={() => handleRefreshRepo(selectedRepo)}
+                                      disabled={
+                                        !!Object.values(activeJobs).find(
+                                          (j) =>
+                                            j.repository_id === selectedRepo.repository_id &&
+                                            j.status !== 'ready' &&
+                                            j.status !== 'failed',
+                                        )
+                                      }
+                                    >
+                                      {Object.values(activeJobs).find(
+                                          (j) =>
+                                            j.repository_id === selectedRepo.repository_id &&
+                                            j.status !== 'ready' &&
+                                            j.status !== 'failed',
+                                        ) ? 'Re-indexing...' : 'Re-index repository'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                                <div className="citations-list">
+                                  <span className="citation-heading">Citations:</span>
+                                  {msg.citations.map((c, idx) => (
+                                    <button
+                                      key={idx}
+                                      className="citation-item citation-btn"
+                                      onClick={() => {
+                                        setActiveSection('files')
+                                      }}
+                                      title={`View ${c.relative_path}`}
+                                    >
+                                      [{idx + 1}] {c.relative_path}:{c.start_line}-{c.end_line} ({c.symbol_name})
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+
+                              {msg.role === 'assistant' && msg.evidence && msg.evidence.length > 0 && (
+                                <div className="citations-list">
+                                  <span className="citation-heading">Evidence Snippets:</span>
+                                  {msg.evidence.map((e, idx) => (
+                                    <pre key={idx} className="evidence-block">
+                                      <code>
+                                        {e.relative_path}:{e.start_line}-{e.end_line} [{e.symbol_name}]:
+                                        {'\n'}
+                                        {e.snippet}
+                                      </code>
+                                    </pre>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {activeSection === 'files' && (
+                    <RepoExplorerPanel
+                      client={client}
+                      repositoryId={selectedRepo.repository_id}
+                      repositoryName={selectedRepo.name}
                     />
-                    <button
-                      type="submit"
-                      disabled={chatSubmitting || !chatQuestion.trim()}
-                      className="btn-action"
-                    >
-                      {chatSubmitting ? 'Asking...' : 'Send Question'}
-                    </button>
-                  </form>
-                  {chatError && <div className="form-error">{chatError}</div>}
-                </section>
+                  )}
+
+                  {activeSection === 'find_code' && (
+                    <section className="card-panel search-panel">
+                      <div style={{ marginBottom: '16px' }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '8px',
+                          }}
+                        >
+                          <h2 className="panel-header" style={{ margin: 0 }}>
+                            Find code in <span className="mono">{selectedRepo.name}</span>
+                          </h2>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            {selectedRepo.source_type === 'github' && (
+                              <button
+                                id="btn-refresh-repo-find-code"
+                                type="button"
+                                className="btn-action"
+                                style={{ fontSize: '0.8rem', padding: '4px 12px' }}
+                                onClick={() => handleRefreshRepo(selectedRepo)}
+                                disabled={
+                                  !!Object.values(activeJobs).find(
+                                    (j) =>
+                                      j.repository_id === selectedRepo.repository_id &&
+                                      j.status !== 'ready' &&
+                                      j.status !== 'failed',
+                                  )
+                                }
+                                title={
+                                  selectedRepo.indexed_commit_sha
+                                    ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}`
+                                    : 'Re-index this repository'
+                                }
+                              >
+                                ↻ Refresh
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="btn-action"
+                              style={{
+                                fontSize: '0.8rem',
+                                padding: '4px 12px',
+                                backgroundColor: 'transparent',
+                                border: '1px solid var(--color-border)',
+                              }}
+                              onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
+                              disabled={deletingRepoId === selectedRepo.repository_id}
+                            >
+                              {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <p className="panel-text" style={{ marginBottom: '16px' }}>
+                        Search code symbols, classes, functions, and relative file paths.
+                      </p>
+
+                      <form
+                        onSubmit={handleEvidenceSearch}
+                        className="search-form"
+                        style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}
+                      >
+                        <input
+                          type="text"
+                          className="input-text chat-input"
+                          placeholder="Search symbol name or relative path (e.g. User, parse_data, models/domain.py)..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          disabled={searchLoading}
+                        />
+                        <button
+                          type="submit"
+                          disabled={searchLoading || !searchQuery.trim()}
+                          className="btn-action"
+                        >
+                          {searchLoading ? 'Searching...' : 'Find code'}
+                        </button>
+                      </form>
+
+                      {searchError && (
+                        <div className="form-error" style={{ marginBottom: '16px' }}>
+                          {searchError}
+                        </div>
+                      )}
+
+                      {searchResults !== null && (
+                        <div className="search-results">
+                          <h3 style={{ fontSize: '0.9rem', color: 'var(--color-muted)', marginBottom: '12px' }}>
+                            Code Results ({searchResults.length}):
+                          </h3>
+                          {searchResults.length === 0 ? (
+                            <p className="panel-text" style={{ fontStyle: 'italic' }}>
+                              No code matches "{searchQuery}".
+                            </p>
+                          ) : (
+                            searchResults.map((item) => (
+                              <div
+                                key={item.chunk_id}
+                                className="search-card"
+                                style={{
+                                  background: 'var(--color-raised)',
+                                  border: '1px solid var(--color-border)',
+                                  borderRadius: '8px',
+                                  padding: '12px',
+                                  marginBottom: '12px',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    marginBottom: '6px',
+                                    fontSize: '0.85rem',
+                                  }}
+                                >
+                                  <span className="mono" style={{ color: 'var(--color-signal)' }}>
+                                    {item.relative_path}:{item.start_line}-{item.end_line}
+                                  </span>
+                                  <span style={{ color: 'var(--color-muted)' }}>
+                                    {item.symbol_type} <strong>{item.symbol_name}</strong>
+                                  </span>
+                                </div>
+                                <pre
+                                  className="evidence-block"
+                                  style={{
+                                    margin: 0,
+                                    padding: '8px',
+                                    background: 'var(--color-surface)',
+                                    borderRadius: '4px',
+                                    overflowX: 'auto',
+                                    fontSize: '0.8rem',
+                                  }}
+                                >
+                                  <code>{item.snippet}</code>
+                                </pre>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  )}
+
+                  {activeSection === 'flow_trace' && (
+                    <FlowTracePanel
+                      client={client}
+                      repositoryId={selectedRepo.repository_id}
+                      repositoryName={selectedRepo.name}
+                      explainAvailable={capabilities?.generation_available ?? false}
+                      isStale={selectedRepo.is_stale}
+                      sourceType={selectedRepo.source_type}
+                    />
+                  )}
+
+                  {activeSection === 'change_impact' && (
+                    <ImpactPanel
+                      client={client}
+                      repositoryId={selectedRepo.repository_id}
+                      repositoryName={selectedRepo.name}
+                      explainAvailable={capabilities?.generation_available ?? false}
+                      isStale={selectedRepo.is_stale}
+                      sourceType={selectedRepo.source_type}
+                    />
+                  )}
+                </div>
               ) : (
                 <section className="state-box">
                   <strong>Repository status:</strong>{' '}
@@ -1055,28 +1401,6 @@ export function App({ client = defaultApiClient }: AppProps) {
                     ? 'No repositories imported yet. Enter a GitHub URL or select a ZIP archive above.'
                     : 'Select a ready repository from the sidebar to inspect or search.'}
                 </section>
-              )}
-
-              {selectedRepo && selectedRepo.status === 'ready' && (
-                <FlowTracePanel
-                  client={client}
-                  repositoryId={selectedRepo.repository_id}
-                  repositoryName={selectedRepo.name}
-                  explainAvailable={capabilities?.generation_available ?? false}
-                  isStale={selectedRepo.is_stale}
-                  sourceType={selectedRepo.source_type}
-                />
-              )}
-
-              {selectedRepo && selectedRepo.status === 'ready' && (
-                <ImpactPanel
-                  client={client}
-                  repositoryId={selectedRepo.repository_id}
-                  repositoryName={selectedRepo.name}
-                  explainAvailable={capabilities?.generation_available ?? false}
-                  isStale={selectedRepo.is_stale}
-                  sourceType={selectedRepo.source_type}
-                />
               )}
             </>
           )}

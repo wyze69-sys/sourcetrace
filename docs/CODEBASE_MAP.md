@@ -37,8 +37,8 @@ Current status: React TypeScript application foundation (`FE-001`) completed und
 - `frontend/vite.config.ts` — Vite dev proxy (`/api` -> `http://127.0.0.1:8000`) and Vitest configuration.
 - `frontend/eslint.config.js` — ESLint flat configuration.
 - `frontend/src/main.tsx` — React entry point.
-- `frontend/src/app/App.tsx` — forensic workspace application shell with dynamic status, rail, loading/ready/error states.
-- `frontend/src/app/App.test.tsx` — unit tests for loading, ready, error, and no-fake-data UI states.
+- `frontend/src/app/App.tsx` — question-first workspace application shell with Understand hero, starter questions, workspace navigation bar (Understand, Files, Find code, Advanced analysis accordion), dynamic status, rail, loading/ready/error states.
+- `frontend/src/app/App.test.tsx` — unit tests for loading, ready, error, no-fake-data UI states, and question-first workspace navigation requirements.
 - `frontend/src/app/FlowTracePanel.tsx` — Feature Flow Trace workspace panel (entry query, static/explain mode, trace steps with confidence badges and citations, gaps, honest empty/error states).
 - `frontend/src/app/FlowTracePanel.test.tsx` — unit tests for trace panel rendering, mode handling, explanation display, and degradation states.
 - `frontend/src/app/ImpactPanel.tsx` — Change Impact Preview workspace panel (symbol input, risk card with transparent factors, upstream/downstream lists with distance/confidence badges, expandable evidence citations, affected endpoints/tests, gaps, honest empty/loading/error states).
@@ -48,7 +48,7 @@ Current status: React TypeScript application foundation (`FE-001`) completed und
 - `frontend/src/services/types.ts` — TypeScript types matching OpenAPI 3.1 HTTP contract (including `RepositoryFileItem`, `RepositoryFileListResponse`, and `RepositoryFileContentResponse`).
 - `frontend/src/services/apiClient.ts` — typed API client (`getHealth()`, `listRepositoryFiles()`, `getRepositoryFileContent()`, `credentials: 'include'`, safe `ErrorEnvelope` handling).
 - `frontend/src/services/apiClient.test.ts` — unit tests for `ApiClient` and `ApiError`.
-- `frontend/src/styles/index.css` — forensic workspace design tokens and CSS styles.
+- `frontend/src/styles/index.css` — calm evidence-led workspace design tokens (`--color-base: #f8fafc`, `#0f172a`), workspace navigation tabs, starter questions, and CSS styles.
 - `frontend/src/test/setup.ts` — Vitest setup with `@testing-library/jest-dom/vitest`.
 
 The detailed target feature layout is in `frontend/AGENTS.md`. Do not create a second frontend root.
@@ -106,13 +106,13 @@ Current status: early prototype; review before reusing. Work from `backend/` for
 
 ### Retrieval, generation, and storage
 
-- `backend/src/sourcetrace/retrieval/service.py` — `SemanticRetrievalService` implementing provider-neutral, repository-readiness-validated evidence retrieval, query embedding validation, owner-scoped vector search, search result validation, deterministic tie-breaker ranking, and safe evidence snippet construction.
+- `backend/src/sourcetrace/retrieval/service.py` — `SemanticRetrievalService` implementing provider-neutral, repository-readiness-validated evidence retrieval, query-planning fallback for zero or weak direct results (top score < 0.75), whole-token orientation intent detection (`_is_orientation_question`), orientation evidence retrieval strategy (`README`/docs 1.0, manifests 0.95, entrypoints 0.90, routing 0.80), search result validation, deterministic tie-breaker ranking, and safe evidence snippet construction.
 - `backend/src/sourcetrace/retrieval/trace.py` — `FlowTraceService` deterministic zero-token static flow tracer plus the shared resolution layer (`build_flow_indexes()`, `resolve_reference()`, `resolve_endpoint_call()`, `chunk_sort_key()`) reused by the impact service; bounded traversal with confidence-scored edges, citations, and explicit gaps.
 - `backend/src/sourcetrace/retrieval/impact.py` — `ChangeImpactService` deterministic zero-token change impact previewer (bounded multi-seed upstream/downstream BFS, path-weakest confidence, affected endpoints/components/tests classification, count-based risk factors, explicit gaps) with `preview()` for symbols and `preview_diff()` for pasted unified diffs.
 - `backend/src/sourcetrace/retrieval/diff.py` — deterministic unified-diff parser (`parse_unified_diff()`, `DiffParseError`) producing per-file old-coordinate changed-line sets and staleness samples; pure text processing, no diff application.
 - `backend/src/sourcetrace/generation/client.py` — `GenerationMessage` dataclass, `GenerationProvider` protocol, and `OpenAIGenerationAdapter` with lazy client initialization (`_get_client()`), configuration isolation (`llm_*` settings only), and safe error masking.
-- `backend/src/sourcetrace/generation/prompts.py` — `build_grounded_prompt` constructing deterministic provider-neutral system/user prompt messages with untrusted source code isolation, evidence markers (`[E1]`), and prompt budget truncation.
-- `backend/src/sourcetrace/generation/service.py` — `GroundedAnswerService` coordinating evidence retrieval, prompt construction, LLM generation, no-evidence short-circuiting, server-controlled citation marker extraction, and safe answer validation.
+- `backend/src/sourcetrace/generation/prompts.py` — `build_grounded_prompt` constructing deterministic provider-neutral system/user prompt messages with untrusted source code isolation, evidence markers (`[E1]`), orientation system instructions (`ORIENTATION_SYSTEM_INSTRUCTIONS`), and prompt budget truncation.
+- `backend/src/sourcetrace/generation/service.py` — `GroundedAnswerService` coordinating evidence retrieval, prompt construction, LLM generation, no-evidence short-circuiting, structured `answer_mode` responses, deterministic static guidance fallback (`_build_static_guidance`), server-controlled citation marker extraction, and safe answer validation.
 - `backend/src/sourcetrace/generation/trace_explanation.py` — `TraceExplanationService` producing step-marker-validated LLM narration of an already-computed static flow trace (explain mode); invalid citations or provider failure discard the explanation, never the trace.
 - `backend/src/sourcetrace/generation/impact_explanation.py` — `ImpactExplanationService` producing item-marker-validated LLM narration of an already-computed static impact preview (symbol or diff; markers number diff targets, then upstream, then downstream); same strict discard semantics.
 - `backend/prompts/prompt_registry.yaml` — canonical production-prompt registry; no prompt is active yet.
@@ -187,6 +187,7 @@ Current status: early prototype; review before reusing. Work from `backend/` for
 - `backend/tests/api/test_impact_route.py` — offline route tests for POST impact and POST impact/diff (auth, uniform 404, readiness, 422 on non-diff input, response shapes, zero-provider-call proofs).
 - `backend/tests/retrieval/test_diff_impact.py` — offline unit tests for unified-diff parsing (old-coordinate mapping, /dev/null, prefixes, malformed input) and `preview_diff()` (target seeding, aggregation, seed exclusion, diff_file_unmatched/diff_lines_uncovered/diff_stale gaps, suffix path matching, ambiguity refusal, determinism).
 - `backend/tests/api/test_repository_file_content_route.py` — offline route and unit tests for GET /api/v1/repositories/{id}/files/content (auth, uniform 404, path safety validation, line ordering, and partial content flag).
+- `backend/tests/retrieval/test_retrieval_grounding_quality.py` — regression tests for question-answering quality: orientation intent → `answer_mode="orientation"`, unrelated chunks rejected for intent questions, startup intent selects entry-point evidence, auth intent selects auth/token evidence, owner/repo/generation scope isolation verified.
 
 
 - `backend/tests/fixtures/parser_fixtures/` — 11 synthetic Python test fixtures for AST parser and scanner testing.
@@ -196,6 +197,11 @@ Current status: early prototype; review before reusing. Work from `backend/` for
 
 Current status: reproducible RAG evaluation harness, dataset, runner, metrics, and regression tests (`EVAL-001`) completed.
 
+- `backend/tests/fixtures/eval_corpus_v1/` — versioned synthetic Python repository corpus fixture (`main.py`, `routes.py`, `auth.py`, `services.py`, `config.py`, `errors.py`, `analytics.py`).
+- `backend/tests/evaluation/question_set.v1.json` — versioned benchmark cases mapping structured questions to expected paths/symbols and line ranges.
+- `backend/tests/evaluation/run_retrieval_eval.py` — deterministic offline retrieval and citation benchmark runner producing machine-readable JSON output.
+- `backend/tests/evaluation/test_eval_suite.py` — regression tests covering question-set schema validation, stable output, recall@K metrics, citation validity/scope isolation, and unsupported question safety.
+- `backend/tests/evaluation/README.md` — internal documentation for corpus location, question-set format, metrics, and limitations.
 - `evals/eval_registry.yaml` — canonical evaluation artifact policy, metric families, and suite registry (rag-v1, trace-impact-v1).
 - `evals/dataset.v1.json` — 10 verified evaluation questions mapping to exact relative paths, symbols, and line ranges in fixture source.
 - `evals/trace_impact.dataset.v1.json` — versioned trace/impact/diff evaluation cases (exact steps, edges, confidence, gaps, upstream/downstream sets, risk factors) verified against the real parser output; cases may select a fixture via `repository_fixture`.

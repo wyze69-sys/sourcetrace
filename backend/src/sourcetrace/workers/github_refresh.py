@@ -205,9 +205,7 @@ def run_github_refresh(
             job_id=job_id,
             clock=_get_now,
         )
-        indexing_service = RepositoryIndexingService(
-            provider=emb_provider, code_chunk_repo=c_repo
-        )
+        indexing_service = RepositoryIndexingService(provider=emb_provider, code_chunk_repo=c_repo)
 
         idx_result: IndexingResult | None = None
         resolved_branch: str | None = None
@@ -311,8 +309,12 @@ def run_github_refresh(
                 job_id=job_id,
                 repository_id=repository_id,
                 expected_status=(
-                    "queued", "acquiring", "scanning",
-                    "parsing", "embedding", "storing",
+                    "queued",
+                    "acquiring",
+                    "scanning",
+                    "parsing",
+                    "embedding",
+                    "storing",
                 ),
                 new_status="failed",
                 current_step="Repository refresh failed",

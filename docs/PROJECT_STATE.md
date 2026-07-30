@@ -1,199 +1,47 @@
-# SourceTrace — Project State
+# Current Project State: SourceTrace
 
-**Recorded By**: AI Agent
-**Last Updated**: 2026-07-28 (post RUNTIME-UX-003)
+## 1. Project Phase
+- **Current Stage**: Storage & Grounded Retrieval Architecture — Real Browser E2E Acceptance (RUNTIME-ACCEPT-005 Partial Pass)
+- **Active Goal**: Production-quality retrieval, intent-aware evidence ranking, strict citation grounding, and real browser UI chat/navigation verification.
 
----
+## 2. Capabilities & Verified Behaviors
+- **Real Browser UI Chat (RUNTIME-ACCEPT-005 — PARTIAL PASS)**: Executed corrected Playwright harness (`backend/tests/run_real_browser_acceptance.py`) against live frontend (`http://127.0.0.1:5173`) and FastAPI backend (`http://127.0.0.1:8000`).
+  - **Chat UI ACCEPTED**: Both FitSync and bottle scenarios produced visible, rendered assistant bubbles with correct citations; all 6 screenshots validated (56–91 KB, non-blank, at 1440×900 viewport).
+  - **PATH_NAVIGATION_NOT_IMPLEMENTED**: Citation click handler (`App.tsx` line 1189–1191) only calls `setActiveSection('files')`. The cited file path is NOT passed to `RepoExplorerPanel`. The Files tab opens but no file is auto-selected/opened.
+  - **LINE_NAVIGATION_NOT_IMPLEMENTED**: `RepoExplorerPanel` has no `selectedLine`, `highlightLine`, or scroll-to-line prop. No line-level selection or highlight behavior exists in the current product.
+- **Harness Corrections Applied (vs RUNTIME-ACCEPT-004)**:
+  - All element assertions now use `expect(locator).to_be_visible()` (Playwright visible locators, not DOM-existence checks).
+  - Viewport set to 1440×900.
+  - Screenshots validated for minimum byte count (≥ 10 KB threshold).
+  - Token injection corrected from `localStorage.setItem('sourcetrace_access_token', ...)` to `sessionStorage.setItem('sourcetrace.access_token', ...)` matching `apiClient.ts` `TOKEN_STORAGE_KEY`.
+  - Citation navigation reported honestly with product-gap labels (`PATH_NAVIGATION_NOT_IMPLEMENTED`, `LINE_NAVIGATION_NOT_IMPLEMENTED`).
+- **RUNTIME-ACCEPT-004 Rejected**: All 6 prior screenshots were identical blank 2,791-byte images; DOM-existence assertions, wrong token storage key, and gutter-existence accepted as line-navigation passed.
 
-## Current Stage
+## 3. Local Artifact Verification (RUNTIME-ACCEPT-005)
+All 7 artifacts created in `backend/tests/artifacts_accept_005/`:
+- `real_browser_acceptance_report.json` — 6,494 bytes, UTC timestamp `2026-07-29T16:42:02Z`
+- `fitsync_01_question_typed.png` — 56,634 bytes (VALID)
+- `fitsync_02_response_rendered.png` — 86,985 bytes (VALID, shows "Investigation Result" answer with [E1]...[E5] evidence citations)
+- `fitsync_03_citation_clicked.png` — 36,145 bytes (VALID, shows Files tab opened with "Repository Explorer: FitSync / Loading repository files...")
+- `bottle_01_question_typed.png` — 59,868 bytes (VALID)
+- `bottle_02_response_rendered.png` — 91,050 bytes (VALID, shows bottle auth answer citing `BaseRequest.auth`, `parse_auth`, `auth_basic`)
+- `bottle_03_citation_clicked.png` — 35,474 bytes (VALID, shows Files tab opened)
 
-RUNTIME-UX-004-FIX completed and verified. Fixed generation scoping and truthful source completeness. Removed `ALL_GENERATIONS` fallback from user-facing file routes so legacy `active_generation_id=None` passes `generation_id=None` directly without risk of cross-generation chunk pollution. Enforced conservative completeness reporting (`is_complete=False`) with machine-readable `completeness_reason` (`source_boundary_unavailable` for contiguous chunks lacking EOF verification, and `unindexed_line_gaps` for missing line ranges). Updated frontend viewer wording to explain unverified EOF coverage. Cleared all Vitest `act(...)` test warnings. Verified with Pytest (1388 passed, 0 failures), backend ruff (clean), Vitest (89 passed across 5 test files, 0 failures, clean logs), ESLint (0 errors), Vite build (33 modules transformed), and git diff --check (clean).
+## 4. Active & Next Tasks
+- **Completed**: `RUNTIME-ACCEPT-001` through `RUNTIME-ACCEPT-004` (004 was rejected, replaced by 005).
+- **RUNTIME-ACCEPT-005**: PARTIAL PASS — chat UI accepted; citation navigation (path + line) not implemented.
+- **Next Required Task**: Implement citation-click path navigation (`App.tsx` → `RepoExplorerPanel` with `selectedFilePath` prop) and citation line navigation (scroll-to / highlight start line in `CodeViewer`), then re-run acceptance to achieve full ACCEPTED status.
 
----
+## 5. Verification Suite Results
+- **Real Browser E2E Suite (RUNTIME-ACCEPT-005)**: PARTIAL PASS (Exit Code 0 — chat UI passes).
+- **Backend Pytest**: `1442 passed, 5 skipped, 4 warnings` — 0 failures.
+- **Grounding Regression Suite**: `5 passed, 0 failed`.
+- **Offline Grounded Eval Suite**: `7/7 scenarios passed (100%)`.
+- **Ruff check**: `All checks passed!` — 0 errors.
+- **Git diff --check**: 0 whitespace errors.
 
-## Verified Capabilities
-
-| Capability | Status | Verified by |
-|---|---|---|
-| FastAPI application shell + CORS middleware | ✅ Verified | pytest (test_cors.py) |
-| Anonymous session management (signed cookie) | ✅ Verified | pytest |
-| Repository record domain model + validation | ✅ Verified | pytest |
-| MongoDB Atlas storage layer (repositories, chunks, sessions) | ✅ Verified | pytest |
-| Ownership-scoped API routes (repository CRUD + DELETE + files list + file content) | ✅ Verified | `test_delete_repository_route.py`, `test_repository_files_route.py`, `test_repository_file_content_route.py` |
-| Real Source Code Viewer (`GET /files/content` + line numbers + partial notice) | ✅ Verified | `test_repository_file_content_route.py` (6 passed), Vitest 89 passed, `npm run build` |
-| ZIP/GitHub source acquisition (safety-first) | ✅ Verified | pytest |
-| Repository indexing service | ✅ Verified | pytest |
-| Code chunking (Python AST + Subprocess-Isolated Tree-Sitter AST) | ✅ Verified | pytest |
-| Per-Manager Initialized Target Tracking (`_initialized_target_keys`) | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Direct Manager `close()` Target Invalidation & Reinitialization | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Client Ownership Tracking (`_owns_client`) | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Repository Custom Settings Constructor Precedence & Isolation | ✅ Verified | `mongo_repositories.py`, `test_index_initialization.py` |
-| Genuine Default Target Classification (`("default", db_name)`) | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Process-Shared Default `MongoStorageManager` (`get_default_storage_manager`) | ✅ Verified | `mongodb.py`, `mongo_repositories.py`, `test_index_initialization.py` |
-| Index Initialization Error Propagation (No Silent Fallback) | ✅ Verified | `test_index_initialization.py`, `mongo_repositories.py` |
-| Centralized Capability Readiness Evaluator (`evaluate_capabilities`) | ✅ Verified | `capabilities.py`, `test_capabilities_consistency.py` |
-| Identifier Tokenization & Lexical Term Search (`search_lexical` with `$in` index) | ✅ Verified | `test_lexical.py`, `mongo_repositories.py` |
-| Lazy Runtime Index Initialization (`ensure_indexes`) | ✅ Verified | `mongodb.py`, `mongo_repositories.py`, live explain plan (`IXSCAN`) |
-| Evidence Search API (`POST /api/v1/repositories/{id}/search`) | ✅ Verified | `search.py`, `test_search_route.py` |
-| Capabilities Endpoint (`GET /api/v1/capabilities`) | ✅ Verified | `capabilities.py`, `test_capabilities_consistency.py` |
-| Frontend Static Evidence Search UI & Retry Preservation | ✅ Verified | `App.tsx`, `apiClient.ts`, vitest, `npm run build` |
-| Worker & Indexing Coordinator Mode Authority | ✅ Verified | `github_indexing.py`, `zip_indexing.py`, `repositories.py` |
-| GroundedAnswerService (grounded citations) | ✅ Verified | pytest |
-| React + TypeScript + Vite frontend shell | ✅ Verified | npm run build, npm test |
-| Render Blueprint backend configuration | ✅ Verified | render.yaml |
-| JWT Primitive & Signing Engine (`JWTSigner`) | ✅ Verified | `security.py`, `test_jwt_security.py` |
-| FastAPI Bearer Dependency & JWT Session Endpoint (`POST /api/v1/auth/session`) | ✅ Verified | `dependencies.py`, `auth.py`, `test_auth_dependency.py`, `test_auth_route.py` |
-| Stateless JWT Bearer Auth on Protected Resource Routes | ✅ Verified | `repositories.py`, `indexing_jobs.py`, `search.py`, `conversations.py`, `test_resource_auth.py`, `test_runtime_openapi.py` |
-| Frontend React ApiClient JWT Bearer Storage & Transmission | ✅ Verified | `apiClient.ts`, `types.ts`, `apiClient.test.ts`, `npm run build` |
-| Anonymous Identity Continuity Hardening (commit `23ddeab`) | ✅ Verified | `dependencies.py`, `test_auth_route.py`, `test_session_dependency.py`, `apiClient.ts` |
-| Auth Code-Quality Cleanup (shared secret resolver, single 401 spec, DRY retry) | ✅ Verified | ruff, pytest, vitest, lint, build, eval |
-| **JS/TS Tree-Sitter Worker Stability (tree-sitter pinned 0.25.2)** | ✅ Verified | `pyproject.toml`, `test_js_worker_crash_regression.py` (TRACE-000, `7d86729`) |
-| **Index-Time Flow Evidence Extraction (Python `python-ast-v3` + JS/TS `js-ts-treesitter-v2`)** | ✅ Verified | `python_ast.py`, `javascript_ast.py`, `flow_evidence.py`, `test_python_flow_evidence.py`, `test_js_flow_evidence.py`, `test_flow_evidence_roundtrip.py` (TRACE-001/002) |
-| **Same-File Router-Prefix Folding (`collect_router_prefixes`)** | ✅ Verified | `python_ast.py`, `test_python_flow_evidence.py` 28 passed incl. cross-file HTTP-edge regression (TRACE-006, `078f2a5`) |
-| **Git-Diff Impact Preview (`POST /api/v1/repositories/{id}/impact/diff` + panel diff mode)** | ✅ Verified | `retrieval/diff.py`, `preview_diff()`, `routes/impact.py`, `ImpactPanel.tsx`, `test_diff_impact.py` (17), route tests (5), vitest 54 passed (IMPACT-003, `7fbbae9`) |
-| **Diff Eval Coverage in trace-impact-v1 (4 diff cases, gap isolation, multi-seed dedup)** | ✅ Verified | `trace_impact.dataset.v1.json`, `run_trace_impact_eval.py` PASSED, `test_trace_impact_eval.py` 28 passed (EVAL-003, `c294b13`) |
-| **Grounded Impact Explanations (`mode=explain` on both impact endpoints + panel control)** | ✅ Verified | `impact_explanation.py`, `routes/impact.py`, `ImpactPanel.tsx`, `test_impact_explanation.py` (10), route tests (6), vitest 58 passed (IMPACT-004, `c427a46`) |
-| **Express Endpoint Normalization (mount folding, top-level registration recovery, `route_handler` chunks)** | ✅ Verified | `javascript_ast.py` (`js-ts-treesitter-v3`), `test_js_flow_evidence.py` 26 passed, trace-impact-v1 JS HTTP-edge cases PASSED (TRACE-007, `9e1a6e2`) |
-| **JS/TS Flow Eval Coverage (js_sample_repo, 18 total cases, per-case fixtures)** | ✅ Verified | `trace_impact.dataset.v1.json`, `run_trace_impact_eval.py` PASSED (8/6/4 cases, 17/17 citations), `test_trace_impact_eval.py` 31 passed (EVAL-004, `2e2ab1c`) |
-| **Static Flow Trace API (`POST /api/v1/repositories/{id}/trace`)** | ✅ Verified | `retrieval/trace.py`, `routes/trace.py`, `test_trace_service.py`, `test_trace_route.py` (TRACE-003, `170b67e`) |
-| **Flow Trace Workspace UI (`FlowTracePanel`)** | ✅ Verified | `FlowTracePanel.tsx`, `FlowTracePanel.test.tsx`, vitest 39 passed (TRACE-004, `6e01ddd`) |
-| **Grounded Flow Explanations (`mode=explain`, safe degradation)** | ✅ Verified | `generation/trace_explanation.py`, `test_trace_explanation.py`, `test_trace_route.py` (TRACE-005, `bbb3811`) |
-| **Change Impact Preview API (`POST /api/v1/repositories/{id}/impact`)** | ✅ Verified | `retrieval/impact.py`, `routes/impact.py`, `test_impact_service.py`, `test_impact_route.py` (IMPACT-001, `1ecf34a`) |
-| **Trace & Impact Evaluation Suite (trace-impact-v1, CI-wired)** | ✅ Verified | `run_trace_impact_eval.py` PASSED, `test_trace_impact_eval.py` (evals 25 passed), `ci.yml` (EVAL-002, `7362f9b`) |
-| **Impact Workspace Panel (`ImpactPanel`)** | ✅ Verified | `ImpactPanel.tsx`, `ImpactPanel.test.tsx`, `apiClient.test.ts`, vitest 49 passed, build clean (IMPACT-002, `80aa1d0`) |
-| **Repository Index Freshness Metadata Models (REPO-001 Phase 1)** | ✅ Verified | `domain.py`, `schemas.py`, `mongo_repositories.py`, `test_refresh_metadata_phase1.py` (8 passed) |
-| **Generation-Aware Chunk Storage & Index Migration (REPO-001 Phase 2)** | ✅ Verified | `repositories.py`, `mongo_repositories.py`, `test_refresh_storage_phase2.py` (8 passed) |
-| **GitHub SHA Metadata Capture at Index Time (REPO-001 Phase 3)** | ✅ Verified | `acquisition.py`, `indexing.py`, `domain.py`, `test_refresh_github_phase3.py` (11 passed) |
-| **GitHub Refresh Endpoint + Generation-Safe Worker (REPO-001 Phase 4)** | ✅ Verified | `workers/github_refresh.py`, `routes/repositories.py`, `test_refresh_route.py` (5), `test_github_refresh_worker.py` (2), full suite 0 failures (`09e7b04`) |
-| **Frontend Refresh UX — stale badge, Refresh button, refreshing state (UX-001)** | ✅ Verified | `types.ts`, `App.tsx`, `index.css`, `apiClient.test.ts`; vitest 59 passed, vite build clean (`5b53a72`) |
-| **Refresh Response Contract Alignment (`CreateRepositoryResponse`)** | ✅ Verified | `routes/repositories.py`, `test_refresh_route.py`, `App.test.tsx`; pytest 0 failures, vitest 60 passed |
-| **On-Demand GitHub Freshness Detection (REPO-001 Phase 5)** | ✅ Verified | `freshness.py`, `config.py`, `routes/repositories.py`, `test_refresh_staleness_phase5.py` (5 passed); pytest 0 failures (`cfa686e`) |
-| **Complete Frontend Index Freshness UX (REPO-001 Phase 6)** | ✅ Verified | `types.ts`, `apiClient.ts`, `App.tsx`, `FlowTracePanel.tsx`, `ImpactPanel.tsx`, `index.css`, 67 vitest passed, vite build clean (`4764de2`) |
-| **Repository-Staleness Gaps for Flow Trace & Impact (REPO-001 Phase 7)** | ✅ Verified | `retrieval/trace.py`, `retrieval/impact.py`, `routes/trace.py`, `routes/impact.py`, `test_repo_stale_gaps_phase7.py` (3 passed), `trace-impact.md` |
-| **Static Evidence Fallback Mode for Grounded Chat (AI-CHAT-001)** | ✅ Verified | `retrieval/service.py`, `generation/service.py`, `routes/conversations.py`, `App.tsx`, `test_static_chat_fallback.py` (`7c90ee4`) |
-| **Repository Deletion & Quota Recovery (RUNTIME-UX-001)** | ✅ Verified | `routes/repositories.py`, `schemas.py`, `types.ts`, `App.tsx`, `test_delete_repository_route.py`, `test_live_delete_repo_and_quota.py` (`2445492`) |
-| **Repository Explorer Real File-List API (RUNTIME-UX-002)** | ✅ Verified | `routes/repositories.py`, `schemas.py`, `test_repository_files_route.py`, `test_resource_auth.py` (`9dc94c1`) |
-| **Repository Explorer File Tree UI (RUNTIME-UX-003)** | ✅ Verified | `types.ts`, `apiClient.ts`, `RepoExplorerPanel.tsx`, `RepoExplorerPanel.test.tsx`, `App.tsx`, `index.css`, Vitest 83 passed, build clean |
-
----
-
-## Active Task
-
-**RUNTIME-UX-003 completed.** Ready for **RUNTIME-UX-004** (Source Code Viewer & Evidence Navigation).
-
----
-
-## Known Architectural Limitations
-
-1. **MongoDB Atlas Dependency**: Static mode is zero-token (no LLM/embeddings), but requires a reachable MongoDB database (cloud Atlas or local MongoDB instance).
-2. **BackgroundTasks Non-Durability**: Background indexing runs via FastAPI `BackgroundTasks`. If the backend process crashes or restarts, active jobs in `processing` status must be retried.
-3. **No GC Sweeper**: Old-generation chunk deletion happens synchronously inside the worker after pointer switch. A background sweeper for orphaned generations (e.g. from crashed workers) is not implemented.
-4. **Flow-Evidence Gaps**: module-fallback chunks carry no evidence; mounts/prefixes in other files are not resolved. Same-file prefixes are folded for Python and Express. Repos indexed under old parsers keep valid but less-linkable evidence until refreshed.
-
----
-
-## Verification Facts (Fresh, 2026-07-28 post-RUNTIME-UX-003)
-
-```
-npx vitest run                                                        → 83 passed across 5 test files, 0 failures
-npm run lint                                                          → 0 errors (4 warnings on Fast Refresh constants)
-npm run build                                                         → Built in 1.59s (33 modules transformed, tsc -b clean)
-git diff --check                                                      → 0 whitespace errors
-uv run python scratch/test_live_explorer.py                           → Live acceptance test PASSED against endpoint
-```
-
-
----
-
-## Current Stage
-
-RUNTIME-UX-002 implemented and verified. Added authenticated, owner-scoped `GET /api/v1/repositories/{repository_id}/files` endpoint returning a deterministic list of unique, path-sorted indexed files for the active generation, with minimal language and chunk_count metadata. Derived strictly from persisted code chunks (0 GitHub API calls, 0 filesystem scans, 0 synthetic trees). Enforces owner isolation with uniform 404 for missing/non-owned repositories, and returns 200 OK with empty files list for repositories with no indexed files. Verified with focused pytest suite (5 passed in `test_repository_files_route.py`), full pytest suite (1380 passed), ruff linter, and git diff --check.
-
----
-
-## Verified Capabilities
-
-| Capability | Status | Verified by |
-|---|---|---|
-| FastAPI application shell + CORS middleware | ✅ Verified | pytest (test_cors.py) |
-| Anonymous session management (signed cookie) | ✅ Verified | pytest |
-| Repository record domain model + validation | ✅ Verified | pytest |
-| MongoDB Atlas storage layer (repositories, chunks, sessions) | ✅ Verified | pytest |
-| Ownership-scoped API routes (repository CRUD + DELETE + files list) | ✅ Verified | `test_delete_repository_route.py`, `test_repository_files_route.py` |
-| ZIP/GitHub source acquisition (safety-first) | ✅ Verified | pytest |
-| Repository indexing service | ✅ Verified | pytest |
-| Code chunking (Python AST + Subprocess-Isolated Tree-Sitter AST) | ✅ Verified | pytest |
-| Per-Manager Initialized Target Tracking (`_initialized_target_keys`) | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Direct Manager `close()` Target Invalidation & Reinitialization | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Client Ownership Tracking (`_owns_client`) | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Repository Custom Settings Constructor Precedence & Isolation | ✅ Verified | `mongo_repositories.py`, `test_index_initialization.py` |
-| Genuine Default Target Classification (`("default", db_name)`) | ✅ Verified | `mongodb.py`, `test_index_initialization.py` |
-| Process-Shared Default `MongoStorageManager` (`get_default_storage_manager`) | ✅ Verified | `mongodb.py`, `mongo_repositories.py`, `test_index_initialization.py` |
-| Index Initialization Error Propagation (No Silent Fallback) | ✅ Verified | `test_index_initialization.py`, `mongo_repositories.py` |
-| Centralized Capability Readiness Evaluator (`evaluate_capabilities`) | ✅ Verified | `capabilities.py`, `test_capabilities_consistency.py` |
-| Identifier Tokenization & Lexical Term Search (`search_lexical` with `$in` index) | ✅ Verified | `test_lexical.py`, `mongo_repositories.py` |
-| Lazy Runtime Index Initialization (`ensure_indexes`) | ✅ Verified | `mongodb.py`, `mongo_repositories.py`, live explain plan (`IXSCAN`) |
-| Evidence Search API (`POST /api/v1/repositories/{id}/search`) | ✅ Verified | `search.py`, `test_search_route.py` |
-| Capabilities Endpoint (`GET /api/v1/capabilities`) | ✅ Verified | `capabilities.py`, `test_capabilities_consistency.py` |
-| Frontend Static Evidence Search UI & Retry Preservation | ✅ Verified | `App.tsx`, `apiClient.ts`, vitest, `npm run build` |
-| Worker & Indexing Coordinator Mode Authority | ✅ Verified | `github_indexing.py`, `zip_indexing.py`, `repositories.py` |
-| GroundedAnswerService (grounded citations) | ✅ Verified | pytest |
-| React + TypeScript + Vite frontend shell | ✅ Verified | npm run build, npm test (39 passed) |
-| Render Blueprint backend configuration | ✅ Verified | render.yaml |
-| JWT Primitive & Signing Engine (`JWTSigner`) | ✅ Verified | `security.py`, `test_jwt_security.py` |
-| FastAPI Bearer Dependency & JWT Session Endpoint (`POST /api/v1/auth/session`) | ✅ Verified | `dependencies.py`, `auth.py`, `test_auth_dependency.py`, `test_auth_route.py` |
-| Stateless JWT Bearer Auth on Protected Resource Routes | ✅ Verified | `repositories.py`, `indexing_jobs.py`, `search.py`, `conversations.py`, `test_resource_auth.py`, `test_runtime_openapi.py` |
-| Frontend React ApiClient JWT Bearer Storage & Transmission | ✅ Verified | `apiClient.ts`, `types.ts`, `apiClient.test.ts`, `npm run build` |
-| Anonymous Identity Continuity Hardening (commit `23ddeab`) | ✅ Verified | `dependencies.py`, `test_auth_route.py`, `test_session_dependency.py`, `apiClient.ts` |
-| Auth Code-Quality Cleanup (shared secret resolver, single 401 spec, DRY retry) | ✅ Verified | ruff, pytest, vitest, lint, build, eval |
-| **JS/TS Tree-Sitter Worker Stability (tree-sitter pinned 0.25.2)** | ✅ Verified | `pyproject.toml`, `test_js_worker_crash_regression.py` (TRACE-000, `7d86729`) |
-| **Index-Time Flow Evidence Extraction (Python `python-ast-v3` + JS/TS `js-ts-treesitter-v2`)** | ✅ Verified | `python_ast.py`, `javascript_ast.py`, `flow_evidence.py`, `test_python_flow_evidence.py`, `test_js_flow_evidence.py`, `test_flow_evidence_roundtrip.py` (TRACE-001/002) |
-| **Same-File Router-Prefix Folding (`collect_router_prefixes`)** | ✅ Verified | `python_ast.py`, `test_python_flow_evidence.py` 28 passed incl. cross-file HTTP-edge regression (TRACE-006, `078f2a5`) |
-| **Git-Diff Impact Preview (`POST /api/v1/repositories/{id}/impact/diff` + panel diff mode)** | ✅ Verified | `retrieval/diff.py`, `preview_diff()`, `routes/impact.py`, `ImpactPanel.tsx`, `test_diff_impact.py` (17), route tests (5), vitest 54 passed (IMPACT-003, `7fbbae9`) |
-| **Diff Eval Coverage in trace-impact-v1 (4 diff cases, gap isolation, multi-seed dedup)** | ✅ Verified | `trace_impact.dataset.v1.json`, `run_trace_impact_eval.py` PASSED, `test_trace_impact_eval.py` 28 passed (EVAL-003, `c294b13`) |
-| **Grounded Impact Explanations (`mode=explain` on both impact endpoints + panel control)** | ✅ Verified | `impact_explanation.py`, `routes/impact.py`, `ImpactPanel.tsx`, `test_impact_explanation.py` (10), route tests (6), vitest 58 passed (IMPACT-004, `c427a46`) |
-| **Express Endpoint Normalization (mount folding, top-level registration recovery, `route_handler` chunks)** | ✅ Verified | `javascript_ast.py` (`js-ts-treesitter-v3`), `test_js_flow_evidence.py` 26 passed, trace-impact-v1 JS HTTP-edge cases PASSED (TRACE-007, `9e1a6e2`) |
-| **JS/TS Flow Eval Coverage (js_sample_repo, 18 total cases, per-case fixtures)** | ✅ Verified | `trace_impact.dataset.v1.json`, `run_trace_impact_eval.py` PASSED (8/6/4 cases, 17/17 citations), `test_trace_impact_eval.py` 31 passed (EVAL-004, `2e2ab1c`) |
-| **Static Flow Trace API (`POST /api/v1/repositories/{id}/trace`)** | ✅ Verified | `retrieval/trace.py`, `routes/trace.py`, `test_trace_service.py`, `test_trace_route.py` (TRACE-003, `170b67e`) |
-| **Flow Trace Workspace UI (`FlowTracePanel`)** | ✅ Verified | `FlowTracePanel.tsx`, `FlowTracePanel.test.tsx`, vitest 39 passed (TRACE-004, `6e01ddd`) |
-| **Grounded Flow Explanations (`mode=explain`, safe degradation)** | ✅ Verified | `generation/trace_explanation.py`, `test_trace_explanation.py`, `test_trace_route.py` (TRACE-005, `bbb3811`) |
-| **Change Impact Preview API (`POST /api/v1/repositories/{id}/impact`)** | ✅ Verified | `retrieval/impact.py`, `routes/impact.py`, `test_impact_service.py`, `test_impact_route.py` (IMPACT-001, `1ecf34a`) |
-| **Trace & Impact Evaluation Suite (trace-impact-v1, CI-wired)** | ✅ Verified | `run_trace_impact_eval.py` PASSED, `test_trace_impact_eval.py` (evals 25 passed), `ci.yml` (EVAL-002, `7362f9b`) |
-| **Impact Workspace Panel (`ImpactPanel`)** | ✅ Verified | `ImpactPanel.tsx`, `ImpactPanel.test.tsx`, `apiClient.test.ts`, vitest 49 passed, build clean (IMPACT-002, `80aa1d0`) |
-| **Repository Index Freshness Metadata Models (REPO-001 Phase 1)** | ✅ Verified | `domain.py`, `schemas.py`, `mongo_repositories.py`, `test_refresh_metadata_phase1.py` (8 passed) |
-| **Generation-Aware Chunk Storage & Index Migration (REPO-001 Phase 2)** | ✅ Verified | `repositories.py`, `mongo_repositories.py`, `test_refresh_storage_phase2.py` (8 passed) |
-| **GitHub SHA Metadata Capture at Index Time (REPO-001 Phase 3)** | ✅ Verified | `acquisition.py`, `indexing.py`, `domain.py`, `test_refresh_github_phase3.py` (11 passed) |
-| **GitHub Refresh Endpoint + Generation-Safe Worker (REPO-001 Phase 4)** | ✅ Verified | `workers/github_refresh.py`, `routes/repositories.py`, `test_refresh_route.py` (5), `test_github_refresh_worker.py` (2), full suite 0 failures (`09e7b04`) |
-| **Frontend Refresh UX — stale badge, Refresh button, refreshing state (UX-001)** | ✅ Verified | `types.ts`, `App.tsx`, `index.css`, `apiClient.test.ts`; vitest 59 passed, vite build clean (`5b53a72`) |
-| **Refresh Response Contract Alignment (`CreateRepositoryResponse`)** | ✅ Verified | `routes/repositories.py`, `test_refresh_route.py`, `App.test.tsx`; pytest 0 failures, vitest 60 passed |
-| **On-Demand GitHub Freshness Detection (REPO-001 Phase 5)** | ✅ Verified | `freshness.py`, `config.py`, `routes/repositories.py`, `test_refresh_staleness_phase5.py` (5 passed); pytest 0 failures (`cfa686e`) |
-| **Complete Frontend Index Freshness UX (REPO-001 Phase 6)** | ✅ Verified | `types.ts`, `apiClient.ts`, `App.tsx`, `FlowTracePanel.tsx`, `ImpactPanel.tsx`, `index.css`, 67 vitest passed, vite build clean (`4764de2`) |
-| **Repository-Staleness Gaps for Flow Trace & Impact (REPO-001 Phase 7)** | ✅ Verified | `retrieval/trace.py`, `retrieval/impact.py`, `routes/trace.py`, `routes/impact.py`, `test_repo_stale_gaps_phase7.py` (3 passed), `trace-impact.md` |
-| **Static Evidence Fallback Mode for Grounded Chat (AI-CHAT-001)** | ✅ Verified | `retrieval/service.py`, `generation/service.py`, `routes/conversations.py`, `App.tsx`, `test_static_chat_fallback.py` (`7c90ee4`) |
-| **Repository Deletion & Quota Recovery (RUNTIME-UX-001)** | ✅ Verified | `routes/repositories.py`, `schemas.py`, `types.ts`, `App.tsx`, `test_delete_repository_route.py`, `test_live_delete_repo_and_quota.py` (`2445492`) |
-
----
-
-## Active Task
-
-**RUNTIME-UX-002 completed.** Implemented `GET /api/v1/repositories/{repository_id}/files` endpoint returning a unique, path-sorted list of indexed files for the repository's active generation, with `path`, `language`, and `chunk_count` metadata. Derived exclusively from stored code chunk records. Returns uniform HTTP 404 for non-owned or missing repositories, and 200 OK with empty files list for repositories with no indexed files.
-
----
-
-## Known Architectural Limitations
-
-1. **MongoDB Atlas Dependency**: Static mode is zero-token (no LLM/embeddings), but requires a reachable MongoDB database (cloud Atlas or local MongoDB instance).
-2. **BackgroundTasks Non-Durability**: Background indexing runs via FastAPI `BackgroundTasks`. If the backend process crashes or restarts, active jobs in `processing` status must be retried.
-3. **No GC Sweeper**: Old-generation chunk deletion happens synchronously inside the worker after pointer switch. A background sweeper for orphaned generations (e.g. from crashed workers) is not implemented.
-4. **Flow-Evidence Gaps**: module-fallback chunks carry no evidence; mounts/prefixes in other files are not resolved. Same-file prefixes are folded for Python and Express. Repos indexed under old parsers keep valid but less-linkable evidence until refreshed.
-
----
-
-## Verification Facts (Fresh, 2026-07-28 post-RUNTIME-UX-002)
-
-```
-pytest tests/api/test_repository_files_route.py                     → 5 passed
-pytest                                                                → 1380 passed, 5 skipped
-uv run ruff check .                                                  → All checks passed!
-git diff --check                                                      → 0 whitespace errors
-```
+## 6. Known Product Gaps (Citation Navigation)
+| Gap | Location | Detail |
+|-----|----------|--------|
+| Path navigation | `App.tsx` L1189–1191 | Citation `onClick` only calls `setActiveSection('files')`; cited path not passed to `RepoExplorerPanel` |
+| Line navigation | `RepoExplorerPanel.tsx` | No `selectedLine`/`highlightLine`/`scrollToLine` prop; gutter shows all lines sequentially |

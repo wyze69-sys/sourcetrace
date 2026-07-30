@@ -64,6 +64,7 @@ class RepositoryRepository(Protocol):
         flow_evidence_complete: bool | None = None,
         indexed_file_count: int | None = None,
         indexed_chunk_count: int | None = None,
+        active_generation_id: str | None = None,
     ) -> RepositoryRecord | None: ...
 
     def update_active_generation(
@@ -122,6 +123,10 @@ class IndexingJobRepository(Protocol):
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int: ...
 
+    def list_by_repository(
+        self, owner_session_id: str, repository_id: str
+    ) -> list[IndexingJobRecord]: ...
+
 
 class CodeChunkRepository(Protocol):
     """Persistence interface for AST code chunks and vector search."""
@@ -133,7 +138,12 @@ class CodeChunkRepository(Protocol):
         owner_session_id: str,
         repository_id: str,
         generation_id: str | None = None,
+        limit: int | None = None,
     ) -> list[CodeChunk]: ...
+
+    def migrate_legacy_generation(
+        self, owner_session_id: str, repository_id: str, target_generation_id: str
+    ) -> int: ...
 
     def search_vectors(
         self,

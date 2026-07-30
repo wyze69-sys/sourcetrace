@@ -284,7 +284,7 @@ def test_provider_failure_returns_static_evidence() -> None:
     res = service.generate_answer("sess_001", "repo_001", "Question")
 
     assert res.insufficient_evidence is False
-    assert "AI answer unavailable" in res.answer
+    assert "Start with these retrieved source locations:" in res.answer
     assert "API Secret Key Leak" not in res.answer
     assert len(res.citations) == 1
     assert res.citations[0].relative_path == "sourcetrace/core/config.py"

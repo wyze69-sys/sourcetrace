@@ -334,8 +334,8 @@ def test_lexical_fallback_llm_failure_returns_static_evidence_safely() -> None:
     )
 
     assert res.insufficient_evidence is False
-    assert "AI answer unavailable" in res.answer
-    assert "retrieved static evidence" in res.answer
+    assert "Start with these retrieved source locations:" in res.answer
+    assert res.answer_mode == "static_guidance"
     assert len(res.citations) == 2
     assert res.citations[0].relative_path == "src/a.py"
     assert res.citations[1].relative_path == "src/b.py"

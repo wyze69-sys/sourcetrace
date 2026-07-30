@@ -690,4 +690,77 @@ capabilities:
       Extended RepoExplorerPanel with line-numbered plain-text viewer, language badge, partial content notice banner,
       loading/error states with retry, HTML injection safety, and request cancellation guards.
 
+  - id: QUESTION-FIRST-WORKSPACE
+    name: Question-first default workspace, starter questions, compact navigation, and calm theme
+    lifecycle: implemented_verified
+    owning_task: RUNTIME-UX-005
+    canonical_target:
+      backend: null
+      api: null
+      frontend: frontend/src/app/App.tsx
+      storage: null
+    existing_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/styles/index.css
+      - frontend/src/app/App.test.tsx
+    notes: >
+      RUNTIME-UX-005 completed. Question-first hero layout centered on "What do you want to understand about <repository.name>?",
+      4 starter question buttons, active workspace state defaulting to 'understand', compact navigation tabs (Understand, Files,
+      Find code, Advanced analysis accordion with Flow Trace and Change Impact), and calm off-white visual theme (#f8fafc).
+
+  - id: EVIDENCE-BACKED-ORIENTATION-ANSWERS
+    name: Clear evidence-backed repository orientation answer path, structured answer modes, and static guidance fallback
+    lifecycle: implemented_verified
+    owning_task: RUNTIME-ANSWER-001
+    canonical_target:
+      backend: backend/src/sourcetrace/generation/service.py
+      api: POST /api/v1/repositories/{id}/conversations
+      frontend: frontend/src/app/App.tsx
+      storage: messages
+    existing_paths:
+      - backend/src/sourcetrace/models/domain.py
+      - backend/src/sourcetrace/api/schemas.py
+      - backend/src/sourcetrace/retrieval/service.py
+      - backend/src/sourcetrace/generation/prompts.py
+      - backend/src/sourcetrace/generation/service.py
+      - backend/src/sourcetrace/api/routes/conversations.py
+      - frontend/src/services/types.ts
+      - frontend/src/app/App.tsx
+      - frontend/src/styles/index.css
+      - backend/tests/retrieval/test_natural_language_retrieval.py
+      - backend/tests/generation/test_service.py
+      - frontend/src/app/App.test.tsx
+    notes: >
+      RUNTIME-ANSWER-001 completed. Added structured repository-orientation query intent and evidence retrieval
+      strategy (README/docs 1.0, manifests 0.95, entrypoints 0.90, routing 0.80), orientation system prompt,
+      answer_mode schema/API field ('normal', 'orientation', 'static_guidance', 'insufficient_orientation',
+      'insufficient_evidence'), deterministic static guidance fallback for LLM failures, and frontend card UI with
+      clickable citations switching tab to Files.
+
+  - id: RETRIEVAL-QUALITY-001
+    name: Intent-aware retrieval ranking, citation relevance filtering, and live question-answering quality
+    lifecycle: implemented_verified
+    owning_task: RUNTIME-RETRIEVAL-002
+    canonical_target:
+      backend: backend/src/sourcetrace/retrieval/service.py
+      api: POST /api/v1/repositories/{id}/conversations
+      frontend: null
+      storage: null
+    existing_paths:
+      - backend/src/sourcetrace/retrieval/service.py
+      - backend/src/sourcetrace/generation/service.py
+      - backend/src/sourcetrace/generation/prompts.py
+      - backend/src/sourcetrace/api/schemas.py
+      - backend/tests/retrieval/test_retrieval_grounding_quality.py
+    notes: >
+      RUNTIME-RETRIEVAL-002 completed. Added _is_startup_question() and _is_auth_question() intent classifiers.
+      SemanticRetrievalService now always triggers expanded lexical fallback on startup/auth intent regardless of
+      semantic score. Startup terms (main, app, server, index, bootstrap, create_app, entry, listen, wsgi) and
+      auth terms (auth, login, session, jwt, token, user, authenticate, middleware, security, passport, bearer)
+      are expanded. _construct_grounded_evidence() boosts intent-matching candidates by +0.30 and demotes
+      non-matching by -0.10. GroundedAnswerService._is_evidence_relevant_to_question() validates that each cited
+      chunk contains at least one token from the question's intent vocabulary. Orientation questions bypass this
+      filter. message_record_to_schema() now serializes 'reindex_required' as a valid answer mode.
+      Live verification: FitSync startup (server.js 3 citations), bottle startup (main/2 citations), bottle
+      orientation (BaseRequest.auth 4 citations), citation navigation SUCCESS for both repos.
 

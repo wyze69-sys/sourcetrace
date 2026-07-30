@@ -25,13 +25,20 @@ class InMemoryCodeChunkRepository:
         return len(chunks)
 
     def list_by_repository(
-        self, owner_session_id: str, repository_id: str, generation_id: str | None = None
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        generation_id: str | None = None,
+        limit: int | None = None,
     ) -> list[CodeChunk]:
-        return [
+        res = [
             c
             for c in self.chunks
             if c.owner_session_id == owner_session_id and c.repository_id == repository_id
         ]
+        if limit is not None and limit > 0:
+            return res[:limit]
+        return res
 
     def search_vectors(
         self, owner_session_id: str, repository_id: str, query_vector: list[float], limit: int = 5
@@ -39,7 +46,11 @@ class InMemoryCodeChunkRepository:
         return []
 
     def search_lexical(
-        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5,
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        query_text: str,
+        limit: int = 5,
         generation_id: str | None = None,
     ):
         from sourcetrace.models.domain import RetrievalResult

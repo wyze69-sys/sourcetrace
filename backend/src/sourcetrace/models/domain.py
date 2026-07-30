@@ -214,6 +214,7 @@ class MessageRecord:
     citations: tuple[CitationRecord, ...] = field(default_factory=tuple)
     evidence: tuple[EvidenceSnippetRecord, ...] = field(default_factory=tuple)
     insufficient_evidence: bool = False
+    answer_mode: str = "normal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +241,7 @@ class GroundedEvidenceResult:
 
     items: tuple[RetrievedEvidence, ...] = field(default_factory=tuple)
     total_retrieved: int = 0
+    reindex_required: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,3 +253,4 @@ class GroundedAnswerResult:
     evidence: tuple[EvidenceSnippetRecord, ...] = field(default_factory=tuple)
     insufficient_evidence: bool = False
     chunks_retrieved: int = 0
+    answer_mode: str = "normal"

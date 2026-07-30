@@ -79,7 +79,11 @@ class _FakeChunkRepo:
         return list(self._chunks)
 
     def search_lexical(
-        self, owner_session_id: str, repository_id: str, query_text: str, limit: int = 5,
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        query_text: str,
+        limit: int = 5,
         generation_id: str | None = None,
     ) -> list[RetrievalResult]:
         # Match symbol names or paths — the real implementation indexes both

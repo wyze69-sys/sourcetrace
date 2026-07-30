@@ -85,7 +85,6 @@ def fake_repos() -> tuple[FakeRepositoryRepo, FakeIndexingJobRepo, FakeGitHubRef
     return FakeRepositoryRepo(), FakeIndexingJobRepo(), FakeGitHubRefreshScheduler()
 
 
-
 @pytest.fixture
 def auth_headers() -> dict[str, str]:
     return {"Authorization": "Bearer fake-test-token"}

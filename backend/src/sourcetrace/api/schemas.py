@@ -162,7 +162,6 @@ class RepositoryFileContentResponse(BaseModel):
     )
 
 
-
 class Citation(BaseModel):
     """Citation metadata for a cited code symbol and file location."""
 
@@ -192,6 +191,14 @@ class Message(BaseModel):
     content: str
     created_at: datetime
     insufficient_evidence: bool = False
+    answer_mode: Literal[
+        "normal",
+        "orientation",
+        "static_guidance",
+        "insufficient_orientation",
+        "insufficient_evidence",
+        "reindex_required",
+    ] = "normal"
     citations: list[Citation] = Field(default_factory=list)
     evidence: list[EvidenceSnippet] = Field(default_factory=list)
 
@@ -325,12 +332,24 @@ def message_record_to_schema(record: MessageRecord) -> Message:
     """Convert domain MessageRecord to public Message schema safely."""
     if record.role not in ("user", "assistant"):
         raise ValueError(f"Invalid message role: {record.role}")
+    mode = getattr(record, "answer_mode", "normal")
+    valid_modes = (
+        "normal",
+        "orientation",
+        "static_guidance",
+        "insufficient_orientation",
+        "insufficient_evidence",
+        "reindex_required",
+    )
+    if mode not in valid_modes:
+        mode = "normal"
     return Message(
         message_id=record.message_id,
         role=record.role,  # type: ignore[arg-type]
         content=record.content,
         created_at=record.created_at,
         insufficient_evidence=record.insufficient_evidence,
+        answer_mode=mode,  # type: ignore[arg-type]
         citations=[citation_record_to_schema(c) for c in record.citations],
         evidence=[evidence_record_to_schema(e) for e in record.evidence],
     )

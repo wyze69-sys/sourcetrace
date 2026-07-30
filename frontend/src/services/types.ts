@@ -143,6 +143,7 @@ export interface Message {
   role: MessageRole
   content: string
   insufficient_evidence?: boolean
+  answer_mode?: 'normal' | 'orientation' | 'static_guidance' | 'insufficient_orientation' | 'insufficient_evidence' | 'reindex_required'
   citations?: Citation[]
   evidence?: EvidenceSnippet[]
   created_at: string

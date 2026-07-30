@@ -106,6 +106,7 @@ def test_semantic_retrieval_service_static_integration():
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         index_mode="static",
+        active_generation_id="gen_static_1",
     )
 
     service = SemanticRetrievalService(
@@ -125,7 +126,7 @@ def test_semantic_retrieval_service_static_integration():
         repository_id="repo_1",
         query_text="format_user_name",
         limit=5,
-        generation_id=None,
+        generation_id="gen_static_1",
     )
     assert result.total_retrieved == 1
     assert result.items[0].citation.symbol_name == "format_user_name"
@@ -236,3 +237,43 @@ def test_search_lexical_query_and_limit_bounds():
     with pytest.raises(StorageDataError) as exc_info:
         repo.search_lexical("owner_1", "repo_1", "workout", limit=51)
     assert "between 1 and 50" in str(exc_info.value)
+
+
+def test_mongo_code_chunk_repository_filters_stop_words_and_enforces_scope():
+    """Verify MongoCodeChunkRepository query construction filters stop words and scopes queries."""
+    mock_collection = MagicMock()
+    mock_collection.find.return_value.limit.return_value = []
+
+    repo = MongoCodeChunkRepository(collection=mock_collection)
+    repo.search_lexical(
+        owner_session_id="owner_sess_abc",
+        repository_id="repo_xyz",
+        query_text="Where does the application start?",
+        limit=5,
+        generation_id="gen_v42",
+    )
+
+    assert mock_collection.find.call_count >= 3
+    called_filters = [c[0][0] for c in mock_collection.find.call_args_list]
+
+    # Every single query filter MUST enforce owner, repository, and generation scoping
+    for f in called_filters:
+        assert f["owner_session_id"] == "owner_sess_abc"
+        assert f["repository_id"] == "repo_xyz"
+        assert f["generation_id"] == "gen_v42"
+
+    # Stage C & Stage D MUST filter out stop words ('where', 'does', 'the')
+    stage_c_all = called_filters[2]["search_terms"]["$all"]
+    stage_d_in = called_filters[3]["search_terms"]["$in"]
+
+    assert "where" not in stage_c_all
+    assert "does" not in stage_c_all
+    assert "the" not in stage_c_all
+    assert "application" in stage_c_all
+    assert "start" in stage_c_all
+
+    assert "where" not in stage_d_in
+    assert "does" not in stage_d_in
+    assert "the" not in stage_d_in
+    assert "application" in stage_d_in
+    assert "start" in stage_d_in

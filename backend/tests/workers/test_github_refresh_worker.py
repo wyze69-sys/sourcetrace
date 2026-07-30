@@ -180,7 +180,8 @@ class FakeCodeChunkRepo(CodeChunkRepository):
         before = len(self.chunks)
         if generation_id is None:
             self.chunks = [
-                c for c in self.chunks
+                c
+                for c in self.chunks
                 if not (
                     c.owner_session_id == owner_session_id
                     and c.repository_id == repository_id
@@ -189,7 +190,8 @@ class FakeCodeChunkRepo(CodeChunkRepository):
             ]
         else:
             self.chunks = [
-                c for c in self.chunks
+                c
+                for c in self.chunks
                 if not (
                     c.owner_session_id == owner_session_id
                     and c.repository_id == repository_id

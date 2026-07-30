@@ -1,0 +1,140 @@
+{
+  "corpus_version": "v1.0.0",
+  "scenario_set_version": "v1.0.0",
+  "description": "Versioned offline grounded-answer quality and citation safety benchmark scenario set",
+  "scenarios": [
+    {
+      "id": "scenario-01",
+      "name": "Valid grounded answer",
+      "category": "valid_grounded",
+      "question": "Where does the application start?",
+      "repository_fixture": "tests/fixtures/eval_corpus_v1",
+      "simulated_provider": {
+        "behavior": "text",
+        "output_text": "The application entrypoint is defined in main.py [E1]."
+      },
+      "expected": {
+        "provider_called": true,
+        "answer_mode": "normal",
+        "insufficient_evidence": false,
+        "expected_citations_count": 1,
+        "expect_safe_fallback": false,
+        "reason_code": "VALID_GROUNDED_ANSWER"
+      }
+    },
+    {
+      "id": "scenario-02",
+      "name": "Multiple valid citations",
+      "category": "multiple_citations",
+      "question": "How does authentication and routing work?",
+      "repository_fixture": "tests/fixtures/eval_corpus_v1",
+      "simulated_provider": {
+        "behavior": "text",
+        "output_text": "Authentication validates user tokens in auth.py [E1], while API endpoints are registered in routes.py [E2]."
+      },
+      "expected": {
+        "provider_called": true,
+        "answer_mode": "normal",
+        "insufficient_evidence": false,
+        "expected_citations_count": 2,
+        "expect_safe_fallback": false,
+        "reason_code": "VALID_MULTIPLE_CITATIONS"
+      }
+    },
+    {
+      "id": "scenario-03",
+      "name": "Uncited provider answer",
+      "category": "uncited_provider",
+      "question": "Where is configuration loaded?",
+      "repository_fixture": "tests/fixtures/eval_corpus_v1",
+      "simulated_provider": {
+        "behavior": "text",
+        "output_text": "Configuration is loaded from environment variables into an AppConfig instance."
+      },
+      "expected": {
+        "provider_called": true,
+        "answer_mode": "insufficient_evidence",
+        "insufficient_evidence": true,
+        "expected_citations_count": 0,
+        "expect_safe_fallback": true,
+        "reason_code": "UNCITED_PROVIDER_FALLBACK"
+      }
+    },
+    {
+      "id": "scenario-04",
+      "name": "Invalid citation marker",
+      "category": "invalid_marker",
+      "question": "Where is configuration loaded?",
+      "repository_fixture": "tests/fixtures/eval_corpus_v1",
+      "simulated_provider": {
+        "behavior": "text",
+        "output_text": "Configuration is initialized in config.py [E99]."
+      },
+      "expected": {
+        "provider_called": true,
+        "answer_mode": "insufficient_evidence",
+        "insufficient_evidence": true,
+        "expected_citations_count": 0,
+        "expect_safe_fallback": true,
+        "reason_code": "INVALID_MARKER_FALLBACK"
+      }
+    },
+    {
+      "id": "scenario-05",
+      "name": "Provider failure",
+      "category": "provider_failure",
+      "question": "Where does the application start?",
+      "repository_fixture": "tests/fixtures/eval_corpus_v1",
+      "simulated_provider": {
+        "behavior": "raise_error",
+        "error_message": "LLM provider connection timeout"
+      },
+      "expected": {
+        "provider_called": true,
+        "answer_mode": "static_guidance",
+        "insufficient_evidence": false,
+        "expected_citations_count": 2,
+        "expect_safe_fallback": true,
+        "reason_code": "PROVIDER_FAILURE_FALLBACK"
+      }
+    },
+    {
+      "id": "scenario-06",
+      "name": "No retrieval evidence",
+      "category": "no_evidence",
+      "question": "How does quantum key rotation work in this cluster?",
+      "repository_fixture": "tests/fixtures/eval_corpus_v1",
+      "simulated_provider": {
+        "behavior": "text",
+        "output_text": "Quantum key rotation uses key servers [E1]."
+      },
+      "expected": {
+        "provider_called": false,
+        "answer_mode": "insufficient_evidence",
+        "insufficient_evidence": true,
+        "expected_citations_count": 0,
+        "expect_safe_fallback": true,
+        "reason_code": "NO_EVIDENCE_SAFEGUARD"
+      }
+    },
+    {
+      "id": "scenario-07",
+      "name": "Orientation question",
+      "category": "orientation",
+      "question": "What should I read first?",
+      "repository_fixture": "tests/fixtures/eval_corpus_v1",
+      "simulated_provider": {
+        "behavior": "text",
+        "output_text": "Start by reading config.py [E1] and main.py [E4] to explore the repository."
+      },
+      "expected": {
+        "provider_called": true,
+        "answer_mode": "orientation",
+        "insufficient_evidence": false,
+        "expected_citations_count": 2,
+        "expect_safe_fallback": false,
+        "reason_code": "VALID_ORIENTATION_ANSWER"
+      }
+    }
+  ]
+}

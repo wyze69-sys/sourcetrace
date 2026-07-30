@@ -453,6 +453,7 @@ class MongoRepositoryRepository:
         flow_evidence_complete: bool | None = None,
         indexed_file_count: int | None = None,
         indexed_chunk_count: int | None = None,
+        active_generation_id: str | None = None,
     ) -> RepositoryRecord | None:
         expected_filter: Any
         if isinstance(expected_status, (tuple, list, set)):
@@ -487,6 +488,8 @@ class MongoRepositoryRepository:
             set_doc["indexed_file_count"] = indexed_file_count
         if indexed_chunk_count is not None:
             set_doc["indexed_chunk_count"] = indexed_chunk_count
+        if active_generation_id is not None:
+            set_doc["active_generation_id"] = active_generation_id
 
         doc = self._collection.find_one_and_update(
             query_filter,
@@ -633,6 +636,16 @@ class MongoIndexingJobRepository:
         if doc is None:
             return None
         return _doc_to_job(doc)
+
+    def list_by_repository(
+        self, owner_session_id: str, repository_id: str
+    ) -> list[IndexingJobRecord]:
+        query_filter = {
+            "owner_session_id": owner_session_id,
+            "repository_id": repository_id,
+        }
+        cursor = self._collection.find(query_filter).sort("completed_at", -1)
+        return [_doc_to_job(doc) for doc in cursor]
 
     def get_by_repository(
         self, owner_session_id: str, repository_id: str
@@ -1330,6 +1343,7 @@ class MongoCodeChunkRepository:
         owner_session_id: str,
         repository_id: str,
         generation_id: str | None | object = None,
+        limit: int | None = None,
     ) -> list[CodeChunk]:
         self._ensure_indexes_lazily()
         owner_id = _validate_non_empty_string(owner_session_id)
@@ -1350,9 +1364,33 @@ class MongoCodeChunkRepository:
 
         try:
             cursor = self._collection.find(query_filter).sort(sort_spec)
+            if limit is not None and limit > 0:
+                cursor = cursor.limit(limit)
             return [_doc_to_chunk(doc) for doc in cursor]
         except Exception:
             raise StorageOperationError("Database query operation failed safely.") from None
+
+    def migrate_legacy_generation(
+        self, owner_session_id: str, repository_id: str, target_generation_id: str
+    ) -> int:
+        self._ensure_indexes_lazily()
+        owner_id = _validate_non_empty_string(owner_session_id)
+        repo_id = _validate_non_empty_string(repository_id)
+        target_gen = _validate_non_empty_string(target_generation_id)
+
+        query_filter: dict[str, Any] = {
+            "owner_session_id": owner_id,
+            "repository_id": repo_id,
+            "generation_id": None,
+        }
+        try:
+            result = self._collection.update_many(
+                query_filter,
+                {"$set": {"generation_id": target_gen}},
+            )
+            return int(result.modified_count)
+        except Exception:
+            raise StorageOperationError("Database migration operation failed safely.") from None
 
     def delete_by_repository(self, owner_session_id: str, repository_id: str) -> int:
         self._ensure_indexes_lazily()
@@ -1563,8 +1601,12 @@ class MongoCodeChunkRepository:
         if not query_tokens:
             return []
 
+        search_tokens = [t for t in query_tokens if t not in _ENGLISH_STOP_WORDS]
+        if not search_tokens:
+            search_tokens = query_tokens
+
         query_clean = " ".join(query_tokens).lower()
-        query_token_set = set(query_tokens)
+        query_token_set = set(search_tokens) if search_tokens else set(query_tokens)
 
         base_filter: dict[str, Any] = {
             "owner_session_id": owner_id,
@@ -1595,7 +1637,7 @@ class MongoCodeChunkRepository:
 
         # Stage C: All-token search_terms match ($all)
         try:
-            filter_c = {**base_filter, "search_terms": {"$all": query_tokens}}
+            filter_c = {**base_filter, "search_terms": {"$all": search_tokens}}
             for doc in self._collection.find(filter_c).limit(stage_limit):
                 if isinstance(doc, dict) and "chunk_id" in doc:
                     candidates_by_id[doc["chunk_id"]] = doc
@@ -1605,7 +1647,7 @@ class MongoCodeChunkRepository:
         # Stage D: Bounded fallback search_terms match ($in) if candidate pool is small
         if len(candidates_by_id) < limit * 10:
             try:
-                filter_d = {**base_filter, "search_terms": {"$in": query_tokens}}
+                filter_d = {**base_filter, "search_terms": {"$in": search_tokens}}
                 for doc in self._collection.find(filter_d).limit(stage_limit):
                     if isinstance(doc, dict) and "chunk_id" in doc:
                         candidates_by_id[doc["chunk_id"]] = doc
@@ -1662,6 +1704,164 @@ class MongoCodeChunkRepository:
         )
 
         return results[:limit]
+
+
+_ENGLISH_STOP_WORDS: set[str] = {
+    "a",
+    "about",
+    "above",
+    "after",
+    "again",
+    "against",
+    "all",
+    "am",
+    "an",
+    "and",
+    "any",
+    "are",
+    "aren't",
+    "as",
+    "at",
+    "be",
+    "because",
+    "been",
+    "before",
+    "being",
+    "below",
+    "between",
+    "both",
+    "but",
+    "by",
+    "can",
+    "can't",
+    "cannot",
+    "could",
+    "couldn't",
+    "did",
+    "didn't",
+    "do",
+    "does",
+    "doesn't",
+    "doing",
+    "don't",
+    "down",
+    "during",
+    "each",
+    "few",
+    "for",
+    "from",
+    "further",
+    "had",
+    "hadn't",
+    "has",
+    "hasn't",
+    "have",
+    "haven't",
+    "having",
+    "he",
+    "how",
+    "how's",
+    "i",
+    "if",
+    "in",
+    "into",
+    "is",
+    "isn't",
+    "it",
+    "it's",
+    "its",
+    "itself",
+    "me",
+    "more",
+    "most",
+    "mustn't",
+    "my",
+    "myself",
+    "no",
+    "nor",
+    "not",
+    "of",
+    "off",
+    "on",
+    "once",
+    "only",
+    "or",
+    "other",
+    "ought",
+    "our",
+    "ours",
+    "ourselves",
+    "out",
+    "over",
+    "own",
+    "same",
+    "shan't",
+    "she",
+    "should",
+    "shouldn't",
+    "so",
+    "some",
+    "such",
+    "than",
+    "that",
+    "that's",
+    "the",
+    "their",
+    "theirs",
+    "them",
+    "themselves",
+    "then",
+    "there",
+    "there's",
+    "these",
+    "they",
+    "this",
+    "those",
+    "through",
+    "to",
+    "too",
+    "under",
+    "until",
+    "up",
+    "very",
+    "was",
+    "wasn't",
+    "we",
+    "were",
+    "weren't",
+    "what",
+    "what's",
+    "when",
+    "when's",
+    "where",
+    "where's",
+    "which",
+    "while",
+    "who",
+    "who's",
+    "whom",
+    "why",
+    "why's",
+    "with",
+    "won't",
+    "would",
+    "wouldn't",
+    "you",
+    "your",
+    "yours",
+    "yourself",
+    "yourselves",
+    "work",
+    "works",
+    "code",
+    "file",
+    "files",
+    "find",
+    "show",
+    "get",
+    "tell",
+    "please",
+}
 
 
 def _doc_to_conversation(doc: dict[str, Any]) -> ConversationRecord:

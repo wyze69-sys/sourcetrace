@@ -163,9 +163,7 @@ def test_symbol_and_diff_impact_repo_stale_gap() -> None:
     service = ChangeImpactService(chunk_repo)
 
     # 1. Symbol Impact with stale repository
-    res_symbol = service.impact(
-        "owner_1", "repo_stale_impact", "process", repository=stale_repo
-    )
+    res_symbol = service.impact("owner_1", "repo_stale_impact", "process", repository=stale_repo)
     symbol_gaps = [g.kind for g in res_symbol.gaps]
     assert "repo_stale" in symbol_gaps
     assert "stale_index" not in symbol_gaps

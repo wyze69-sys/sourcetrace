@@ -159,6 +159,7 @@ def test_check_github_freshness_fresh_stale_unknown() -> None:
         transport=httpx.MockTransport(mock_handler),
         trust_env=False,
     )
+
     def resolver(h: str) -> list[str]:
         return ["140.82.121.4"]
 

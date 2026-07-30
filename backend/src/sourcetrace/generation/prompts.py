@@ -29,6 +29,55 @@ CRITICAL GROUNDING RULES:
    payloads."""
 
 
+ORIENTATION_SYSTEM_INSTRUCTIONS = """You are SourceTrace AI,
+an expert codebase intelligence assistant.
+Your task is to provide a clear, prioritized repository orientation reading guide
+based strictly on the retrieved source code evidence below.
+
+CRITICAL INSTRUCTIONS FOR REPOSITORY ORIENTATION:
+1. State in 1 sentence what SourceTrace verified about this repository.
+2. Provide a prioritized 2-4 source reading path (covering documentation/README,
+   manifests, entry points, routes, or core services present in the evidence).
+3. Explain what each suggested source contains and why it is useful to read first,
+   citing its evidence marker (e.g., [E1], [E2]).
+4. Conclude with 1 clear recommended next action (e.g., "Read main.py [E1]...").
+5. CITE EVIDENCE MARKERS (e.g. [E1], [E2]) for every file mentioned.
+6. Do NOT fabricate files or claims not present in the evidence. Do NOT invent markers."""
+
+
+def _is_orientation_prompt_question(query_text: str) -> bool:
+    from sourcetrace.storage.mongo_repositories import tokenize_identifier
+
+    raw_tokens = tokenize_identifier(query_text)
+    tokens = set(t.lower() for t in raw_tokens)
+
+    if ("read" in tokens or "explore" in tokens or "start" in tokens or "begin" in tokens) and (
+        "first" in tokens or "here" in tokens or "order" in tokens or "guide" in tokens
+    ):
+        return True
+    if ("explore" in tokens or "navigate" in tokens or "understand" in tokens) and (
+        "how" in tokens or "repository" in tokens or "codebase" in tokens or "project" in tokens
+    ):
+        return True
+    if (
+        "what" in tokens
+        and ("repository" in tokens or "project" in tokens or "codebase" in tokens)
+        and ("do" in tokens or "does" in tokens or "overview" in tokens or "about" in tokens)
+    ):
+        return True
+    if (
+        "organized" in tokens
+        or "organization" in tokens
+        or "structure" in tokens
+        or "overview" in tokens
+    ) and (
+        "how" in tokens or "project" in tokens or "repository" in tokens or "codebase" in tokens
+    ):
+        return True
+
+    return False
+
+
 def build_grounded_prompt(
     question: str,
     evidence_items: Sequence[RetrievedEvidence],
@@ -39,9 +88,13 @@ def build_grounded_prompt(
     """Construct deterministic provider-neutral prompt messages with bounded evidence markers."""
     clean_question = question.strip()
 
-    messages: list[GenerationMessage] = [
-        GenerationMessage(role="system", content=SYSTEM_INSTRUCTIONS)
-    ]
+    sys_inst = (
+        ORIENTATION_SYSTEM_INSTRUCTIONS
+        if _is_orientation_prompt_question(clean_question)
+        else SYSTEM_INSTRUCTIONS
+    )
+
+    messages: list[GenerationMessage] = [GenerationMessage(role="system", content=sys_inst)]
 
     # Format Evidence items into structured text block
     evidence_blocks: list[str] = []

@@ -1425,7 +1425,7 @@ tasks:
         - Real live acceptance script (test_live_delete_repo_and_quota.py PASSED)
 
   - id: RUNTIME-UX-002
-    title: Repository Explorer, Part 1/3: real file-list API
+    title: "Repository Explorer, Part 1/3: real file-list API"
     phase: 8
     status: completed
     dependencies:
@@ -1448,7 +1448,7 @@ tasks:
         - git diff --check (clean)
 
   - id: RUNTIME-UX-003
-    title: Repository Explorer, Part 2/3: Explorer-first file tree
+    title: "Repository Explorer, Part 2/3: Explorer-first file tree"
     phase: 8
     status: completed
     dependencies:
@@ -1474,7 +1474,7 @@ tasks:
         - Real live acceptance script (scratch/test_live_explorer.py PASSED against live endpoint)
 
   - id: RUNTIME-UX-004
-    title: Repository Explorer, Part 3/3: Real Source Code Viewer
+    title: "Repository Explorer, Part 3/3: Real Source Code Viewer"
     phase: 8
     status: completed
     dependencies:
@@ -1534,4 +1534,109 @@ tasks:
         - npm run build (built in 2.24s)
         - git diff --check (clean)
 
+  - id: RUNTIME-ACCEPT-004
+    title: Execute and harden real browser acceptance harness
+    phase: 8
+    status: completed
+    rejection_note: >-
+      REJECTED by RUNTIME-ACCEPT-005 review. All 6 screenshots were identical
+      blank 2,791-byte images. Token injection used wrong storage API
+      (localStorage) and wrong key ('sourcetrace_access_token' vs
+      'sourcetrace.access_token' in sessionStorage). Assertions used
+      query_selector() is not None (DOM existence) not visibility. Gutter-line
+      existence was accepted as line-navigation proof. RUNTIME-ACCEPT-005
+      supersedes this task.
+    dependencies:
+      - RUNTIME-UX-004-FIX
+    owner: agent
+    allowed_paths:
+      - backend/tests/**
+      - docs/**
+    completion_evidence:
+      implementation_paths:
+        - backend/tests/run_real_browser_acceptance.py
+      verified_by:
+        - Claimed exit code 0 — INVALIDATED (screenshots blank, session injection broken)
+
+  - id: RUNTIME-ACCEPT-005
+    title: Repair false-positive browser evidence and verify actual citation location
+    phase: 8
+    status: completed
+    dependencies:
+      - RUNTIME-ACCEPT-004
+    owner: agent
+    allowed_paths:
+      - backend/tests/**
+      - docs/**
+    objective: >-
+      Repair the RUNTIME-ACCEPT-004 harness: use visible locators, correct
+      viewport (1440x900), correct token injection, screenshot size validation,
+      and honest citation navigation reporting. Report product gaps rather than
+      fabricating success.
+    acceptance_criteria:
+      - All element assertions use expect(locator).to_be_visible().
+      - Screenshots validated for minimum byte count (non-blank).
+      - Token injected into sessionStorage with key 'sourcetrace.access_token'.
+      - Citation navigation reported as PATH_NAVIGATION_NOT_IMPLEMENTED and LINE_NAVIGATION_NOT_IMPLEMENTED if not implemented.
+      - Report records actual UTC timestamp matching execution.
+      - No secrets appear in artifacts.
+    completion_evidence:
+      implementation_paths:
+        - backend/tests/run_real_browser_acceptance.py
+        - backend/tests/artifacts_accept_005/real_browser_acceptance_report.json
+        - backend/tests/artifacts_accept_005/fitsync_01_question_typed.png (56,634 bytes — VALID)
+        - backend/tests/artifacts_accept_005/fitsync_02_response_rendered.png (86,985 bytes — VALID)
+        - backend/tests/artifacts_accept_005/fitsync_03_citation_clicked.png (36,145 bytes — VALID)
+        - backend/tests/artifacts_accept_005/bottle_01_question_typed.png (59,868 bytes — VALID)
+        - backend/tests/artifacts_accept_005/bottle_02_response_rendered.png (91,050 bytes — VALID)
+        - backend/tests/artifacts_accept_005/bottle_03_citation_clicked.png (35,474 bytes — VALID)
+      verified_by:
+        - Exit code 0 (partial pass — chat UI accepted)
+        - timestamp_utc 2026-07-29T16:42:02Z matches actual execution
+        - All 6 screenshots >= 10,000 bytes and visually verified
+        - 0 browser console errors, 0 failed network requests
+        - PATH_NAVIGATION_NOT_IMPLEMENTED (Files tab opens but no file auto-opened)
+        - LINE_NAVIGATION_NOT_IMPLEMENTED (no selectedLine prop in RepoExplorerPanel)
+        - ruff check clean on harness file
+    partial_pass_reason: >-
+      Chat UI flows (question → answer → citations rendered visibly) ACCEPTED.
+      Citation path navigation NOT IMPLEMENTED: App.tsx onClick only calls
+      setActiveSection('files'); cited path not passed to RepoExplorerPanel.
+      Citation line navigation NOT IMPLEMENTED: RepoExplorerPanel has no
+      selectedLine/scrollToLine prop.
+
+  - id: ACCEPT-NAV-001
+    title: Implement citation-click file path and line navigation
+    phase: 8
+    status: ready
+    dependencies:
+      - RUNTIME-ACCEPT-005
+    owner: agent
+    allowed_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/app/RepoExplorerPanel.tsx
+      - frontend/src/app/RepoExplorerPanel.test.tsx
+      - frontend/src/app/App.test.tsx
+      - docs/**
+    forbidden_paths:
+      - backend/src/**
+    objective: >-
+      Implement the two product gaps identified by RUNTIME-ACCEPT-005:
+      1. When a citation button is clicked, pass the cited file path to
+         RepoExplorerPanel so the file is auto-opened in CodeViewer.
+      2. When a citation button is clicked, scroll to and highlight the cited
+         start line in the CodeViewer line-numbers gutter.
+    acceptance_criteria:
+      - Clicking a citation button in an assistant bubble opens the cited file in the Files workspace code viewer.
+      - The cited start line is visually highlighted or scrolled into view.
+      - RepoExplorerPanel accepts an optional openFilePath (or citationTarget) prop.
+      - RepoExplorerPanel accepts an optional selectedLine prop.
+      - Unit tests cover the citation-click → file-open → line-scroll path.
+      - RUNTIME-ACCEPT-005 re-run reports PATH_NAVIGATION_PASSED and LINE_NAVIGATION_PASSED.
+      - No regressions in existing frontend tests.
+    verification:
+      - Run npm test -- --run (all frontend tests pass).
+      - Run npm run build (clean).
+      - Re-run backend/tests/run_real_browser_acceptance.py and confirm exit 0 with ACCEPTED verdict.
+      - Run git diff --check.
 

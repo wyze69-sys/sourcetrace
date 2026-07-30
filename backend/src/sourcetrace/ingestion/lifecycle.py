@@ -92,7 +92,7 @@ class _CoordinatorObserver(IndexingLifecycleObserver):
     def completed(self, result: IndexingResult) -> None:
         now_dt = self._clock()
 
-        # 1. Transition repository: indexing -> ready with freshness metadata
+        # 1. Transition repository: indexing -> ready with freshness metadata & active generation
         repo = self._repository_repo.transition_status(
             owner_session_id=self._owner_session_id,
             repository_id=self._repository_id,
@@ -108,7 +108,24 @@ class _CoordinatorObserver(IndexingLifecycleObserver):
             flow_evidence_complete=is_flow_evidence_complete(result.parser_versions),
             indexed_file_count=result.parsed_file_count,
             indexed_chunk_count=result.chunk_count,
+            active_generation_id=self._job_id,
         )
+        if repo is None:
+            # Fallback for ready status re-index
+            repo = self._repository_repo.update_active_generation(
+                owner_session_id=self._owner_session_id,
+                repository_id=self._repository_id,
+                active_generation_id=self._job_id,
+                updated_at=now_dt,
+                indexed_branch=self._resolved_branch,
+                indexed_commit_sha=self._resolved_commit_sha,
+                file_count=result.parsed_file_count,
+                chunk_count=result.chunk_count,
+                indexed_file_count=result.parsed_file_count,
+                indexed_chunk_count=result.chunk_count,
+                parser_versions=result.parser_versions,
+                flow_evidence_complete=is_flow_evidence_complete(result.parser_versions),
+            )
         if repo is None:
             raise IndexingError("Indexing failed safely.")
 
@@ -208,6 +225,7 @@ class IndexingLifecycleCoordinator:
                 index_mode=self._index_mode,
                 now=now_dt,
                 observer=observer,
+                generation_id=self._job_id,
             )
         except (KeyboardInterrupt, SystemExit):
             raise

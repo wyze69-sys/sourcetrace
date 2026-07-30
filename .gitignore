@@ -57,6 +57,11 @@ evals/traces/*
 !evals/traces/.gitkeep
 evals/results/*
 !evals/results/.gitkeep
+backend/tests/evaluation/results/*
+!backend/tests/evaluation/results/.gitkeep
+
+# Browser acceptance test artifacts (screenshots, reports — local only)
+backend/tests/artifacts_accept_*/
 
 # Editors, logs, and operating systems
 .vscode/
