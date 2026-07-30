@@ -1084,3 +1084,15 @@ body {
   min-height: 1.25rem;
   line-height: 1.25rem;
 }
+
+.code-line.cited-line-highlight {
+  background-color: rgba(59, 130, 246, 0.18);
+  border-left: 3px solid #2563eb;
+  padding-left: 5px;
+}
+
+.line-number.cited-line-number-highlight {
+  color: #2563eb;
+  font-weight: bold;
+  background-color: rgba(59, 130, 246, 0.15);
+}

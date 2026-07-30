@@ -7,6 +7,8 @@ export interface RepoExplorerPanelProps {
   repositoryId: string | null
   repositoryName?: string
   onSelectFile?: (filePath: string) => void
+  targetFilePath?: string | null
+  targetLineRange?: { start_line: number; end_line: number } | null
 }
 
 export interface TreeNodeFolder {
@@ -207,6 +209,7 @@ interface CodeViewerProps {
   loading: boolean
   error: string | null
   onRetry: () => void
+  highlightLineRange?: { start_line: number; end_line: number } | null
 }
 
 export function CodeViewer({
@@ -215,7 +218,16 @@ export function CodeViewer({
   loading,
   error,
   onRetry,
+  highlightLineRange,
 }: CodeViewerProps) {
+  const startLineRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (startLineRef.current && typeof startLineRef.current.scrollIntoView === 'function') {
+      startLineRef.current.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    }
+  }, [highlightLineRange, contentData])
+
   if (loading) {
     return (
       <div className="code-viewer-panel loading-state" data-testid="code-viewer-loading">
@@ -246,6 +258,19 @@ export function CodeViewer({
 
   const lines = contentData.content ? contentData.content.split('\n') : []
 
+  const isCitationLineUnavailable = Boolean(
+    highlightLineRange &&
+      (highlightLineRange.start_line > lines.length ||
+        highlightLineRange.start_line <= 0 ||
+        highlightLineRange.end_line < highlightLineRange.start_line),
+  )
+
+  const isLineHighlighted = (lineNum: number) => {
+    if (!highlightLineRange || isCitationLineUnavailable) return false
+    const { start_line, end_line } = highlightLineRange
+    return lineNum >= start_line && lineNum <= end_line
+  }
+
   return (
     <div className="code-viewer-panel" data-testid="code-viewer-container">
       <div className="code-viewer-header">
@@ -261,6 +286,11 @@ export function CodeViewer({
             ⚠️ Notice: Displayed source content is indexed chunks only and may be incomplete (original end-of-file boundary is unverified).
           </div>
         )}
+        {isCitationLineUnavailable && highlightLineRange && (
+          <div className="partial-notice-badge unavailable-notice" data-testid="citation-line-unavailable-notice">
+            ⚠️ Notice: Cited line range (L{highlightLineRange.start_line}-L{highlightLineRange.end_line}) is outside the available content for this file ({lines.length} lines available).
+          </div>
+        )}
       </div>
 
       {lines.length === 0 ? (
@@ -268,19 +298,39 @@ export function CodeViewer({
       ) : (
         <div className="code-viewer-body">
           <div className="line-numbers-gutter" aria-hidden="true">
-            {lines.map((_, idx) => (
-              <span key={idx + 1} className="line-number">
-                {idx + 1}
-              </span>
-            ))}
+            {lines.map((_, idx) => {
+              const lineNum = idx + 1
+              const highlighted = isLineHighlighted(lineNum)
+              return (
+                <span
+                  key={lineNum}
+                  className={`line-number ${highlighted ? 'cited-line-number-highlight' : ''}`}
+                  data-line-number={lineNum}
+                  data-testid={highlighted ? 'cited-line-number' : undefined}
+                >
+                  {lineNum}
+                </span>
+              )
+            })}
           </div>
           <pre className="code-text-pre">
             <code>
-              {lines.map((line, idx) => (
-                <div key={idx + 1} className="code-line">
-                  {line || ' '}
-                </div>
-              ))}
+              {lines.map((line, idx) => {
+                const lineNum = idx + 1
+                const highlighted = isLineHighlighted(lineNum)
+                const isStartLine = highlightLineRange && lineNum === highlightLineRange.start_line
+                return (
+                  <div
+                    key={lineNum}
+                    ref={isStartLine ? startLineRef : undefined}
+                    className={`code-line ${highlighted ? 'cited-line-highlight' : ''}`}
+                    data-line-number={lineNum}
+                    data-testid={highlighted ? 'cited-code-line' : undefined}
+                  >
+                    {line || ' '}
+                  </div>
+                )
+              })}
             </code>
           </pre>
         </div>
@@ -294,6 +344,8 @@ export function RepoExplorerPanel({
   repositoryId,
   repositoryName,
   onSelectFile,
+  targetFilePath,
+  targetLineRange,
 }: RepoExplorerPanelProps) {
   const [files, setFiles] = useState<RepositoryFileItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -412,6 +464,23 @@ export function RepoExplorerPanel({
       contentRequestIdRef.current++
     }
   }, [repositoryId, loadFiles])
+
+  useEffect(() => {
+    if (targetFilePath && repositoryId) {
+      setSelectedFilePath(targetFilePath)
+      setExpandedFolders((prev) => {
+        const next = new Set(prev)
+        const parts = targetFilePath.split('/').filter(Boolean)
+        let accum = ''
+        for (let i = 0; i < parts.length - 1; i++) {
+          accum = accum ? `${accum}/${parts[i]}` : parts[i]
+          next.add(accum)
+        }
+        return next
+      })
+      loadFileContent(repositoryId, targetFilePath)
+    }
+  }, [repositoryId, targetFilePath, loadFileContent])
 
   const handleRetryFiles = useCallback(() => {
     loadFiles(repositoryId)
@@ -535,6 +604,7 @@ export function RepoExplorerPanel({
           loading={contentLoading}
           error={contentError}
           onRetry={handleRetryContent}
+          highlightLineRange={selectedFilePath === targetFilePath ? targetLineRange : null}
         />
       )}
     </section>

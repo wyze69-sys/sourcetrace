@@ -198,6 +198,14 @@ export function App({ client = defaultApiClient }: AppProps) {
   const [chatSubmitting, setChatSubmitting] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
 
+  // Focused Citation / Navigation State
+  const [focusedCitation, setFocusedCitation] = useState<{
+    filePath: string
+    startLine: number
+    endLine: number
+  } | null>(null)
+
+
   // Evidence Search State
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<EvidenceSearchItem[] | null>(null)
@@ -308,6 +316,7 @@ export function App({ client = defaultApiClient }: AppProps) {
   const handleSelectRepo = (repoId: string) => {
     setSelectedRepoId(repoId)
     setShowImportTray(false)
+    setFocusedCitation(null)
     const repo = repositories.find((r) => r.repository_id === repoId)
     if (!repo || repo.status === 'ready') {
       setActiveSection('understand')
@@ -1187,6 +1196,11 @@ export function App({ client = defaultApiClient }: AppProps) {
                                       key={idx}
                                       className="citation-item citation-btn"
                                       onClick={() => {
+                                        setFocusedCitation({
+                                          filePath: c.relative_path,
+                                          startLine: c.start_line,
+                                          endLine: c.end_line,
+                                        })
                                         setActiveSection('files')
                                       }}
                                       title={`View ${c.relative_path}`}
@@ -1223,6 +1237,12 @@ export function App({ client = defaultApiClient }: AppProps) {
                       client={client}
                       repositoryId={selectedRepo.repository_id}
                       repositoryName={selectedRepo.name}
+                      targetFilePath={focusedCitation?.filePath}
+                      targetLineRange={
+                        focusedCitation
+                          ? { start_line: focusedCitation.startLine, end_line: focusedCitation.endLine }
+                          : null
+                      }
                     />
                   )}
 

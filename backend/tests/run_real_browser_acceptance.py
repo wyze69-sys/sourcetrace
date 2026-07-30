@@ -90,13 +90,21 @@ def redact_secrets(data: object) -> object:
 
 
 def parse_citation_text(cit_text: str) -> tuple[str, str, str]:
-    """Parse '[1] backend/server.js:11-11 (app)' → (relative_path, line_range, symbol)."""
+    """Parse '[1] backend/server.js:11-11 (app)' or '[1] [1] backend/server.js:11-11 (app)' → (relative_path, line_range, symbol)."""
     try:
         parts = cit_text.strip().split()
-        path_and_lines = parts[1]
+        path_and_lines = None
+        sym = ""
+        for idx, p in enumerate(parts):
+            if ":" in p and not p.startswith("["):
+                path_and_lines = p
+                if idx + 1 < len(parts):
+                    sym = parts[idx + 1].strip("()")
+                break
+        if not path_and_lines:
+            return "", "", ""
         path, lines = path_and_lines.split(":", 1)
         start_line_str = lines.split("-")[0]
-        sym = parts[2].strip("()") if len(parts) > 2 else ""
         return path, start_line_str, sym
     except Exception:
         return "", "", ""
@@ -313,23 +321,32 @@ def run_acceptance() -> int:
             path_auto_opened1 = False
 
             try:
-                expect(code_viewer_loc1).to_be_visible(timeout=3000)
+                expect(code_viewer_loc1).to_be_visible(timeout=25000)
                 code_viewer_visible1 = True
                 opened_path_elem1 = code_viewer_loc1.locator(".code-viewer-title .mono.bold")
                 try:
-                    expect(opened_path_elem1).to_be_visible(timeout=3000)
+                    expect(opened_path_elem1).to_be_visible(timeout=5000)
                     opened_path1 = opened_path_elem1.inner_text().strip()
                     path_auto_opened1 = (opened_path1 == expected_path1)
-                except Exception:
+                    print(f"  Code viewer opened_path='{opened_path1}', expected_path='{expected_path1}' -> path_auto_opened={path_auto_opened1}")
+                except Exception as ex:
+                    print(f"  Code viewer title element error: {str(ex).encode('ascii', 'replace').decode('ascii')}")
                     opened_path1 = None
-            except Exception:
+            except Exception as ex:
+                print(f"  Code viewer container not visible: {str(ex).encode('ascii', 'replace').decode('ascii')}")
                 code_viewer_visible1 = False
 
-            # C. Check line-level navigation (not implemented in product)
-            # The product renders a line-numbers gutter when a file is open, but
-            # there is no highlighted/selected line corresponding to the cited range.
+            # C. Check line-level navigation
             line_gutter_loc1 = page1.locator(".line-numbers-gutter .line-number")
             gutter_count1 = line_gutter_loc1.count() if code_viewer_visible1 else 0
+
+            highlighted_line_loc1 = page1.locator(".code-line.cited-line-highlight, [data-testid='cited-code-line']")
+            line_highlighted1 = False
+            try:
+                expect(highlighted_line_loc1.first).to_be_visible(timeout=5000)
+                line_highlighted1 = True
+            except Exception:
+                line_highlighted1 = False
 
             fitsync_citation_navigation = {
                 "cited_text": target_cit_text1,
@@ -341,15 +358,14 @@ def run_acceptance() -> int:
                 "path_auto_opened": path_auto_opened1,
                 "path_navigation_result": (
                     "PATH_NAVIGATION_PASSED" if path_auto_opened1
-                    else "PATH_NAVIGATION_NOT_IMPLEMENTED"
+                    else "PATH_NAVIGATION_FAILED"
                 ),
-                "line_navigation_result": "LINE_NAVIGATION_NOT_IMPLEMENTED",
-                "line_navigation_reason": (
-                    "Citation click handler (App.tsx) only calls setActiveSection('files'). "
-                    "No file path or line range is passed to RepoExplorerPanel. "
-                    "No selectedLine prop or scroll-to-line behavior exists."
+                "line_navigation_result": (
+                    "LINE_NAVIGATION_PASSED" if line_highlighted1
+                    else "LINE_NAVIGATION_FAILED"
                 ),
                 "gutter_line_count": gutter_count1,
+                "line_highlighted": line_highlighted1,
             }
 
             print(f"  PATH_NAVIGATION: {fitsync_citation_navigation['path_navigation_result']}")
@@ -547,18 +563,29 @@ def run_acceptance() -> int:
             gutter_count2 = 0
 
             try:
-                expect(code_viewer_loc2).to_be_visible(timeout=3000)
+                expect(code_viewer_loc2).to_be_visible(timeout=25000)
                 code_viewer_visible2 = True
                 opened_path_elem2 = code_viewer_loc2.locator(".code-viewer-title .mono.bold")
                 try:
-                    expect(opened_path_elem2).to_be_visible(timeout=3000)
+                    expect(opened_path_elem2).to_be_visible(timeout=5000)
                     opened_path2 = opened_path_elem2.inner_text().strip()
                     path_auto_opened2 = (opened_path2 == expected_path2)
-                except Exception:
+                    print(f"  Code viewer opened_path='{opened_path2}', expected_path='{expected_path2}' -> path_auto_opened={path_auto_opened2}")
+                except Exception as ex:
+                    print(f"  Code viewer title element error: {str(ex).encode('ascii', 'replace').decode('ascii')}")
                     opened_path2 = None
                 gutter_count2 = page2.locator(".line-numbers-gutter .line-number").count()
-            except Exception:
+            except Exception as ex:
+                print(f"  Code viewer container not visible: {str(ex).encode('ascii', 'replace').decode('ascii')}")
                 code_viewer_visible2 = False
+
+            highlighted_line_loc2 = page2.locator(".code-line.cited-line-highlight, [data-testid='cited-code-line']")
+            line_highlighted2 = False
+            try:
+                expect(highlighted_line_loc2.first).to_be_visible(timeout=5000)
+                line_highlighted2 = True
+            except Exception:
+                line_highlighted2 = False
 
             bottle_citation_navigation = {
                 "cited_text": target_cit_text2,
@@ -570,15 +597,14 @@ def run_acceptance() -> int:
                 "path_auto_opened": path_auto_opened2,
                 "path_navigation_result": (
                     "PATH_NAVIGATION_PASSED" if path_auto_opened2
-                    else "PATH_NAVIGATION_NOT_IMPLEMENTED"
+                    else "PATH_NAVIGATION_FAILED"
                 ),
-                "line_navigation_result": "LINE_NAVIGATION_NOT_IMPLEMENTED",
-                "line_navigation_reason": (
-                    "Citation click handler (App.tsx) only calls setActiveSection('files'). "
-                    "No file path or line range is passed to RepoExplorerPanel. "
-                    "No selectedLine prop or scroll-to-line behavior exists."
+                "line_navigation_result": (
+                    "LINE_NAVIGATION_PASSED" if line_highlighted2
+                    else "LINE_NAVIGATION_FAILED"
                 ),
                 "gutter_line_count": gutter_count2,
+                "line_highlighted": line_highlighted2,
             }
 
             print(f"  PATH_NAVIGATION: {bottle_citation_navigation['path_navigation_result']}")
@@ -616,18 +642,19 @@ def run_acceptance() -> int:
 
     # ── Overall verdict ───────────────────────────────────────────────────────
     # Chat UI acceptance = both scenarios produced visible rendered answers + citations.
-    # Citation navigation is a separate product-gap report — it does NOT block
-    # chat-UI acceptance, but it does block full citation-navigation acceptance.
     chat_ui_accepted = fitsync_passed and bottle_passed
 
-    # Full acceptance requires both chat UI AND citation navigation (path + line).
+    # Full acceptance requires chat UI AND citation navigation (path + line).
     fitsync_nav = fitsync_citation_navigation if fitsync_citation_navigation else {}
     bottle_nav = bottle_citation_navigation if bottle_citation_navigation else {}
     path_nav_passed = (
         fitsync_nav.get("path_navigation_result") == "PATH_NAVIGATION_PASSED"
         and bottle_nav.get("path_navigation_result") == "PATH_NAVIGATION_PASSED"
     )
-    line_nav_passed = False  # LINE_NAVIGATION_NOT_IMPLEMENTED in current product
+    line_nav_passed = (
+        fitsync_nav.get("line_navigation_result") == "LINE_NAVIGATION_PASSED"
+        and bottle_nav.get("line_navigation_result") == "LINE_NAVIGATION_PASSED"
+    )
 
     full_accepted = chat_ui_accepted and path_nav_passed and line_nav_passed
 

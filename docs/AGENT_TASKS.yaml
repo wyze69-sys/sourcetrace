@@ -1608,7 +1608,7 @@ tasks:
   - id: ACCEPT-NAV-001
     title: Implement citation-click file path and line navigation
     phase: 8
-    status: ready
+    status: completed
     dependencies:
       - RUNTIME-ACCEPT-005
     owner: agent
@@ -1617,6 +1617,8 @@ tasks:
       - frontend/src/app/RepoExplorerPanel.tsx
       - frontend/src/app/RepoExplorerPanel.test.tsx
       - frontend/src/app/App.test.tsx
+      - frontend/src/styles/index.css
+      - backend/tests/run_real_browser_acceptance.py
       - docs/**
     forbidden_paths:
       - backend/src/**
@@ -1628,12 +1630,26 @@ tasks:
          start line in the CodeViewer line-numbers gutter.
     acceptance_criteria:
       - Clicking a citation button in an assistant bubble opens the cited file in the Files workspace code viewer.
-      - The cited start line is visually highlighted or scrolled into view.
-      - RepoExplorerPanel accepts an optional openFilePath (or citationTarget) prop.
-      - RepoExplorerPanel accepts an optional selectedLine prop.
+      - The cited start line is visually highlighted and scrolled into view.
+      - RepoExplorerPanel accepts targetFilePath and targetLineRange props.
       - Unit tests cover the citation-click → file-open → line-scroll path.
-      - RUNTIME-ACCEPT-005 re-run reports PATH_NAVIGATION_PASSED and LINE_NAVIGATION_PASSED.
+      - run_real_browser_acceptance.py reports PATH_NAVIGATION_PASSED and LINE_NAVIGATION_PASSED.
       - No regressions in existing frontend tests.
+    completion_evidence:
+      implementation_paths:
+        - frontend/src/styles/index.css
+        - frontend/src/app/RepoExplorerPanel.tsx
+        - frontend/src/app/App.tsx
+        - frontend/src/app/RepoExplorerPanel.test.tsx
+        - frontend/src/app/App.test.tsx
+        - backend/tests/run_real_browser_acceptance.py
+      verified_by:
+        - 103 frontend vitest tests passed (0 failures)
+        - npm run lint clean (0 errors)
+        - npm run build clean (built in 1.72s)
+        - 1442 backend pytest tests passed (0 failures)
+        - 30 evaluation pytest tests passed (0 failures)
+        - git diff --check clean (0 whitespace errors)
     verification:
       - Run npm test -- --run (all frontend tests pass).
       - Run npm run build (clean).

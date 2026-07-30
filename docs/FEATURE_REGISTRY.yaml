@@ -764,3 +764,27 @@ capabilities:
       Live verification: FitSync startup (server.js 3 citations), bottle startup (main/2 citations), bottle
       orientation (BaseRequest.auth 4 citations), citation navigation SUCCESS for both repos.
 
+  - id: CITATION-NAVIGATION-001
+    name: Interactive chat citation file auto-opening and line range focus
+    lifecycle: implemented_verified
+    owning_task: ACCEPT-NAV-001
+    canonical_target:
+      backend: backend/tests/run_real_browser_acceptance.py
+      api: null
+      frontend: frontend/src/app/App.tsx
+      storage: null
+    existing_paths:
+      - frontend/src/styles/index.css
+      - frontend/src/app/RepoExplorerPanel.tsx
+      - frontend/src/app/App.tsx
+      - frontend/src/app/RepoExplorerPanel.test.tsx
+      - frontend/src/app/App.test.tsx
+      - backend/tests/run_real_browser_acceptance.py
+    notes: >
+      ACCEPT-NAV-001 completed. Clicking a chat citation button in App.tsx sets focusedCitation state
+      ({ filePath, startLine, endLine }) and switches view to Files workspace. RepoExplorerPanel expands
+      parent folders, selects targetFilePath, and loads file content via getRepositoryFileContent. CodeViewer
+      renders .cited-line-highlight and [data-testid="cited-code-line"] for lines in range [start_line, end_line],
+      renders .cited-line-number-highlight in the gutter, and automatically scrolls the start_line into view.
+      run_real_browser_acceptance.py updated with Playwright visible assertions for cited lines and reports
+      PATH_NAVIGATION_PASSED and LINE_NAVIGATION_PASSED.

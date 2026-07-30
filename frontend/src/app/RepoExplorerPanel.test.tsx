@@ -506,4 +506,79 @@ describe('RepoExplorerPanel - Component Integration & State Tests', () => {
       expect(screen.getByText('<script>alert("xss")</script><img src=x onerror=alert(1)>')).toBeInTheDocument()
     })
   })
+
+  it('ACCEPT-NAV-001: opens targetFilePath automatically and highlights cited line range', async () => {
+    const mockClient = createMockClient()
+    vi.mocked(mockClient.listRepositoryFiles).mockResolvedValue({
+      repository_id: 'repo_123',
+      files: [
+        { path: 'backend/server.js', language: 'javascript', chunk_count: 2 },
+        { path: 'backend/app.js', language: 'javascript', chunk_count: 1 },
+      ],
+    })
+    vi.mocked(mockClient.getRepositoryFileContent).mockResolvedValue({
+      repository_id: 'repo_123',
+      path: 'backend/server.js',
+      language: 'javascript',
+      content: 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nconst app = require("./app");\nline 12',
+      line_count: 12,
+      is_complete: true,
+      completeness_reason: 'source_file_exact_match',
+    })
+
+    render(
+      <RepoExplorerPanel
+        client={mockClient}
+        repositoryId="repo_123"
+        targetFilePath="backend/server.js"
+        targetLineRange={{ start_line: 11, end_line: 11 }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(mockClient.getRepositoryFileContent).toHaveBeenCalledWith('repo_123', 'backend/server.js')
+      expect(screen.getByText('const app = require("./app");')).toBeInTheDocument()
+    })
+
+    const citedLines = screen.getAllByTestId('cited-code-line')
+    expect(citedLines).toHaveLength(1)
+    expect(citedLines[0]).toHaveTextContent('const app = require("./app");')
+
+    const citedLineNumbers = screen.getAllByTestId('cited-line-number')
+    expect(citedLineNumbers).toHaveLength(1)
+    expect(citedLineNumbers[0]).toHaveTextContent('11')
+  })
+
+  it('ACCEPT-NAV-001: handles invalid/out-of-range line range safely without crashing', async () => {
+    const mockClient = createMockClient()
+    vi.mocked(mockClient.listRepositoryFiles).mockResolvedValue({
+      repository_id: 'repo_123',
+      files: [{ path: 'short.py', language: 'python', chunk_count: 1 }],
+    })
+    vi.mocked(mockClient.getRepositoryFileContent).mockResolvedValue({
+      repository_id: 'repo_123',
+      path: 'short.py',
+      language: 'python',
+      content: 'print("hello")',
+      line_count: 1,
+      is_complete: true,
+      completeness_reason: 'source_file_exact_match',
+    })
+
+    render(
+      <RepoExplorerPanel
+        client={mockClient}
+        repositoryId="repo_123"
+        targetFilePath="short.py"
+        targetLineRange={{ start_line: 999, end_line: 1000 }}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('print("hello")')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByTestId('cited-code-line')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('cited-line-number')).not.toBeInTheDocument()
+  })
 })

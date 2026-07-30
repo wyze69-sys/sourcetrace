@@ -1083,11 +1083,22 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
         files: [{ path: 'README.md', language: 'markdown', chunk_count: 1 }],
       })
 
+      const getFileContentMock = vi.fn().mockResolvedValue({
+        repository_id: 'repo_ux_fix_1',
+        path: 'README.md',
+        language: 'markdown',
+        content: '# Welcome to project\nThis is line 2.',
+        line_count: 2,
+        is_complete: true,
+        completeness_reason: 'source_file_exact_match',
+      })
+
       const mockClient = {
         getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-28' }),
         listRepositories: vi.fn().mockResolvedValue({ repositories: [readyRepo1] }),
         createConversation: createConvMock,
-        listFiles: listFilesMock,
+        listRepositoryFiles: listFilesMock,
+        getRepositoryFileContent: getFileContentMock,
       } as unknown as ApiClient
 
       render(<App client={mockClient} />)
@@ -1105,11 +1116,13 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
         expect(screen.getByRole('button', { name: /\[1\] README.md:1-20 \(README\)/i })).toBeInTheDocument()
       })
 
-      // Click citation button -> switches view to files tab
+      // Click citation button -> switches view to files tab, opens cited file and highlights cited lines
       await userEvent.click(screen.getByRole('button', { name: /\[1\] README.md:1-20 \(README\)/i }))
 
       await waitFor(() => {
         expect(screen.getByRole('button', { name: 'Files' })).toHaveClass('active')
+        expect(getFileContentMock).toHaveBeenCalledWith('repo_ux_fix_1', 'README.md')
+        expect(screen.getByText('# Welcome to project')).toBeInTheDocument()
       })
     })
   })
