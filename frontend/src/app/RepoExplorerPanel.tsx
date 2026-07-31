@@ -161,7 +161,7 @@ export function TreeItemView({
           onClick={() => toggleFolder(node.path)}
           aria-expanded={isExpanded}
         >
-          <span className="tree-icon folder-icon">{isExpanded ? '📂' : '📁'}</span>
+          <span className="tree-icon folder-icon" aria-hidden="true">{isExpanded ? '▾' : '▸'}</span>
           <span className="tree-name folder-name">{node.name}</span>
         </button>
         {isExpanded && (
