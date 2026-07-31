@@ -262,6 +262,20 @@ def test_follow_up_retrieval_context_uses_prior_user_subject_not_fallback_answer
     assert result.citations[0].relative_path == "sourcetrace/storage/repositories.py"
 
 
+def test_acknowledgement_does_not_trigger_repository_retrieval() -> None:
+    retrieval_service = FakeRetrievalService()
+    provider = FakeGenerationProvider()
+    service = GroundedAnswerService(retrieval_service, provider)
+
+    result = service.generate_answer("sess_001", "repo_001", "ohh its look good")
+
+    assert result.answer_mode == "conversation"
+    assert result.insufficient_evidence is False
+    assert result.citations == ()
+    assert len(retrieval_service.retrieve_calls) == 0
+    assert len(provider.generate_calls) == 0
+
+
 # ---------------------------------------------------------------------------
 # 3. Input & Validation Error Tests
 # ---------------------------------------------------------------------------

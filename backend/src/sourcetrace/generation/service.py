@@ -67,6 +67,19 @@ class GroundedAnswerService:
         if type(repository_id) is not str or not repository_id.strip():
             raise GenerationError("Generation failed safely.")
 
+        # A chat acknowledgement is not a repository question. Do not send
+        # messages such as "ohh its look good" through RAG, where they can
+        # incorrectly become an insufficient-evidence answer.
+        if self._is_conversational_acknowledgement(question):
+            return GroundedAnswerResult(
+                answer="Glad that helps. Ask me about any file, function, flow, or change when you are ready.",
+                citations=(),
+                evidence=(),
+                insufficient_evidence=False,
+                chunks_retrieved=0,
+                answer_mode="conversation",
+            )
+
         # Follow-up questions often contain pronouns ("it", "that file", "this").
         # Retrieval must see the active subject as well as the latest question;
         # conversation history is already bounded by the route before it reaches here.
@@ -250,6 +263,21 @@ class GroundedAnswerService:
         # focused instead of turning the entire chat transcript into a search query.
         context_text = " ".join(recent_context)[-1800:]
         return f"{question.strip()} {context_text}".strip()
+
+    @staticmethod
+    def _is_conversational_acknowledgement(question: str) -> bool:
+        """Return true for short acknowledgement messages with no code request."""
+        normalized = re.sub(r"[^a-z0-9']+", " ", question.lower()).strip()
+        if not normalized or len(normalized.split()) > 12:
+            return False
+
+        acknowledgement_patterns = (
+            r"^(?:oh+\s+)?(?:it'?s|that'?s)?\s*(?:look(?:s|ing)?|seem(?:s)?)?\s*"
+            r"(?:good|great|nice|cool|perfect|fine|okay|ok|helpful|clear)$",
+            r"^(?:ok(?:ay)?|alright|got it|understood|makes sense|thank you|thanks)$",
+            r"^(?:oh+|ah+|wow)\s+(?:okay|ok|nice|great|good|cool)$",
+        )
+        return any(re.fullmatch(pattern, normalized) for pattern in acknowledgement_patterns)
 
     def _is_evidence_relevant_to_question(self, item: RetrievedEvidence, question: str) -> bool:
         from sourcetrace.generation.prompts import _is_orientation_prompt_question
