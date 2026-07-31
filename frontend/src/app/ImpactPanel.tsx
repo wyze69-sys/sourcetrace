@@ -8,6 +8,7 @@ import type {
   RiskSeverity,
   TraceConfidence,
 } from '../services/types'
+import { GroundedExplanation } from './GroundedExplanation'
 
 export interface ImpactPanelProps {
   client: ApiClient
@@ -578,32 +579,13 @@ export function ImpactPanel({
         )}
 
       {result !== null && result.explanation !== null && (
-        <div
-          className="impact-explanation"
-          style={{
-            margin: '4px 0 14px 0',
-            border: '1px solid #1e3a5f',
-            background: '#0b1a2b',
-            borderRadius: '8px',
-            padding: '12px',
-          }}
-        >
-          <h3 style={{ fontSize: '0.9rem', color: '#38bdf8', margin: '0 0 8px 0' }}>
-            Grounded explanation (cites items{' '}
-            {result.explanation.cited_steps.map((s) => `S${s}`).join(', ')}):
-          </h3>
-          <p
-            className="panel-text"
-            style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}
-          >
-            {result.explanation.text}
-          </p>
-          <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#64748b' }}>
-            This narration is restricted to the items above; [S#] markers number the
-            changed symbols (diff previews) followed by upstream and downstream items,
-            in listed order.
-          </p>
-        </div>
+        <GroundedExplanation
+          citedSteps={result.explanation.cited_steps}
+          text={result.explanation.text}
+          summaryLabel="What could change here affect?"
+          sourceLabel="items"
+          scopeNote="This explanation only uses the impact items listed above. S1, S2, and similar labels match those numbered items."
+        />
       )}
 
       {resolved && result.affected_tests.length > 0 && (

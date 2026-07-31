@@ -6,6 +6,7 @@ import type {
   TraceEdge,
   TraceNode,
 } from '../services/types'
+import { GroundedExplanation } from './GroundedExplanation'
 
 export interface FlowTracePanelProps {
   client: ApiClient
@@ -375,31 +376,13 @@ export function FlowTracePanel({
       )}
 
       {result !== null && result.explanation !== null && (
-        <div
-          className="trace-explanation"
-          style={{
-            marginTop: '14px',
-            border: '1px solid #1e3a5f',
-            background: '#0b1a2b',
-            borderRadius: '8px',
-            padding: '12px',
-          }}
-        >
-          <h3 style={{ fontSize: '0.9rem', color: '#38bdf8', margin: '0 0 8px 0' }}>
-            Grounded explanation (cites steps{' '}
-            {result.explanation.cited_steps.map((s) => `S${s}`).join(', ')}):
-          </h3>
-          <p
-            className="panel-text"
-            style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.88rem' }}
-          >
-            {result.explanation.text}
-          </p>
-          <p style={{ margin: '8px 0 0 0', fontSize: '0.72rem', color: '#64748b' }}>
-            This narration is restricted to the traced steps above; [S#] markers map to
-            step numbers.
-          </p>
-        </div>
+        <GroundedExplanation
+          citedSteps={result.explanation.cited_steps}
+          text={result.explanation.text}
+          summaryLabel="What this flow is doing"
+          sourceLabel="steps"
+          scopeNote="This explanation only uses the traced steps above. S1, S2, and similar labels match the numbered steps."
+        />
       )}
 
       {result !== null && result.gaps.length > 0 && (
