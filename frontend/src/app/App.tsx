@@ -161,6 +161,13 @@ function getSafeErrorCategory(errorMessage?: string | null, currentStep?: string
 }
 
 export function App({ client = defaultApiClient }: AppProps) {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      return localStorage.getItem('sourcetrace-theme') === 'dark' ? 'dark' : 'light'
+    } catch {
+      return 'light'
+    }
+  })
   const [state, setState] = useState<AppState>('loading')
   const [healthData, setHealthData] = useState<HealthResponse | null>(null)
   const [errorDetails, setErrorDetails] = useState<string | null>(null)
@@ -204,6 +211,24 @@ export function App({ client = defaultApiClient }: AppProps) {
     startLine: number
     endLine: number
   } | null>(null)
+
+  // Command palette
+  const [cmdkOpen, setCmdkOpen] = useState(false)
+  const [cmdkQuery, setCmdkQuery] = useState('')
+  const [cmdkSelectedIdx, setCmdkSelectedIdx] = useState(0)
+  const cmdkInputRef = useRef<HTMLInputElement>(null)
+
+  // Toast notifications
+  type Toast = { id: number; kind: 'success' | 'error' | 'info'; message: string }
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  const pushToast = (kind: Toast['kind'], message: string) => {
+    const id = Date.now() + Math.random()
+    setToasts((prev) => [...prev.slice(-3), { id, kind, message }])
+    window.setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id))
+    }, 5200)
+  }
 
 
   // Evidence Search State
@@ -255,6 +280,40 @@ export function App({ client = defaultApiClient }: AppProps) {
     checkHealth()
   }, [checkHealth])
 
+  // Apply and persist theme
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    try {
+      localStorage.setItem('sourcetrace-theme', theme)
+    } catch {
+      // storage unavailable
+    }
+  }, [theme])
+
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+
+  // Command palette: Ctrl/Cmd+K to open
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setCmdkOpen((prev) => !prev)
+        setCmdkQuery('')
+        setCmdkSelectedIdx(0)
+      } else if (e.key === 'Escape') {
+        setCmdkOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    if (cmdkOpen) {
+      window.setTimeout(() => cmdkInputRef.current?.focus(), 10)
+    }
+  }, [cmdkOpen])
+
   const freshnessCheckedRepoRef = useRef<Set<string>>(new Set())
 
   // Polling for active jobs
@@ -281,6 +340,11 @@ export function App({ client = defaultApiClient }: AppProps) {
           if (updatedJob.status === 'ready' || updatedJob.status === 'failed') {
             statusChanged = true
             setAriaLiveMsg(`Indexing job ${jobId} finished with status ${updatedJob.status}.`)
+            if (updatedJob.status === 'ready') {
+              pushToast('success', `Indexing complete. Repository is ready.`)
+            } else if (updatedJob.status === 'failed') {
+              pushToast('error', `Indexing failed. Check the repository card for details.`)
+            }
             freshnessCheckedRepoRef.current.delete(updatedJob.repository_id)
           }
         } catch {
@@ -296,6 +360,7 @@ export function App({ client = defaultApiClient }: AppProps) {
     return () => {
       clearInterval(timer)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeJobs, repositories, client, loadRepositories])
 
   // Auto-select first repository if none selected & default workspace to Understand
@@ -353,6 +418,7 @@ export function App({ client = defaultApiClient }: AppProps) {
       const res = await client.refreshRepository(repo.repository_id)
       setActiveJobs((prev) => ({ ...prev, [res.indexing_job.job_id]: res.indexing_job }))
       setAriaLiveMsg(`Refresh started for ${repo.name}.`)
+      pushToast('info', `Refreshing ${repo.name}…`)
     } catch (err) {
       if (err instanceof ApiError) {
         setGithubError(err.message)
@@ -398,6 +464,7 @@ export function App({ client = defaultApiClient }: AppProps) {
     setDeletingRepoId(repoId)
     setDeleteError(null)
     setDeleteSuccess(null)
+    const repoName = repositories.find((r) => r.repository_id === repoId)?.name ?? 'Repository'
     try {
       const res = await client.deleteRepository(repoId)
       setRepositories((prev) => prev.filter((r) => r.repository_id !== repoId))
@@ -406,6 +473,7 @@ export function App({ client = defaultApiClient }: AppProps) {
       }
       setDeleteSuccess(res.message || 'Repository deleted successfully.')
       setAriaLiveMsg('Repository deleted.')
+      pushToast('success', `${repoName} deleted. Quota slot freed.`)
     } catch (err) {
       if (err instanceof ApiError) {
         setDeleteError(err.message)
@@ -438,6 +506,7 @@ export function App({ client = defaultApiClient }: AppProps) {
       setSelectedRepoId(res.repository.repository_id)
       setActiveSection('understand')
       setAriaLiveMsg(`Repository ${res.repository.name} accepted for indexing.`)
+      pushToast('success', `${res.repository.name} accepted. Indexing started.`)
       setGithubUrl('')
     } catch (err) {
       if (err instanceof ApiError) {
@@ -566,6 +635,74 @@ export function App({ client = defaultApiClient }: AppProps) {
   const selectedRepo = repositories.find((r) => r.repository_id === selectedRepoId)
   const currentConversation = selectedRepoId ? conversations[selectedRepoId] : undefined
 
+  // Command palette items: repositories + workspace sections + starter questions
+  const cmdkItems = (() => {
+    const items: Array<{
+      id: string
+      label: string
+      hint: string
+      type: 'repo' | 'section' | 'question'
+      action: () => void
+    }> = []
+
+    repositories.forEach((repo) => {
+      items.push({
+        id: `repo-${repo.repository_id}`,
+        label: repo.name,
+        hint: repo.status === 'ready' ? `${repo.source_type} , ready` : repo.status,
+        type: 'repo',
+        action: () => {
+          handleSelectRepo(repo.repository_id)
+          setCmdkOpen(false)
+        },
+      })
+    })
+
+    if (selectedRepo) {
+      const sections: Array<{ id: WorkspaceSection; label: string; hint: string }> = [
+        { id: 'understand', label: 'Understand (chat)', hint: 'Ask & answer with citations' },
+        { id: 'files', label: 'Files explorer', hint: 'Browse indexed source tree' },
+        { id: 'find_code', label: 'Find code', hint: 'Semantic/lexical evidence search' },
+        { id: 'flow_trace', label: 'Flow trace', hint: 'Call & data flow for a symbol' },
+        { id: 'change_impact', label: 'Change impact', hint: 'What a change would touch' },
+      ]
+      sections.forEach((s) => {
+        items.push({
+          id: `section-${s.id}`,
+          label: s.label,
+          hint: s.hint,
+          type: 'section',
+          action: () => {
+            setActiveSection(s.id)
+            setCmdkOpen(false)
+          },
+        })
+      })
+
+      STARTER_QUESTIONS.forEach((q) => {
+        items.push({
+          id: `q-${q}`,
+          label: q,
+          hint: 'starter question',
+          type: 'question',
+          action: () => {
+            setCmdkOpen(false)
+            setActiveSection('understand')
+            submitQuestion(q)
+          },
+        })
+      })
+    }
+
+    const ql = cmdkQuery.trim().toLowerCase()
+    if (!ql) return items
+    return items.filter(
+      (i) =>
+        i.label.toLowerCase().includes(ql) ||
+        i.hint.toLowerCase().includes(ql),
+    )
+  })()
+
   return (
     <div className="app-container">
       <div aria-live="polite" className="sr-only">
@@ -587,6 +724,15 @@ export function App({ client = defaultApiClient }: AppProps) {
               {showImportTray ? 'Close Import' : 'Import repository'}
             </button>
           )}
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            title={theme === 'dark' ? 'Light theme' : 'Dark theme'}
+          >
+            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+          </button>
           <div className="status-indicator">
             {state === 'loading' && (
               <>
@@ -760,6 +906,39 @@ export function App({ client = defaultApiClient }: AppProps) {
 
           {state === 'ready' && (
             <>
+              {repositories.length === 0 && (
+                <section className="hero-first-run" aria-labelledby="hero-title">
+                  <div className="hero-eyebrow">Evidence-grounded code Q&amp;A on Vite, React, and MongoDB</div>
+                  <h2 id="hero-title">Understand a codebase before you change it</h2>
+                  <p className="hero-lede">
+                    Import a repository and SourceTrace reads the code, indexes it with static
+                    analysis, then answers questions with citations from real source lines, not
+                    vague guesses.
+                  </p>
+                  <div className="hero-feature-grid">
+                    <div className="hero-feature-card">
+                      <span className="hero-feature-icon text-glyph" aria-hidden>Ask</span>
+                      <h3>Ask, get cited answers</h3>
+                      <p>Question the codebase; answers point to exact files and line ranges.</p>
+                    </div>
+                    <div className="hero-feature-card">
+                      <span className="hero-feature-icon text-glyph" aria-hidden>Cite</span>
+                      <h3>Open citations to the line</h3>
+                      <p>Click a citation to jump straight to the source with lines highlighted.</p>
+                    </div>
+                    <div className="hero-feature-card">
+                      <span className="hero-feature-icon text-glyph" aria-hidden>Tree</span>
+                      <h3>Trace impact &amp; flow</h3>
+                      <p>See what changes break, and how data and calls flow through code.</p>
+                    </div>
+                    <div className="hero-feature-card">
+                      <span className="hero-feature-icon text-glyph" aria-hidden>Fast</span>
+                      <h3>Freshness-aware</h3>
+                      <p>Know when a repository has drifted from what was indexed.</p>
+                    </div>
+                  </div>
+                </section>
+              )}
               {deleteSuccess && (
                 <div
                   className="form-success"
@@ -803,7 +982,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                         style={{ fontSize: '0.8rem', padding: '4px 10px' }}
                         onClick={() => setShowImportTray(false)}
                       >
-                        ✕ Close
+                        [x] Close
                       </button>
                     )}
                   </div>
@@ -1227,6 +1406,14 @@ export function App({ client = defaultApiClient }: AppProps) {
                               )}
                             </div>
                           ))}
+                          {chatSubmitting && (
+                            <div className="chat-bubble assistant" aria-label="SourceTrace is analyzing">
+                              <div className="bubble-role">SourceTrace</div>
+                              <div className="typing-indicator" aria-hidden>
+                                <span /><span /><span />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </section>
@@ -1440,8 +1627,89 @@ export function App({ client = defaultApiClient }: AppProps) {
       </div>
 
       <footer className="app-footer">
-        <p>Evidence is shown only when retrieved from source.</p>
+        <p>
+          Evidence is shown only when retrieved from source.
+          <span style={{ marginLeft: '0.75rem' }}>
+            <kbd className="kbd">Ctrl K</kbd> quick jump, <kbd className="kbd">Esc</kbd> close
+          </span>
+        </p>
       </footer>
+
+      {/* Command Palette (Ctrl/Cmd+K) */}
+      {cmdkOpen && (
+        <div className="cmdk-overlay" onClick={() => setCmdkOpen(false)}>
+          <div
+            className="cmdk-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="cmdk-input-row">
+              <span aria-hidden style={{ color: 'var(--color-faint)' }}>⌕</span>
+              <input
+                ref={cmdkInputRef}
+                className="cmdk-input"
+                placeholder="Jump to repository, workspace, or ask a question…"
+                value={cmdkQuery}
+                onChange={(e) => {
+                  setCmdkQuery(e.target.value)
+                  setCmdkSelectedIdx(0)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setCmdkSelectedIdx((i) => Math.min(i + 1, cmdkItems.length - 1))
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setCmdkSelectedIdx((i) => Math.max(i - 1, 0))
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault()
+                    const item = cmdkItems[cmdkSelectedIdx]
+                    if (item) item.action()
+                  }
+                }}
+              />
+              <kbd className="kbd">Esc</kbd>
+            </div>
+            <div className="cmdk-list">
+              {cmdkItems.length === 0 ? (
+                <div className="cmdk-empty">No matches. Try a repository name or workspace.</div>
+              ) : (
+                cmdkItems.map((item, idx) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`cmdk-item ${idx === cmdkSelectedIdx ? 'selected' : ''}`}
+                    onMouseEnter={() => setCmdkSelectedIdx(idx)}
+                    onClick={item.action}
+                  >
+                    <span>
+                      {item.type === 'repo' ? 'Repo' : item.type === 'section' ? 'Nav' : 'Qry'}
+                    </span>
+                    <span>{item.label}</span>
+                    <span className="cmdk-item-type">{item.hint}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toasts */}
+      {toasts.length > 0 && (
+        <div className="toast-stack" role="status" aria-live="polite">
+          {toasts.map((t) => (
+            <div key={t.id} className={`toast ${t.kind}`}>
+              <span className="toast-icon">
+                {t.kind === 'success' ? 'OK' : t.kind === 'error' ? 'ERR' : 'INFO'}
+              </span>
+              <span>{t.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
