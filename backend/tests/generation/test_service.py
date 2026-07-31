@@ -276,6 +276,20 @@ def test_acknowledgement_does_not_trigger_repository_retrieval() -> None:
     assert len(provider.generate_calls) == 0
 
 
+def test_clearly_off_topic_question_gets_scope_message() -> None:
+    retrieval_service = FakeRetrievalService()
+    provider = FakeGenerationProvider()
+    service = GroundedAnswerService(retrieval_service, provider)
+
+    result = service.generate_answer("sess_001", "repo_001", "What's the weather today?")
+
+    assert result.answer_mode == "off_topic"
+    assert result.insufficient_evidence is False
+    assert "focused on answering questions about this repository" in result.answer
+    assert len(retrieval_service.retrieve_calls) == 0
+    assert len(provider.generate_calls) == 0
+
+
 # ---------------------------------------------------------------------------
 # 3. Input & Validation Error Tests
 # ---------------------------------------------------------------------------

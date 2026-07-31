@@ -80,6 +80,19 @@ class GroundedAnswerService:
                 answer_mode="conversation",
             )
 
+        if self._is_clearly_off_topic_question(question):
+            return GroundedAnswerResult(
+                answer=(
+                    "I’m focused on answering questions about this repository. "
+                    "Try asking about a file, function, data flow, or change."
+                ),
+                citations=(),
+                evidence=(),
+                insufficient_evidence=False,
+                chunks_retrieved=0,
+                answer_mode="off_topic",
+            )
+
         # Follow-up questions often contain pronouns ("it", "that file", "this").
         # Retrieval must see the active subject as well as the latest question;
         # conversation history is already bounded by the route before it reaches here.
@@ -278,6 +291,22 @@ class GroundedAnswerService:
             r"^(?:oh+|ah+|wow)\s+(?:okay|ok|nice|great|good|cool)$",
         )
         return any(re.fullmatch(pattern, normalized) for pattern in acknowledgement_patterns)
+
+    @staticmethod
+    def _is_clearly_off_topic_question(question: str) -> bool:
+        """Return true only for obvious general-chat requests outside repository scope."""
+        normalized = re.sub(r"[^a-z0-9'?!]+", " ", question.lower()).strip()
+        if not normalized:
+            return False
+
+        off_topic_patterns = (
+            r"^(?:what'?s|what is) the weather(?: today| now)?[?!]?$",
+            r"^(?:tell me|give me) a joke[?!]?$",
+            r"^(?:what|who) is the (?:capital|president|population) of .+[?!]?$",
+            r"^(?:translate|define|explain) .+ (?:to|in) (?:english|khmer|french|spanish)[?!]?$",
+            r"^(?:what are|give me) today'?s news[?!]?$",
+        )
+        return any(re.fullmatch(pattern, normalized) for pattern in off_topic_patterns)
 
     def _is_evidence_relevant_to_question(self, item: RetrievedEvidence, question: str) -> bool:
         from sourcetrace.generation.prompts import _is_orientation_prompt_question
