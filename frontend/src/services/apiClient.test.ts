@@ -870,7 +870,7 @@ describe('ApiClient', () => {
     expect(res.repository.indexed_branch).toBe('main')
   })
 
-  it('createGitHubRepository with indexMode "ai_assist" safely sends index_mode: "static" in payload', async () => {
+  it('createGitHubRepository with indexMode "ai_assist" sends index_mode: "cloud_ai" in payload', async () => {
     sessionStorage.setItem('sourcetrace.access_token', 'jwt_ai_assist_token')
 
     const mockFetch = vi.fn().mockResolvedValue({
@@ -904,7 +904,7 @@ describe('ApiClient', () => {
     await client.createGitHubRepository('https://github.com/octocat/Hello-World', 'ai_assist')
 
     const body = JSON.parse(mockFetch.mock.calls[0][1]?.body as string)
-    expect(body.index_mode).toBe('static')
+    expect(body.index_mode).toBe('cloud_ai')
     expect(body.github_url).toBe('https://github.com/octocat/Hello-World')
   })
 })

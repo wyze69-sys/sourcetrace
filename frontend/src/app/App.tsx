@@ -731,7 +731,8 @@ export function App({ client = defaultApiClient }: AppProps) {
             aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
             title={theme === 'dark' ? 'Light theme' : 'Dark theme'}
           >
-            {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+            <span className="theme-icon" aria-hidden="true">{theme === 'dark' ? '☼' : '☾'}</span>
+            <span className="sr-only">{theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}</span>
           </button>
           <div className="status-indicator">
             {state === 'loading' && (
@@ -1010,7 +1011,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                       style={{ marginTop: '6px', fontSize: '0.85rem', color: 'var(--color-muted)' }}
                     >
                       {capabilities?.generation_available
-                        ? 'Code is indexed with static analysis and AI is used afterward for "Explain this flow."'
+                        ? 'AI Assist uses semantic embeddings during indexing and grounded generation when you ask questions.'
                         : 'AI explanation assist unavailable (no LLM generation capability).'}
                     </div>
                   </div>

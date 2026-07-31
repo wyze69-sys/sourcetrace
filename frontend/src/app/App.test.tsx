@@ -455,7 +455,7 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
     expect(select.value).toBe('ai_assist')
 
     expect(
-      screen.getByText(/Code is indexed with static analysis and AI is used afterward for "Explain this flow."/i),
+      screen.getByText(/AI Assist uses semantic embeddings during indexing and grounded generation when you ask questions\./i),
     ).toBeInTheDocument()
 
     // Technical terms should not be present in the select options
