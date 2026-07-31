@@ -175,8 +175,12 @@ class GroundedAnswerService:
         matched_items = self._extract_valid_evidence_items(clean_answer, evidence_result.items)
 
         # 9. Citation Relevance Control Policy
+        # Intent-specific relevance rules must use the current question.  The
+        # expanded retrieval query may contain older subjects (for example,
+        # authentication) that should not turn a normal follow-up into an
+        # authentication-only filter.
         relevant_matched_items = [
-            item for item in matched_items if self._is_evidence_relevant_to_question(item, retrieval_query)
+            item for item in matched_items if self._is_evidence_relevant_to_question(item, question)
         ]
 
         if not relevant_matched_items:
@@ -232,7 +236,11 @@ class GroundedAnswerService:
             message.content.strip()
             for message in conversation_context[-4:]
             if isinstance(message, GenerationMessage)
-            and message.role in ("user", "assistant")
+            # Assistant answers can be a fallback such as "not enough
+            # evidence" and are not reliable search subjects.  Prior user
+            # questions contain the actual repository topic we need to carry
+            # into a pronoun-only follow-up.
+            and message.role == "user"
             and message.content.strip()
         ]
         if not recent_context:

@@ -231,6 +231,37 @@ def test_model_invented_paths_ignored_server_metadata_used() -> None:
     assert res.citations[0].end_line == 20
 
 
+def test_follow_up_retrieval_context_uses_prior_user_subject_not_fallback_answer() -> None:
+    ev1 = _make_evidence(
+        chunk_id="c1",
+        relative_path="sourcetrace/storage/repositories.py",
+        symbol_name="RepositoryRepository",
+        snippet_content="class RepositoryRepository:\n    def store(self): ...",
+    )
+    retrieval_service = FakeRetrievalService(
+        GroundedEvidenceResult(items=(ev1,), total_retrieved=1)
+    )
+    provider = FakeGenerationProvider("Storage is handled here [E1].")
+    service = GroundedAnswerService(retrieval_service, provider)
+
+    history = (
+        GenerationMessage(role="user", content="How is repository storage handled?"),
+        GenerationMessage(role="assistant", content=INSUFFICIENT_EVIDENCE_ANSWER),
+    )
+    result = service.generate_answer(
+        "sess_001",
+        "repo_001",
+        "store what",
+        conversation_context=history,
+    )
+
+    assert result.insufficient_evidence is False
+    assert retrieval_service.retrieve_calls[0]["query"] == (
+        "store what How is repository storage handled?"
+    )
+    assert result.citations[0].relative_path == "sourcetrace/storage/repositories.py"
+
+
 # ---------------------------------------------------------------------------
 # 3. Input & Validation Error Tests
 # ---------------------------------------------------------------------------
