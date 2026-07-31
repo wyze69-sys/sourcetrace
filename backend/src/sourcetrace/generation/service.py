@@ -67,12 +67,17 @@ class GroundedAnswerService:
         if type(repository_id) is not str or not repository_id.strip():
             raise GenerationError("Generation failed safely.")
 
+        # Follow-up questions often contain pronouns ("it", "that file", "this").
+        # Retrieval must see the active subject as well as the latest question;
+        # conversation history is already bounded by the route before it reaches here.
+        retrieval_query = self._build_retrieval_query(question, conversation_context)
+
         # 2. Retrieve Grounded Evidence
         try:
             evidence_result = self._retrieval_service.retrieve(
                 owner_session_id=owner_session_id,
                 repository_id=repository_id,
-                query=question,
+                query=retrieval_query,
                 limit=limit,
             )
         except (KeyboardInterrupt, SystemExit):
@@ -171,7 +176,7 @@ class GroundedAnswerService:
 
         # 9. Citation Relevance Control Policy
         relevant_matched_items = [
-            item for item in matched_items if self._is_evidence_relevant_to_question(item, question)
+            item for item in matched_items if self._is_evidence_relevant_to_question(item, retrieval_query)
         ]
 
         if not relevant_matched_items:
@@ -213,6 +218,30 @@ class GroundedAnswerService:
             chunks_retrieved=evidence_result.total_retrieved,
             answer_mode=final_mode,
         )
+
+    @staticmethod
+    def _build_retrieval_query(
+        question: str,
+        conversation_context: Sequence[GenerationMessage] | None,
+    ) -> str:
+        """Resolve short follow-ups against the most recent conversation subject."""
+        if not conversation_context:
+            return question
+
+        recent_context = [
+            message.content.strip()
+            for message in conversation_context[-4:]
+            if isinstance(message, GenerationMessage)
+            and message.role in ("user", "assistant")
+            and message.content.strip()
+        ]
+        if not recent_context:
+            return question
+
+        # Keep the current question prominent and cap history so retrieval remains
+        # focused instead of turning the entire chat transcript into a search query.
+        context_text = " ".join(recent_context)[-1800:]
+        return f"{question.strip()} {context_text}".strip()
 
     def _is_evidence_relevant_to_question(self, item: RetrievedEvidence, question: str) -> bool:
         from sourcetrace.generation.prompts import _is_orientation_prompt_question
