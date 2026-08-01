@@ -23,7 +23,31 @@ from sourcetrace.retrieval.service import SemanticRetrievalService
 INSUFFICIENT_EVIDENCE_ANSWER = (
     "I do not have enough retrieved evidence from the indexed repository to answer this question."
 )
+OFF_TOPIC_SCOPE_ANSWER = (
+    "I’m focused on answering questions about this repository. "
+    "Try asking about a file, function, data flow, or change."
+)
 MARKER_PATTERN = re.compile(r"\[E([1-9][0-9]*)\]")
+
+# Signals that a question is actually about code — files, paths, symbols, tech words.
+# If a question is neither an acknowledgement, nor obviously off-topic, NOR this,
+# and retrieval returns nothing, it's almost certainly a random off-topic question.
+_CODE_SIGNAL_PATTERN = re.compile(
+    r"(?:"
+    r"[/\\._-]"  # path or dotted symbol separators
+    r"|\b(?:file|function|class|method|component|variable|module|folder|package|"
+    r"import|export|api|endpoint|route|database|query|test|config|hook|"
+    r"auth|login|user|data|storage|state|prop|render|deploy|build|error|"
+    r"bug|fix|refactor|change|update|add|remove|delete|create|modify|"
+    r"code|script|server|client|frontend|backend|index|main|app)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def _has_code_signal(question: str) -> bool:
+    """Return true if the question looks like it's about this codebase."""
+    return bool(_CODE_SIGNAL_PATTERN.search(question))
 
 
 class GroundedAnswerService:
@@ -82,10 +106,7 @@ class GroundedAnswerService:
 
         if self._is_clearly_off_topic_question(question):
             return GroundedAnswerResult(
-                answer=(
-                    "I’m focused on answering questions about this repository. "
-                    "Try asking about a file, function, data flow, or change."
-                ),
+                answer=OFF_TOPIC_SCOPE_ANSWER,
                 citations=(),
                 evidence=(),
                 insufficient_evidence=False,
@@ -145,6 +166,18 @@ class GroundedAnswerService:
                     insufficient_evidence=True,
                     chunks_retrieved=0,
                     answer_mode="insufficient_orientation",
+                )
+            # Random questions with zero code signal that return nothing from
+            # retrieval are off-topic — surface the friendly scope message
+            # instead of the intimidating "insufficient evidence" fallback.
+            if not _has_code_signal(question):
+                return GroundedAnswerResult(
+                    answer=OFF_TOPIC_SCOPE_ANSWER,
+                    citations=(),
+                    evidence=(),
+                    insufficient_evidence=False,
+                    chunks_retrieved=0,
+                    answer_mode="off_topic",
                 )
             return GroundedAnswerResult(
                 answer=INSUFFICIENT_EVIDENCE_ANSWER,

@@ -290,6 +290,39 @@ def test_clearly_off_topic_question_gets_scope_message() -> None:
     assert len(provider.generate_calls) == 0
 
 
+def test_random_question_with_empty_retrieval_gets_scope_message() -> None:
+    """A general question that isn't in the narrow regex list but has no code signal
+    and yields no retrieved evidence should be treated as off-topic conversation."""
+    retrieval_service = FakeRetrievalService()  # default returns 0 items
+    provider = FakeGenerationProvider()
+    service = GroundedAnswerService(retrieval_service, provider)
+
+    # e.g., "How do I cook pasta?" or "What is your favorite color?"
+    result = service.generate_answer("sess_001", "repo_001", "How do I cook pasta?")
+
+    assert result.answer_mode == "off_topic"
+    assert result.insufficient_evidence is False
+    assert "focused on answering questions about this repository" in result.answer
+    assert result.citations == ()
+    assert len(provider.generate_calls) == 0
+
+
+def test_code_question_with_empty_retrieval_keeps_insufficient_evidence() -> None:
+    """Genuine codebase questions that return no evidence must still surface
+    the insufficient-evidence fallback (not be silently treated off-topic)."""
+    retrieval_service = FakeRetrievalService()
+    provider = FakeGenerationProvider()
+    service = GroundedAnswerService(retrieval_service, provider)
+
+    result = service.generate_answer("sess_001", "repo_001", "Where is the login function?")
+
+    assert result.answer_mode == "insufficient_evidence"
+    assert result.insufficient_evidence is True
+    assert result.answer == (
+        "I do not have enough retrieved evidence from the indexed repository to answer this question."
+    )
+
+
 # ---------------------------------------------------------------------------
 # 3. Input & Validation Error Tests
 # ---------------------------------------------------------------------------
