@@ -1114,6 +1114,16 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
         expect(screen.getByText('Start Here Reading Guide')).toBeInTheDocument()
         expect(screen.getByText(/Start here to explore this repository:/i)).toBeInTheDocument()
         expect(screen.getByRole('button', { name: /\[1\] README.md:1-20 \(README\)/i })).toBeInTheDocument()
+        expect(screen.getByTestId('chat-history-scroll-region')).toHaveClass('is-scroll-region')
+        expect(screen.getByTestId('chat-composer-bottom')).toBeInTheDocument()
+        expect(
+          screen.getByTestId('chat-history-scroll-region').compareDocumentPosition(
+            screen.getByTestId('chat-composer-bottom'),
+          ) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy()
+        expect(screen.getByRole('region', { name: 'Conversation workspace' })).toHaveClass(
+          'chat-workspace-with-history',
+        )
       })
 
       // Click citation button -> switches view to files tab, opens cited file and highlights cited lines
@@ -1124,6 +1134,24 @@ describe('App Forensic Workspace Shell & Repository Import Workflow', () => {
         expect(getFileContentMock).toHaveBeenCalledWith('repo_ux_fix_1', 'README.md')
         expect(screen.getByText('# Welcome to project')).toBeInTheDocument()
       })
+    })
+
+    it('presents the redesigned chat workspace with grounded source cues', async () => {
+      const mockClient = {
+        getHealth: vi.fn().mockResolvedValue({ status: 'ok', version: '1.0.0', timestamp: '2026-07-28' }),
+        listRepositories: vi.fn().mockResolvedValue({ repositories: [readyRepo1] }),
+      } as unknown as ApiClient
+
+      render(<App client={mockClient} />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('region', { name: 'Conversation workspace' })).toBeInTheDocument()
+      })
+
+      expect(screen.getByText('Repository workspace')).toBeInTheDocument()
+      expect(screen.getByText('Ask the source')).toBeInTheDocument()
+      expect(screen.getByText('Grounded in indexed source')).toBeInTheDocument()
+      expect(screen.getByText(/Start with a lens/)).toBeInTheDocument()
     })
   })
 })

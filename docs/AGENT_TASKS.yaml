@@ -1656,3 +1656,130 @@ tasks:
       - Re-run backend/tests/run_real_browser_acceptance.py and confirm exit 0 with ACCEPTED verdict.
       - Run git diff --check.
 
+  - id: RUNTIME-UX-006
+    title: Source-led repository chat workspace UX/UI redesign
+    phase: 8
+    status: completed
+    dependencies:
+      - RUNTIME-UX-005
+      - ACCEPT-NAV-001
+    owner: agent
+    allowed_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/app/App.test.tsx
+      - frontend/src/styles/index.css
+      - docs/**
+    forbidden_paths:
+      - backend/src/**
+    objective: >-
+      Extend the existing question-first workspace into a more focused repository chat experience
+      without changing API behavior or weakening evidence/citation navigation. Improve the visual hierarchy,
+      composer affordance, conversation readability, source presentation, and responsive behavior in the
+      existing React and CSS stack.
+    acceptance_criteria:
+      - The Understand workspace has a distinct repository context header and source-led chat composer.
+      - Starter questions are presented as clear selectable lenses without changing their actions or labels.
+      - User and assistant messages have distinct, readable hierarchy while retaining existing answer-mode labels.
+      - Citations remain keyboard-accessible buttons with the existing path/line accessible name and click navigation.
+      - Existing frontend tests pass and a focused test covers the redesigned chat workspace cues.
+      - No backend or API behavior changes are introduced.
+    completion_evidence:
+      implementation_paths:
+        - frontend/src/app/App.tsx
+        - frontend/src/app/App.test.tsx
+        - frontend/src/styles/index.css
+      verified_by:
+        - npm test -- --run (104 passed across 5 files, 0 failures)
+        - npx vitest run src/app/App.test.tsx (28 passed, 0 failures)
+        - npm run lint (0 errors, 4 existing warnings)
+        - npm run build (34 modules transformed, production bundle built)
+        - git diff --check (0 whitespace errors)
+    verification:
+      - Run npm test -- --run from frontend.
+      - Run npm run lint from frontend.
+      - Run npm run build from frontend.
+      - Run git diff --check.
+
+  - id: RUNTIME-UX-007
+    title: Normal-chat conversation scrolling and compact follow-up composer
+    phase: 8
+    status: completed
+    dependencies:
+      - RUNTIME-UX-006
+      - ACCEPT-NAV-001
+    owner: agent
+    allowed_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/app/App.test.tsx
+      - frontend/src/styles/index.css
+      - docs/**
+    forbidden_paths:
+      - backend/src/**
+    objective: >-
+      Extend the existing source-led chat workspace so the prompt hero collapses after the first question,
+      the conversation trail has a dedicated normal-chat scroll region, and new answers stay in view.
+    acceptance_criteria:
+      - Before conversation, the full prompt hero and starter questions remain visible.
+      - After the first message, the hero becomes a compact follow-up composer.
+      - Conversation messages render in a bounded scrollable region and new messages auto-scroll into view.
+      - Citation buttons and answer-mode labels remain unchanged.
+      - No backend or API changes are introduced.
+      - Frontend tests, lint, and production build pass.
+    completion_evidence:
+      implementation_paths:
+        - frontend/src/app/App.tsx
+        - frontend/src/app/App.test.tsx
+        - frontend/src/styles/index.css
+      verified_by:
+        - npm test -- --run (104 passed across 5 files, 0 failures)
+        - npx vitest run src/app/App.test.tsx (28 passed, 0 failures)
+        - npm run lint (0 errors, 4 existing warnings)
+        - npm run build (34 modules transformed, production bundle built)
+        - git diff --check (0 whitespace errors; line-ending warnings only)
+    verification:
+      - Run npm test -- --run from frontend.
+      - Run npm run lint from frontend.
+      - Run npm run build from frontend.
+      - Run git diff --check.
+
+  - id: RUNTIME-UX-008
+    title: Bottom composer for active repository conversations
+    phase: 8
+    status: completed
+    dependencies:
+      - RUNTIME-UX-007
+    owner: agent
+    allowed_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/app/App.test.tsx
+      - frontend/src/styles/index.css
+      - docs/**
+    forbidden_paths:
+      - backend/src/**
+    objective: >-
+      Move the active conversation composer below the evidence trail so the repository chat follows a normal
+      chatbot layout, while keeping the initial empty state and existing chat controls intact.
+    acceptance_criteria:
+      - The initial no-message state retains the prompt hero composer and starter questions.
+      - Once messages exist, the conversation trail appears before the composer in document and visual order.
+      - The active composer is presented in a bottom dock with usable desktop and mobile behavior.
+      - Only one composer implementation is rendered at a time.
+      - Citation buttons, answer-mode labels, auto-scroll, and API behavior remain unchanged.
+      - Frontend tests, lint, and production build pass.
+    completion_evidence:
+      implementation_paths:
+        - frontend/src/app/App.tsx
+        - frontend/src/app/App.test.tsx
+        - frontend/src/styles/index.css
+      verified_by:
+        - npm test -- --run (104 passed across 5 files, 0 failures)
+        - npx vitest run src/app/App.test.tsx (28 passed, 0 failures)
+        - npm run lint (0 errors, 4 existing warnings)
+        - npm run build (34 modules transformed, production bundle built)
+        - git diff --check (0 whitespace errors; line-ending warnings only)
+    verification:
+      - Run npm test -- --run from frontend.
+      - Run npm run lint from frontend.
+      - Run npm run build from frontend.
+      - Run git diff --check.
+

@@ -1,72 +1,73 @@
-# Last Handoff: ACCEPT-NAV-001-FIX — Source-Coordinate Citation File Navigation & Real Browser E2E Acceptance
+# Last Handoff: RUNTIME-UX-008 — Bottom Active-chat Composer
 
-**Task**: ACCEPT-NAV-001-FIX
+**Task**: RUNTIME-UX-008
 **Status**: completed
-
----
 
 ## Task Summary
 
-Resolved both issues identified in `ACCEPT-NAV-001-FIX`:
-1. Cleaned trailing whitespace in `docs/FEATURE_REGISTRY.yaml`, causing `git diff --check` to pass cleanly with 0 errors.
-2. Verified exact source-coordinate line navigation across backend storage, reconstructed source code, frontend `CodeViewer`, and Playwright live-browser acceptance harness (`run_real_browser_acceptance.py`).
-   - Line numbers rendered in `CodeViewer` are 1-indexed (`line_num = idx + 1`), matching original repository file line coordinates.
-   - Added `isCitationLineUnavailable` guard to `CodeViewer`. If cited lines are out of bounds or unavailable, it renders an honest notice (`data-testid="citation-line-unavailable-notice"`), omits false line highlighting, and prevents false navigation claims.
-   - Fixed citation text parsing (`parse_citation_text`) in `run_real_browser_acceptance.py` to handle `[1] [1] path:start-end (symbol)` formats and increased timeouts to 25s for large files.
-   - Ran `run_real_browser_acceptance.py` in live browser mode against backend and frontend servers: both FitSync (`backend/server.js:11-11`) and bottle (`bottle.py:1463-1475`) achieved `PATH_NAVIGATION_PASSED` and `LINE_NAVIGATION_PASSED` with overall status `ACCEPTED`.
+Moved the active repository chat composer below the evidence trail so the conversation reads top-to-bottom like a normal AI chatbot. The initial no-message state keeps its prompt hero composer, while active conversations use the same shared composer in a bottom dock. This extends `CHAT-UX-SCROLL-001`; it does not create a second chat implementation.
 
----
+## Files Changed
 
-## 1. Behavior Added / Changed
+- `frontend/src/app/App.tsx` — extracted the existing composer markup into one shared JSX element, rendered it in the hero before messages for the empty state and after the history for active conversations.
+- `frontend/src/styles/index.css` — added the active-chat bottom composer dock, sticky positioning, surface treatment, and responsive mobile spacing; kept the evidence trail as the bounded scroll region.
+- `frontend/src/app/App.test.tsx` — added coverage that the active composer exists and follows the conversation history in document order.
+- `docs/PROJECT_STATE.md` — synchronized current verified state.
+- `docs/LAST_HANDOFF.md` — synchronized this handoff.
+- `docs/CODEBASE_MAP.md` — recorded the shared/bottom composer responsibility.
+- `docs/FEATURE_REGISTRY.yaml` — registered `CHAT-UX-COMPOSER-001`.
+- `docs/AGENT_TASKS.yaml` — recorded `RUNTIME-UX-008` as completed with verification evidence.
 
-- **`docs/FEATURE_REGISTRY.yaml`**: Removed trailing blank lines; `git diff --check` passes cleanly.
-- **`frontend/src/app/RepoExplorerPanel.tsx`**: Added `isCitationLineUnavailable` bounds check and `citation-line-unavailable-notice` banner in `CodeViewer`.
-- **`backend/tests/run_real_browser_acceptance.py`**: Robust citation text parser (`parse_citation_text`) and 25s element visibility timeouts.
-- **`docs/PROJECT_STATE.md` & `docs/LAST_HANDOFF.md`**: Synchronized state documents with fresh empirical verification facts.
+## Behavior Added / Changed
 
----
+- The empty repository conversation still starts with the full “Ask the source” hero, composer, and starter question lenses.
+- Once a question produces messages, the compact context header remains at the top, followed by the scrollable evidence trail.
+- The composer now appears after the evidence trail in DOM and visual order, inside a sticky bottom dock.
+- Only one shared composer implementation is rendered at a time, avoiding divergent controls or behavior.
+- Existing citations, file/line navigation, answer-mode labels, loading/error states, auto-scroll, and API calls remain unchanged.
 
-## 2. Files Changed
+## Commands Run
 
-| File | Changes |
-|------|---------|
-| [RepoExplorerPanel.tsx](file:///D:/PROJECT/SourceTrace/frontend/src/app/RepoExplorerPanel.tsx#L258-L286) | Added `isCitationLineUnavailable` guard and notice banner in `CodeViewer` |
-| [run_real_browser_acceptance.py](file:///D:/PROJECT/SourceTrace/backend/tests/run_real_browser_acceptance.py#L90-L105) | Robust citation parsing and 25s timeout for large file loading |
-| [FEATURE_REGISTRY.yaml](file:///D:/PROJECT/SourceTrace/docs/FEATURE_REGISTRY.yaml#L789-L791) | Removed trailing blank line for `git diff --check` cleanliness |
-| [PROJECT_STATE.md](file:///D:/PROJECT/SourceTrace/docs/PROJECT_STATE.md) | Synchronized current project state and verification metrics |
-| [LAST_HANDOFF.md](file:///D:/PROJECT/SourceTrace/docs/LAST_HANDOFF.md) | Synchronized last handoff report |
+From `D:\PROJECT\SourceTrace\frontend`:
 
----
-
-## 3. Verification Results
-
-```bash
-cd frontend && npm test -- --run
-# Result: 103 passed across 5 test files (0 failures)
-
-cd frontend && npm run lint
-# Result: 0 errors, 4 warnings
-
-cd frontend && npm run build
-# Result: dist/ index.html, index.css, index.js built in 1.34s
-
-cd backend && uv run pytest
-# Result: 1442 passed, 5 skipped (0 failures)
-
-uv run python backend/tests/run_real_browser_acceptance.py
-# Result: OVERALL RUNTIME-ACCEPT-005 STATUS: ACCEPTED
-#   FitSync: PATH_NAVIGATION_PASSED, LINE_NAVIGATION_PASSED
-#   bottle:  PATH_NAVIGATION_PASSED, LINE_NAVIGATION_PASSED
-
-git diff --check
-# Result: 0 whitespace errors
-
-git status --short
-# Result: 10 modified tracked files
+```text
+npx vitest run src/app/App.test.tsx
+npm test -- --run
+npm run lint
+npm run build
 ```
 
----
+From `D:\PROJECT\SourceTrace`:
+
+```text
+git diff --check
+git status --short
+git diff --stat
+```
+
+## Verification Results
+
+- `npx vitest run src/app/App.test.tsx`: 28 passed, 0 failures.
+- `npm test -- --run`: 104 passed across 5 files, 0 failures.
+- `npm run lint`: 0 errors, 4 existing Fast Refresh warnings.
+- `npm run build`: TypeScript/Vite production build succeeded; 34 modules transformed.
+- `git diff --check`: 0 whitespace errors; line-ending normalization warnings only.
+- Backend and API were not changed; the prior backend suite baseline remains `1442 passed, 5 skipped`.
+- Live browser acceptance was not rerun with an indexed conversation; the current browser tab had no repository data, while the active layout is covered by the App regression test and production build.
+
+## API / Schema Impact
+
+None. No routes, request/response types, storage contracts, or provider behavior changed.
+
+## Security Considerations
+
+No new data flow or privilege boundary was introduced. Citations still render as escaped React text and continue to use backend-provided repository-relative paths and line ranges.
+
+## Known Limitations
+
+- Visual acceptance of the active indexed-conversation state was not run in the browser because the currently open tab has no indexed repository. The DOM-order regression test verifies the key layout contract.
+- The broader app still contains older inline styles outside the redesigned chat workspace; they were intentionally left out of this focused task.
 
 ## Recommended Next Task
 
-Select next ready task from `docs/AGENT_TASKS.yaml`.
+Select or create the next uniquely scoped ready task. Further chat changes should extend the registered chat features with a concrete interaction or accessibility gap rather than creating another parallel chat surface.

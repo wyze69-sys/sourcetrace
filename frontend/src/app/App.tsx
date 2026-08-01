@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiClient as defaultApiClient, ApiError, type ApiClient } from '../services/apiClient'
 import { FlowTracePanel } from './FlowTracePanel'
+import { ChatMessageBody } from './ChatMessageBody'
 import { ImpactPanel } from './ImpactPanel'
 import { RepoExplorerPanel } from './RepoExplorerPanel'
 import type {
@@ -204,6 +205,7 @@ export function App({ client = defaultApiClient }: AppProps) {
   const [chatQuestion, setChatQuestion] = useState('')
   const [chatSubmitting, setChatSubmitting] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
+  const chatHistoryRef = useRef<HTMLDivElement>(null)
 
   // Focused Citation / Navigation State
   const [focusedCitation, setFocusedCitation] = useState<{
@@ -634,6 +636,13 @@ export function App({ client = defaultApiClient }: AppProps) {
 
   const selectedRepo = repositories.find((r) => r.repository_id === selectedRepoId)
   const currentConversation = selectedRepoId ? conversations[selectedRepoId] : undefined
+  const hasConversation = Boolean(currentConversation && currentConversation.messages.length > 0)
+
+  useEffect(() => {
+    const history = chatHistoryRef.current
+    if (!history) return
+    history.scrollTop = history.scrollHeight
+  }, [selectedRepoId, currentConversation?.messages.length, chatSubmitting])
 
   // Command palette items: repositories + workspace sections + starter questions
   const cmdkItems = (() => {
@@ -702,6 +711,34 @@ export function App({ client = defaultApiClient }: AppProps) {
         i.hint.toLowerCase().includes(ql),
     )
   })()
+
+  const chatComposer = (
+    <form onSubmit={handleChatSubmit} className="chat-form understand-form chat-composer">
+      <div className="composer-shell">
+        <input
+          type="text"
+          className="input-text chat-input hero-input"
+          placeholder="Ask about this repository..."
+          value={chatQuestion}
+          onChange={(e) => setChatQuestion(e.target.value)}
+          disabled={chatSubmitting}
+          aria-label="Ask about this repository"
+        />
+        <div className="composer-meta">
+          <span><span className="composer-pulse" aria-hidden="true" />Grounded in indexed source</span>
+          <span><kbd className="kbd">↵</kbd> send</span>
+        </div>
+      </div>
+      <button
+        type="submit"
+        disabled={chatSubmitting || !chatQuestion.trim()}
+        className="btn-action hero-ask-btn"
+      >
+        <span>{chatSubmitting ? 'Asking...' : 'Ask'}</span>
+        <span className="ask-arrow" aria-hidden="true">↗</span>
+      </button>
+    </form>
+  )
 
   return (
     <div className="app-container">
@@ -1128,181 +1165,114 @@ export function App({ client = defaultApiClient }: AppProps) {
 
                   {/* Active Workspace Content Views */}
                   {activeSection === 'understand' && (
-                    <section className="card-panel understand-panel">
-                      <div className="repo-meta-header" style={{ marginBottom: '16px' }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            marginBottom: '8px',
-                          }}
-                        >
-                          <h2 className="panel-header" style={{ margin: 0 }}>
-                            Repository: <span className="mono">{selectedRepo.name}</span>
-                            {selectedRepo.source_type === 'github' && (
-                              <span
-                                className={`repo-badge ${getFreshnessState(
-                                  selectedRepo,
-                                  Object.values(activeJobs).find(
-                                    (j) => j.repository_id === selectedRepo.repository_id,
-                                  ),
-                                )}`}
-                                style={{
-                                  marginLeft: '10px',
-                                  fontSize: '0.75rem',
-                                  verticalAlign: 'middle',
-                                }}
-                              >
-                                {getFreshnessState(
-                                  selectedRepo,
-                                  Object.values(activeJobs).find(
-                                    (j) => j.repository_id === selectedRepo.repository_id,
-                                  ),
-                                )}
-                              </span>
-                            )}
-                          </h2>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            {selectedRepo.source_type === 'github' && (
-                              <button
-                                id="btn-refresh-repo-understand"
-                                type="button"
-                                className="btn-action"
-                                style={{ fontSize: '0.8rem', padding: '4px 12px' }}
-                                onClick={() => handleRefreshRepo(selectedRepo)}
-                                disabled={
-                                  !!Object.values(activeJobs).find(
-                                    (j) =>
-                                      j.repository_id === selectedRepo.repository_id &&
-                                      j.status !== 'ready' &&
-                                      j.status !== 'failed',
-                                  )
-                                }
-                                title={
-                                  selectedRepo.indexed_commit_sha
-                                    ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}`
-                                    : 'Re-index this repository'
-                                }
-                              >
-                                ↻ Refresh
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="btn-action"
-                              style={{
-                                fontSize: '0.8rem',
-                                padding: '4px 12px',
-                                backgroundColor: 'transparent',
-                                border: '1px solid var(--color-border)',
-                              }}
-                              onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
-                              disabled={deletingRepoId === selectedRepo.repository_id}
-                            >
-                              {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
-                            </button>
-                            {selectedRepo.index_mode === 'static' ? (
-                              <span
-                                className="static-banner"
-                                style={{
-                                  background: '#f0f9ff',
-                                  color: '#0284c7',
-                                  border: '1px solid #bae6fd',
-                                  padding: '4px 12px',
-                                  borderRadius: '12px',
-                                  fontSize: '0.8rem',
-                                  fontWeight: 600,
-                                }}
-                              >
-                                Static inspection mode
-                              </span>
-                            ) : (
-                              capabilities?.generation_available &&
-                              !capabilities?.semantic_search_available && (
+                    <section
+                      className={`card-panel understand-panel chat-workspace-panel ${
+                        hasConversation ? 'chat-workspace-with-history' : ''
+                      }`}
+                      aria-label="Conversation workspace"
+                    >
+                      <div className="chat-context-header">
+                        <div className="chat-context-intro">
+                          <div className="repo-avatar" aria-hidden="true">
+                            {selectedRepo.name.slice(0, 1).toUpperCase()}
+                          </div>
+                          <div>
+                            <span className="section-kicker">Repository workspace</span>
+                            <h2 className="panel-header">
+                              Repository: <span className="mono">{selectedRepo.name}</span>
+                              {selectedRepo.source_type === 'github' && (
                                 <span
-                                  className="static-chat-badge"
-                                  style={{
-                                    background: '#f0f9ff',
-                                    color: '#0284c7',
-                                    border: '1px solid #bae6fd',
-                                    padding: '4px 12px',
-                                    borderRadius: '12px',
-                                    fontSize: '0.8rem',
-                                    fontWeight: 600,
-                                  }}
+                                  className={`repo-badge ${getFreshnessState(
+                                    selectedRepo,
+                                    Object.values(activeJobs).find(
+                                      (j) => j.repository_id === selectedRepo.repository_id,
+                                    ),
+                                  )}`}
                                 >
-                                  AI Assist (Static Evidence Mode)
+                                  {getFreshnessState(
+                                    selectedRepo,
+                                    Object.values(activeJobs).find(
+                                      (j) => j.repository_id === selectedRepo.repository_id,
+                                    ),
+                                  )}
                                 </span>
-                              )
+                              )}
+                            </h2>
+                            {selectedRepo.source_type === 'github' && (
+                              <div className="repo-meta-bar mono">
+                                {selectedRepo.indexed_branch && <span>Branch: <strong>{selectedRepo.indexed_branch}</strong></span>}
+                                {selectedRepo.indexed_commit_sha && <span>SHA: <strong>{selectedRepo.indexed_commit_sha.slice(0, 7)}</strong></span>}
+                                {selectedRepo.last_indexed_at && <span>Indexed: <strong>{formatRelativeTime(selectedRepo.last_indexed_at)}</strong></span>}
+                                {selectedRepo.stale_checked_at && <span>Checked: <strong>{formatRelativeTime(selectedRepo.stale_checked_at)}</strong></span>}
+                              </div>
                             )}
                           </div>
                         </div>
-                        {selectedRepo.source_type === 'github' && (
-                          <div
-                            className="repo-meta-bar mono"
-                            style={{
-                              fontSize: '0.78rem',
-                              color: 'var(--color-muted)',
-                              display: 'flex',
-                              gap: '16px',
-                              flexWrap: 'wrap',
-                            }}
+                        <div className="chat-context-actions">
+                          {selectedRepo.index_mode === 'static' ? (
+                            <span className="static-banner">Static inspection mode</span>
+                          ) : (
+                            capabilities?.generation_available &&
+                            !capabilities?.semantic_search_available && (
+                              <span className="static-chat-badge">AI Assist (Static Evidence Mode)</span>
+                            )
+                          )}
+                          {selectedRepo.source_type === 'github' && (
+                            <button
+                              id="btn-refresh-repo-understand"
+                              type="button"
+                              className="btn-action btn-compact"
+                              onClick={() => handleRefreshRepo(selectedRepo)}
+                              disabled={
+                                !!Object.values(activeJobs).find(
+                                  (j) =>
+                                    j.repository_id === selectedRepo.repository_id &&
+                                    j.status !== 'ready' &&
+                                    j.status !== 'failed',
+                                )
+                              }
+                              title={
+                                selectedRepo.indexed_commit_sha
+                                  ? `Last indexed SHA: ${selectedRepo.indexed_commit_sha.slice(0, 7)}`
+                                  : 'Re-index this repository'
+                              }
+                            >
+                              ↻ Refresh
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn-action btn-compact btn-quiet"
+                            onClick={() => handleDeleteRepo(selectedRepo.repository_id)}
+                            disabled={deletingRepoId === selectedRepo.repository_id}
                           >
-                            {selectedRepo.indexed_branch && (
-                              <span>
-                                Branch: <strong>{selectedRepo.indexed_branch}</strong>
-                              </span>
-                            )}
-                            {selectedRepo.indexed_commit_sha && (
-                              <span>
-                                SHA: <strong>{selectedRepo.indexed_commit_sha.slice(0, 7)}</strong>
-                              </span>
-                            )}
-                            {selectedRepo.last_indexed_at && (
-                              <span>
-                                Indexed: <strong>{formatRelativeTime(selectedRepo.last_indexed_at)}</strong>
-                              </span>
-                            )}
-                            {selectedRepo.stale_checked_at && (
-                              <span>
-                                Checked: <strong>{formatRelativeTime(selectedRepo.stale_checked_at)}</strong>
-                              </span>
-                            )}
-                          </div>
-                        )}
+                            {deletingRepoId === selectedRepo.repository_id ? 'Deleting...' : 'Delete Repository'}
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Question Hero Section */}
-                      <div className="understand-hero">
-                        <h3 className="understand-title">
-                          What do you want to understand about {selectedRepo.name}?
-                        </h3>
-                        <p className="panel-text" style={{ marginBottom: '0.5rem' }}>
-                          {capabilities?.semantic_search_available
-                            ? 'Ask natural-language questions grounded in verified source code.'
-                            : 'Ask natural-language questions grounded in verified static code evidence.'}
-                        </p>
-                        <form onSubmit={handleChatSubmit} className="chat-form understand-form">
-                          <input
-                            type="text"
-                            className="input-text chat-input hero-input"
-                            placeholder="Ask about this repository..."
-                            value={chatQuestion}
-                            onChange={(e) => setChatQuestion(e.target.value)}
-                            disabled={chatSubmitting}
-                          />
-                          <button
-                            type="submit"
-                            disabled={chatSubmitting || !chatQuestion.trim()}
-                            className="btn-action hero-ask-btn"
-                          >
-                            {chatSubmitting ? 'Asking...' : 'Ask'}
-                          </button>
-                        </form>
+                      <div className={`understand-hero chat-hero ${hasConversation ? 'chat-hero-compact' : ''}`}>
+                        <div className="chat-hero-copy">
+                          <div className="chat-orb" aria-hidden="true"><span /></div>
+                          <div>
+                            <span className="section-kicker">Ask the source</span>
+                            <h3 className="understand-title">
+                              What do you want to understand about {selectedRepo.name}?
+                            </h3>
+                            <p className="panel-text">
+                              {capabilities?.semantic_search_available
+                                ? 'Ask natural-language questions grounded in verified source code.'
+                                : 'Ask natural-language questions grounded in verified static code evidence.'}
+                            </p>
+                          </div>
+                        </div>
+                        {!hasConversation && chatComposer}
 
                         <div className="starter-questions-section">
-                          <span className="starter-questions-label">Try a starter question:</span>
+                          <div className="starter-questions-heading">
+                            <span className="starter-questions-label">Try a starter question:</span>
+                            <span className="starter-questions-note">Start with a lens · Fast paths into the repository</span>
+                          </div>
                           <div className="starter-questions-grid">
                             {STARTER_QUESTIONS.map((q) => (
                               <button
@@ -1312,109 +1282,156 @@ export function App({ client = defaultApiClient }: AppProps) {
                                 onClick={() => submitQuestion(q)}
                                 disabled={chatSubmitting}
                               >
-                                {q}
+                                <span>{q}</span>
+                                <span className="starter-question-arrow" aria-hidden="true">↗</span>
                               </button>
                             ))}
                           </div>
                         </div>
                       </div>
 
-                      {chatError && <div className="form-error" style={{ marginTop: '12px' }}>{chatError}</div>}
+                      {chatError && <div className="form-error chat-feedback" role="alert">{chatError}</div>}
 
-                      {/* Conversation / Investigation Workspace */}
-                      {currentConversation && currentConversation.messages.length > 0 && (
-                        <div className="chat-history" style={{ marginTop: '1.5rem' }}>
+                      {hasConversation && currentConversation && (
+                        <div
+                          ref={chatHistoryRef}
+                          className="chat-history is-scroll-region"
+                          aria-label="Conversation messages"
+                          data-testid="chat-history-scroll-region"
+                        >
+                          <div className="chat-history-header">
+                            <div>
+                              <span className="section-kicker">Conversation</span>
+                              <strong>Evidence trail</strong>
+                            </div>
+                            <span className="chat-history-count mono">
+                              {currentConversation.messages.length} {currentConversation.messages.length === 1 ? 'message' : 'messages'}
+                            </span>
+                          </div>
                           {currentConversation.messages.map((msg) => (
-                            <div
+                            <article
                               key={msg.message_id}
-                              className={`chat-bubble ${msg.role === 'user' ? 'user' : 'assistant'}`}
+                              className={`chat-bubble message-card ${msg.role === 'user' ? 'user' : 'assistant'}`}
                             >
-                              <div className="bubble-role">
-                                {msg.role === 'user'
-                                  ? 'Question'
-                                  : msg.answer_mode === 'static_guidance'
-                                  ? 'Start Here Reading Guide'
-                                  : msg.answer_mode === 'insufficient_orientation'
-                                  ? 'Orientation Status'
-                                  : msg.answer_mode === 'reindex_required'
-                                  ? 'Re-index Required'
-                                  : 'Investigation Result'}
+                              <div className={`message-avatar ${msg.role}`} aria-hidden="true">
+                                {msg.role === 'user' ? 'You' : 'ST'}
                               </div>
-                              <div className="bubble-content">{msg.content}
+                              <div className="message-body">
+                                <div className="bubble-role">
+                                  <span>
+                                    {msg.role === 'user'
+                                      ? 'Question'
+                                      : msg.answer_mode === 'static_guidance'
+                                      ? 'Start Here Reading Guide'
+                                      : msg.answer_mode === 'insufficient_orientation'
+                                      ? 'Orientation Status'
+                                      : msg.answer_mode === 'reindex_required'
+                                      ? 'Re-index Required'
+                                      : 'Investigation Result'}
+                                  </span>
+                                  <span className="message-timestamp mono">{formatRelativeTime(msg.created_at)}</span>
+                                </div>
+                                <div className="bubble-content">
+                                  {msg.role === 'assistant' ? (
+                                    <ChatMessageBody text={msg.content} />
+                                  ) : (
+                                    msg.content
+                                  )}
 
-                                {msg.role === 'assistant' && msg.answer_mode === 'reindex_required' && selectedRepo && (
-                                  <div style={{ marginTop: '12px' }}>
-                                    <button
-                                      type="button"
-                                      className="btn-action btn-refresh"
-                                      onClick={() => handleRefreshRepo(selectedRepo)}
-                                      disabled={
-                                        !!Object.values(activeJobs).find(
-                                          (j) =>
-                                            j.repository_id === selectedRepo.repository_id &&
-                                            j.status !== 'ready' &&
-                                            j.status !== 'failed',
-                                        )
-                                      }
-                                    >
-                                      {Object.values(activeJobs).find(
-                                          (j) =>
-                                            j.repository_id === selectedRepo.repository_id &&
-                                            j.status !== 'ready' &&
-                                            j.status !== 'failed',
-                                        ) ? 'Re-indexing...' : 'Re-index repository'}
-                                    </button>
+                                  {msg.role === 'assistant' && msg.answer_mode === 'reindex_required' && selectedRepo && (
+                                    <div className="message-action-row">
+                                      <button
+                                        type="button"
+                                        className="btn-action btn-refresh"
+                                        onClick={() => handleRefreshRepo(selectedRepo)}
+                                        disabled={
+                                          !!Object.values(activeJobs).find(
+                                            (j) =>
+                                              j.repository_id === selectedRepo.repository_id &&
+                                              j.status !== 'ready' &&
+                                              j.status !== 'failed',
+                                          )
+                                        }
+                                      >
+                                        {Object.values(activeJobs).find(
+                                            (j) =>
+                                              j.repository_id === selectedRepo.repository_id &&
+                                              j.status !== 'ready' &&
+                                              j.status !== 'failed',
+                                          ) ? 'Re-indexing...' : 'Re-index repository'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
+                                  <div className="citations-list source-citation-panel">
+                                    <div className="citation-heading-row">
+                                      <span className="citation-heading">Sources</span>
+                                      <span className="citation-helper">Open the exact lines</span>
+                                    </div>
+                                    <div className="citation-chip-list">
+                                      {msg.citations.map((c, idx) => (
+                                        <button
+                                          key={idx}
+                                          type="button"
+                                          className="citation-item citation-btn"
+                                          onClick={() => {
+                                            setFocusedCitation({
+                                              filePath: c.relative_path,
+                                              startLine: c.start_line,
+                                              endLine: c.end_line,
+                                            })
+                                            setActiveSection('files')
+                                          }}
+                                          title={`View ${c.relative_path}`}
+                                        >
+                                          <span className="citation-number">[{idx + 1}]</span>
+                                          <span>{c.relative_path}:{c.start_line}-{c.end_line}</span>
+                                          <span className="citation-symbol">({c.symbol_name})</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {msg.role === 'assistant' && msg.evidence && msg.evidence.length > 0 && (
+                                  <div className="citations-list evidence-panel">
+                                    <div className="citation-heading-row">
+                                      <span className="citation-heading">Evidence snippets</span>
+                                      <span className="citation-helper">Retrieved context</span>
+                                    </div>
+                                    {msg.evidence.map((e, idx) => (
+                                      <pre key={idx} className="evidence-block">
+                                        <code>
+                                          {e.relative_path}:{e.start_line}-{e.end_line} [{e.symbol_name}]:
+                                          {'\n'}
+                                          {e.snippet}
+                                        </code>
+                                      </pre>
+                                    ))}
                                   </div>
                                 )}
                               </div>
-
-                              {msg.role === 'assistant' && msg.citations && msg.citations.length > 0 && (
-                                <div className="citations-list">
-                                  <span className="citation-heading">Citations:</span>
-                                  {msg.citations.map((c, idx) => (
-                                    <button
-                                      key={idx}
-                                      className="citation-item citation-btn"
-                                      onClick={() => {
-                                        setFocusedCitation({
-                                          filePath: c.relative_path,
-                                          startLine: c.start_line,
-                                          endLine: c.end_line,
-                                        })
-                                        setActiveSection('files')
-                                      }}
-                                      title={`View ${c.relative_path}`}
-                                    >
-                                      [{idx + 1}] {c.relative_path}:{c.start_line}-{c.end_line} ({c.symbol_name})
-                                    </button>
-                                  ))}
-                                </div>
-                              )}
-
-                              {msg.role === 'assistant' && msg.evidence && msg.evidence.length > 0 && (
-                                <div className="citations-list">
-                                  <span className="citation-heading">Evidence Snippets:</span>
-                                  {msg.evidence.map((e, idx) => (
-                                    <pre key={idx} className="evidence-block">
-                                      <code>
-                                        {e.relative_path}:{e.start_line}-{e.end_line} [{e.symbol_name}]:
-                                        {'\n'}
-                                        {e.snippet}
-                                      </code>
-                                    </pre>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
+                            </article>
                           ))}
                           {chatSubmitting && (
-                            <div className="chat-bubble assistant" aria-label="SourceTrace is analyzing">
-                              <div className="bubble-role">SourceTrace</div>
-                              <div className="typing-indicator" aria-hidden>
-                                <span /><span /><span />
+                            <div className="chat-bubble assistant message-card" aria-label="SourceTrace is analyzing">
+                              <div className="message-avatar assistant" aria-hidden="true">ST</div>
+                              <div className="message-body">
+                                <div className="bubble-role"><span>SourceTrace</span><span className="message-timestamp mono">working</span></div>
+                                <div className="typing-indicator" aria-hidden>
+                                  <span /><span /><span />
+                                </div>
                               </div>
                             </div>
                           )}
+                        </div>
+                      )}
+
+                      {hasConversation && (
+                        <div className="chat-composer-dock" data-testid="chat-composer-bottom">
+                          {chatComposer}
                         </div>
                       )}
                     </section>

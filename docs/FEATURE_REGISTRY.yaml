@@ -788,3 +788,59 @@ capabilities:
       renders .cited-line-number-highlight in the gutter, and automatically scrolls the start_line into view.
       run_real_browser_acceptance.py updated with Playwright visible assertions for cited lines and reports
       PATH_NAVIGATION_PASSED and LINE_NAVIGATION_PASSED.
+
+  - id: CHAT-UX-REDESIGN-001
+    name: Source-led repository chat workspace redesign
+    lifecycle: implemented_verified
+    owning_task: RUNTIME-UX-006
+    canonical_target:
+      backend: null
+      api: null
+      frontend: frontend/src/app/App.tsx
+      storage: null
+    existing_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/app/App.test.tsx
+      - frontend/src/styles/index.css
+    notes: >
+      RUNTIME-UX-006 completed. Extended the question-first workspace with a warmer paper/ink visual system,
+      repository context header, source-aware composer, lens-based starter prompts, clearer user/assistant message
+      hierarchy, grounded source chips, evidence-trail labeling, and responsive mobile behavior. Existing chat
+      submission, re-index action, citation click navigation, line focusing, and honest evidence states remain intact.
+
+  - id: CHAT-UX-SCROLL-001
+    name: Normal-chat conversation scrolling and compact follow-up composer
+    lifecycle: implemented_verified
+    owning_task: RUNTIME-UX-007
+    canonical_target:
+      backend: null
+      api: null
+      frontend: frontend/src/app/App.tsx
+      storage: null
+    existing_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/app/App.test.tsx
+      - frontend/src/styles/index.css
+    notes: >
+      RUNTIME-UX-007 completed. After a conversation starts, the large prompt hero collapses into a compact
+      follow-up composer; starter cards are hidden; the evidence trail has a bounded scroll region with a sticky
+      header; and new messages auto-scroll into view. Existing chat submission, citation navigation, and answer-mode
+      labels are preserved.
+
+  - id: CHAT-UX-COMPOSER-001
+    name: Bottom composer for active repository conversations
+    lifecycle: implemented_verified
+    owning_task: RUNTIME-UX-008
+    canonical_target:
+      backend: null
+      api: null
+      frontend: frontend/src/app/App.tsx
+      storage: null
+    existing_paths:
+      - frontend/src/app/App.tsx
+      - frontend/src/app/App.test.tsx
+      - frontend/src/styles/index.css
+    notes: >
+      RUNTIME-UX-008 completed. The initial empty state keeps its hero composer, while an active conversation
+      renders the single shared composer after the evidence trail in a sticky bottom dock. The message history
+      remains the scroll region and existing citations, answer labels, and API behavior are unchanged.

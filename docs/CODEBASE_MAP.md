@@ -37,8 +37,8 @@ Current status: React TypeScript application foundation (`FE-001`) completed und
 - `frontend/vite.config.ts` — Vite dev proxy (`/api` -> `http://127.0.0.1:8000`) and Vitest configuration.
 - `frontend/eslint.config.js` — ESLint flat configuration.
 - `frontend/src/main.tsx` — React entry point.
-- `frontend/src/app/App.tsx` — question-first workspace application shell with Understand hero, starter questions, workspace navigation bar (Understand, Files, Find code, Advanced analysis accordion), dynamic status, rail, loading/ready/error states.
-- `frontend/src/app/App.test.tsx` — unit tests for loading, ready, error, no-fake-data UI states, and question-first workspace navigation requirements.
+- `frontend/src/app/App.tsx` — question-first workspace application shell with a source-led Understand chat workspace, grounded hero composer, single shared bottom composer for active conversations, starter question lenses, compact follow-up context, scrollable conversation timeline with latest-message auto-scroll, clickable citation navigation, workspace navigation bar (Understand, Files, Find code, Advanced analysis accordion), dynamic status, rail, loading/ready/error states.
+- `frontend/src/app/App.test.tsx` — unit tests for loading, ready, error, no-fake-data UI states, question-first workspace navigation requirements, citation navigation, redesigned chat workspace cues, and the compact/scrollable conversation state.
 - `frontend/src/app/FlowTracePanel.tsx` — Feature Flow Trace workspace panel (entry query, static/explain mode, trace steps with confidence badges and citations, gaps, honest empty/error states).
 - `frontend/src/app/FlowTracePanel.test.tsx` — unit tests for trace panel rendering, mode handling, explanation display, and degradation states.
 - `frontend/src/app/ImpactPanel.tsx` — Change Impact Preview workspace panel (symbol input, risk card with transparent factors, upstream/downstream lists with distance/confidence badges, expandable evidence citations, affected endpoints/tests, gaps, honest empty/loading/error states).
@@ -48,7 +48,7 @@ Current status: React TypeScript application foundation (`FE-001`) completed und
 - `frontend/src/services/types.ts` — TypeScript types matching OpenAPI 3.1 HTTP contract (including `RepositoryFileItem`, `RepositoryFileListResponse`, and `RepositoryFileContentResponse`).
 - `frontend/src/services/apiClient.ts` — typed API client (`getHealth()`, `listRepositoryFiles()`, `getRepositoryFileContent()`, `credentials: 'include'`, safe `ErrorEnvelope` handling).
 - `frontend/src/services/apiClient.test.ts` — unit tests for `ApiClient` and `ApiError`.
-- `frontend/src/styles/index.css` — calm evidence-led workspace design tokens (`--color-base: #f8fafc`, `#0f172a`), workspace navigation tabs, starter questions, and CSS styles.
+- `frontend/src/styles/index.css` — warm paper/ink evidence-led design tokens, workspace navigation tabs, source-led chat composer/message/citation styles, compact follow-up context, bottom composer dock, bounded conversation-scroll states, starter questions, and code viewer styles.
 - `frontend/src/test/setup.ts` — Vitest setup with `@testing-library/jest-dom/vitest`.
 
 The detailed target feature layout is in `frontend/AGENTS.md`. Do not create a second frontend root.
