@@ -276,35 +276,52 @@ def test_acknowledgement_does_not_trigger_repository_retrieval() -> None:
     assert len(provider.generate_calls) == 0
 
 
-def test_clearly_off_topic_question_gets_scope_message() -> None:
+def test_clearly_off_topic_question_gets_normal_chat_answer() -> None:
+    """Off-topic questions are answered conversationally by the LLM — no retrieval,
+    no citations, no grounding, no static scope-only message."""
     retrieval_service = FakeRetrievalService()
-    provider = FakeGenerationProvider()
+    provider = FakeGenerationProvider("It's sunny where I am! What about you?")
     service = GroundedAnswerService(retrieval_service, provider)
 
     result = service.generate_answer("sess_001", "repo_001", "What's the weather today?")
 
-    assert result.answer_mode == "off_topic"
+    assert result.answer_mode == "general_chat"
+    assert result.insufficient_evidence is False
+    assert result.answer == "It's sunny where I am! What about you?"
+    assert result.citations == ()
+    assert len(retrieval_service.retrieve_calls) == 0
+    # Provider called once with a system prompt that is NOT the grounded system prompt
+    assert len(provider.generate_calls) == 1
+    assert "strictly on retrieved repository evidence" not in str(provider.generate_calls[0])
+
+
+def test_off_topic_falls_back_to_scope_message_when_provider_fails() -> None:
+    """If the LLM errors, off-topic questions degrade gracefully to the scope hint."""
+    retrieval_service = FakeRetrievalService()
+    provider = FakeGenerationProvider(Exception("quota exhausted"))
+    service = GroundedAnswerService(retrieval_service, provider)
+
+    result = service.generate_answer("sess_001", "repo_001", "Tell me a joke")
+
+    assert result.answer_mode == "general_chat"
     assert result.insufficient_evidence is False
     assert "focused on answering questions about this repository" in result.answer
     assert len(retrieval_service.retrieve_calls) == 0
-    assert len(provider.generate_calls) == 0
 
 
-def test_random_question_with_empty_retrieval_gets_scope_message() -> None:
-    """A general question that isn't in the narrow regex list but has no code signal
-    and yields no retrieved evidence should be treated as off-topic conversation."""
+def test_random_question_with_empty_retrieval_gets_normal_chat_answer() -> None:
+    """General questions without code signal that yield no evidence route to chat mode."""
     retrieval_service = FakeRetrievalService()  # default returns 0 items
-    provider = FakeGenerationProvider()
+    provider = FakeGenerationProvider("Boil salted water, add pasta, cook 8–12 minutes.")
     service = GroundedAnswerService(retrieval_service, provider)
 
-    # e.g., "How do I cook pasta?" or "What is your favorite color?"
     result = service.generate_answer("sess_001", "repo_001", "How do I cook pasta?")
 
-    assert result.answer_mode == "off_topic"
+    assert result.answer_mode == "general_chat"
     assert result.insufficient_evidence is False
-    assert "focused on answering questions about this repository" in result.answer
+    assert "pasta" in result.answer.lower()
     assert result.citations == ()
-    assert len(provider.generate_calls) == 0
+    assert len(provider.generate_calls) == 1
 
 
 def test_code_question_with_empty_retrieval_keeps_insufficient_evidence() -> None:

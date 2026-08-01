@@ -11,7 +11,7 @@ from sourcetrace.core.exceptions import (
     RetrievalValidationError,
 )
 from sourcetrace.generation.client import GenerationMessage, GenerationProvider
-from sourcetrace.generation.prompts import build_grounded_prompt
+from sourcetrace.generation.prompts import build_general_chat_prompt, build_grounded_prompt
 from sourcetrace.models.domain import (
     CitationRecord,
     EvidenceSnippetRecord,
@@ -71,6 +71,40 @@ class GroundedAnswerService:
             raise GenerationError("Generation failed safely.")
         self._max_answer_chars = max_answer_chars
 
+    def _generate_general_chat_answer(
+        self,
+        question: str,
+        conversation_context: Sequence[GenerationMessage] | None,
+    ) -> GroundedAnswerResult:
+        """Answer a non-codebase question with the LLM in normal chat mode.
+
+        Routed here when the message has no code signal or is clearly off-topic.
+        No retrieval, no citations, no grounding — just a helpful conversation.
+        Falls back to a scope hint if the provider is unavailable.
+        """
+        try:
+            prompt = build_general_chat_prompt(
+                question=question, conversation_context=conversation_context
+            )
+            raw = self._generation_provider.generate(prompt)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            raw = None
+
+        answer = (raw or "").strip()
+        if not answer:
+            answer = OFF_TOPIC_SCOPE_ANSWER
+
+        return GroundedAnswerResult(
+            answer=answer[: self._max_answer_chars],
+            citations=(),
+            evidence=(),
+            insufficient_evidence=False,
+            chunks_retrieved=0,
+            answer_mode="general_chat",
+        )
+
     def generate_answer(
         self,
         owner_session_id: str,
@@ -104,15 +138,11 @@ class GroundedAnswerService:
                 answer_mode="conversation",
             )
 
+        # Clearly general-chat questions (weather, jokes, capital lookups, etc.)
+        # are answered conversationally by the LLM instead of being routed
+        # through repository retrieval.
         if self._is_clearly_off_topic_question(question):
-            return GroundedAnswerResult(
-                answer=OFF_TOPIC_SCOPE_ANSWER,
-                citations=(),
-                evidence=(),
-                insufficient_evidence=False,
-                chunks_retrieved=0,
-                answer_mode="off_topic",
-            )
+            return self._generate_general_chat_answer(question, conversation_context)
 
         # Follow-up questions often contain pronouns ("it", "that file", "this").
         # Retrieval must see the active subject as well as the latest question;
@@ -168,17 +198,10 @@ class GroundedAnswerService:
                     answer_mode="insufficient_orientation",
                 )
             # Random questions with zero code signal that return nothing from
-            # retrieval are off-topic — surface the friendly scope message
-            # instead of the intimidating "insufficient evidence" fallback.
+            # retrieval are treated as general chat — answer them conversationally
+            # via the LLM instead of showing the bare insufficient-evidence fallback.
             if not _has_code_signal(question):
-                return GroundedAnswerResult(
-                    answer=OFF_TOPIC_SCOPE_ANSWER,
-                    citations=(),
-                    evidence=(),
-                    insufficient_evidence=False,
-                    chunks_retrieved=0,
-                    answer_mode="off_topic",
-                )
+                return self._generate_general_chat_answer(question, conversation_context)
             return GroundedAnswerResult(
                 answer=INSUFFICIENT_EVIDENCE_ANSWER,
                 citations=(),
