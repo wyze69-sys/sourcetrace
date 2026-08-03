@@ -88,6 +88,7 @@ class SemanticRetrievalService:
         query: str,
         *,
         limit: int = 5,
+        retrieval_method: str = "auto",
     ) -> GroundedEvidenceResult:
         """Retrieve grounded code evidence for an owner-scoped ready repository."""
         # 1. Query Validation
@@ -95,6 +96,8 @@ class SemanticRetrievalService:
 
         # 2. Parameter & Scope Pre-checks
         valid_limit = self._validate_limit(limit)
+        if retrieval_method not in ("auto", "lexical", "semantic"):
+            raise RetrievalValidationError("Retrieval request is invalid.")
         self._validate_identifiers(owner_session_id, repository_id)
 
         # 3. Repository Readiness Validation & Active Generation Recovery
@@ -115,7 +118,18 @@ class SemanticRetrievalService:
             or getattr(self._embedding_provider, "model_identifier", "") == "none"
         )
 
-        if self._is_orientation_question(query_text):
+        if retrieval_method == "lexical":
+            if hasattr(self._code_chunk_repo, "search_lexical"):
+                search_results = self._code_chunk_repo.search_lexical(
+                    owner_session_id=owner_session_id,
+                    repository_id=repository_id,
+                    query_text=query_text,
+                    limit=valid_limit,
+                    generation_id=active_gen,
+                )
+            else:
+                search_results = []
+        elif self._is_orientation_question(query_text):
             search_results = self._retrieve_orientation_evidence(
                 owner_session_id=owner_session_id,
                 repository_id=repository_id,
@@ -189,6 +203,29 @@ class SemanticRetrievalService:
 
         # 7. Deterministic Ranking & Evidence Construction
         return self._construct_grounded_evidence(validated_results, query_text=query_text)
+
+    def retrieve_lexical(
+        self,
+        owner_session_id: str,
+        repository_id: str,
+        query: str,
+        *,
+        limit: int = 5,
+    ) -> GroundedEvidenceResult:
+        """Run the existing owner-scoped lexical index explicitly.
+
+        Planned retrieval uses this for exact paths and symbols so semantic
+        ranking cannot hide a named definition.  The same readiness,
+        generation, ownership, validation, and citation construction path is
+        still used by :meth:`retrieve`.
+        """
+        return self.retrieve(
+            owner_session_id=owner_session_id,
+            repository_id=repository_id,
+            query=query,
+            limit=limit,
+            retrieval_method="lexical",
+        )
 
     def _validate_query(self, query: Any) -> str:
         if type(query) is not str:
@@ -979,7 +1016,8 @@ class SemanticRetrievalService:
             ):
                 score = max(score, 0.95)
             elif (
-                filename in (
+                filename
+                in (
                     "server.js",
                     "server.ts",
                     "server.py",
@@ -1018,22 +1056,18 @@ class SemanticRetrievalService:
                 for k in ("config", "settings", "env", "configuration")
             ):
                 score = max(score, 0.85)
-            elif (
-                filename
-                in (
-                    "routes.py",
-                    "routes.js",
-                    "routes.ts",
-                    "router.py",
-                    "router.js",
-                    "router.ts",
-                    "api.py",
-                    "api.js",
-                    "api.ts",
-                    "urls.py",
-                )
-                or filename.startswith(("route", "router", "controller", "service"))
-            ):
+            elif filename in (
+                "routes.py",
+                "routes.js",
+                "routes.ts",
+                "router.py",
+                "router.js",
+                "router.ts",
+                "api.py",
+                "api.js",
+                "api.ts",
+                "urls.py",
+            ) or filename.startswith(("route", "router", "controller", "service")):
                 score = max(score, 0.80)
             else:
                 score = 0.30

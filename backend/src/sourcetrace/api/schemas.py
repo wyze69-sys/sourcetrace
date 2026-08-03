@@ -194,11 +194,21 @@ class Message(BaseModel):
     answer_mode: Literal[
         "normal",
         "orientation",
+        "architecture",
+        "flow",
+        "impact",
+        "general_chat",
+        "conversation",
         "static_guidance",
         "insufficient_orientation",
         "insufficient_evidence",
         "reindex_required",
     ] = "normal"
+    intent: str | None = None
+    confidence_bucket: Literal["high", "medium", "low"] | None = None
+    evidence_count: int | None = Field(default=None, ge=0)
+    hop_count: int | None = Field(default=None, ge=0)
+    source_categories: list[str] | None = None
     citations: list[Citation] = Field(default_factory=list)
     evidence: list[EvidenceSnippet] = Field(default_factory=list)
 
@@ -336,6 +346,11 @@ def message_record_to_schema(record: MessageRecord) -> Message:
     valid_modes = (
         "normal",
         "orientation",
+        "architecture",
+        "flow",
+        "impact",
+        "general_chat",
+        "conversation",
         "static_guidance",
         "insufficient_orientation",
         "insufficient_evidence",
@@ -350,6 +365,11 @@ def message_record_to_schema(record: MessageRecord) -> Message:
         created_at=record.created_at,
         insufficient_evidence=record.insufficient_evidence,
         answer_mode=mode,  # type: ignore[arg-type]
+        intent=getattr(record, "intent", None),
+        confidence_bucket=getattr(record, "confidence_bucket", None),
+        evidence_count=getattr(record, "evidence_count", None),
+        hop_count=getattr(record, "hop_count", None),
+        source_categories=list(getattr(record, "source_categories", ()) or ()),
         citations=[citation_record_to_schema(c) for c in record.citations],
         evidence=[evidence_record_to_schema(e) for e in record.evidence],
     )

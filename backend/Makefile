@@ -6,9 +6,6 @@ install:
 api:
 	uv run uvicorn sourcetrace.main:app --reload
 
-ui:
-	uv run streamlit run streamlit_app/app.py
-
 test:
 	uv run pytest
 
@@ -19,4 +16,4 @@ format:
 	uv run ruff format .
 
 check: lint test
-	uv run python -m compileall src streamlit_app tests
+	uv run python -m compileall src tests

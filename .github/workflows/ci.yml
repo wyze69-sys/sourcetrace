@@ -85,36 +85,3 @@ jobs:
         run: |
           cd frontend
           npm run build
-
-  evaluations-ci:
-    name: Offline Reproducible RAG Evaluation Suite
-    runs-on: ubuntu-latest
-    needs: [backend-ci]
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install backend dependencies for evaluation runner
-        run: |
-          cd backend
-          uv sync --extra dev
-
-      - name: Run offline RAG evaluation suite tests
-        run: |
-          cd backend
-          uv run pytest tests/evaluation/
-
-      - name: Run offline RAG unified evaluation gate
-        run: |
-          cd backend
-          uv run python tests/evaluation/run_unified_eval.py

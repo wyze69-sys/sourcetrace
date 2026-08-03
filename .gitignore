@@ -28,21 +28,6 @@ frontend/.vite/
 *.p12
 *.pfx
 
-# Local AI-agent and internal planning documents
-AGENTS.md
-CLAUDE.md
-GEMINI.md
-.clinerules/
-.cursor/
-frontend/AGENTS.md
-backend/AGENTS.md
-docs/
-
-# Local inspection helpers
-backend/verify_fitsync.py
-backend/tests/inspect_live_results.py
-backend/tests/verify_live_acceptance.py
-
 # Python build output
 build/
 dist/
@@ -51,17 +36,6 @@ dist/
 # SourceTrace backend runtime data
 backend/data/runtime/*
 !backend/data/runtime/.gitkeep
-
-# Generated evaluation artifacts
-evals/traces/*
-!evals/traces/.gitkeep
-evals/results/*
-!evals/results/.gitkeep
-backend/tests/evaluation/results/*
-!backend/tests/evaluation/results/.gitkeep
-
-# Browser acceptance test artifacts (screenshots, reports — local only)
-backend/tests/artifacts_accept_*/
 
 # Editors, logs, and operating systems
 .vscode/
@@ -72,4 +46,3 @@ Thumbs.db
 desktop.ini
 *.log
 logs/
-

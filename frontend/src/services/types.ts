@@ -143,7 +143,23 @@ export interface Message {
   role: MessageRole
   content: string
   insufficient_evidence?: boolean
-  answer_mode?: 'normal' | 'orientation' | 'static_guidance' | 'insufficient_orientation' | 'insufficient_evidence' | 'reindex_required'
+  answer_mode?:
+    | 'normal'
+    | 'orientation'
+    | 'architecture'
+    | 'flow'
+    | 'impact'
+    | 'general_chat'
+    | 'conversation'
+    | 'static_guidance'
+    | 'insufficient_orientation'
+    | 'insufficient_evidence'
+    | 'reindex_required'
+  intent?: string
+  confidence_bucket?: 'high' | 'medium' | 'low'
+  evidence_count?: number
+  hop_count?: number
+  source_categories?: string[]
   citations?: Citation[]
   evidence?: EvidenceSnippet[]
   created_at: string

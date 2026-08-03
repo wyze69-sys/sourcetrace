@@ -283,12 +283,12 @@ export function CodeViewer({
         </div>
         {!contentData.is_complete && (
           <div className="partial-notice-badge" data-testid="partial-content-notice">
-            ⚠️ Notice: Displayed source content is indexed chunks only and may be incomplete (original end-of-file boundary is unverified).
+            Notice: Displayed source content is indexed chunks only and may be incomplete (original end-of-file boundary is unverified).
           </div>
         )}
         {isCitationLineUnavailable && highlightLineRange && (
           <div className="partial-notice-badge unavailable-notice" data-testid="citation-line-unavailable-notice">
-            ⚠️ Notice: Cited line range (L{highlightLineRange.start_line}-L{highlightLineRange.end_line}) is outside the available content for this file ({lines.length} lines available).
+            Notice: Cited line range (L{highlightLineRange.start_line}-L{highlightLineRange.end_line}) is outside the available content for this file ({lines.length} lines available).
           </div>
         )}
       </div>
@@ -348,6 +348,7 @@ export function RepoExplorerPanel({
   targetLineRange,
 }: RepoExplorerPanelProps) {
   const [files, setFiles] = useState<RepositoryFileItem[]>([])
+  const [fileQuery, setFileQuery] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null)
@@ -413,6 +414,7 @@ export function RepoExplorerPanel({
         setLoading(false)
         setError(null)
         setSelectedFilePath(null)
+        setFileQuery('')
         setFileContent(null)
         setContentLoading(false)
         setContentError(null)
@@ -422,6 +424,7 @@ export function RepoExplorerPanel({
       setLoading(true)
       setError(null)
       setSelectedFilePath(null)
+      setFileQuery('')
       setFileContent(null)
       setContentLoading(false)
       setContentError(null)
@@ -534,7 +537,11 @@ export function RepoExplorerPanel({
     )
   }
 
-  const treeNodes = buildFileTree(files)
+  const normalizedFileQuery = fileQuery.trim().toLowerCase()
+  const visibleFiles = normalizedFileQuery
+    ? files.filter((file) => file.path.toLowerCase().includes(normalizedFileQuery))
+    : files
+  const treeNodes = buildFileTree(visibleFiles)
 
   return (
     <section className="card-panel repo-explorer-panel" data-testid="repo-explorer-panel">
@@ -557,6 +564,24 @@ export function RepoExplorerPanel({
       <p className="panel-text explorer-guidance" style={{ marginTop: '8px', marginBottom: '12px' }}>
         Choose a file to orient yourself, or search/ask a question about the repository.
       </p>
+
+      {!loading && !error && files.length > 0 && (
+        <div className="file-filter-row">
+          <label className="file-filter-label" htmlFor="repository-file-filter">Filter files</label>
+          <input
+            id="repository-file-filter"
+            type="search"
+            className="input-text file-filter-input"
+            placeholder="Search paths, folders, and extensions..."
+            value={fileQuery}
+            onChange={(e) => setFileQuery(e.target.value)}
+            aria-label="Filter repository files"
+          />
+          <span className="file-filter-count mono">
+            {normalizedFileQuery ? `${visibleFiles.length}/${files.length}` : `${files.length}`} files
+          </span>
+        </div>
+      )}
 
       {loading && (
         <div className="loading-state" style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0' }}>
@@ -582,7 +607,13 @@ export function RepoExplorerPanel({
         </div>
       )}
 
-      {!loading && !error && files.length > 0 && (
+      {!loading && !error && files.length > 0 && visibleFiles.length === 0 && (
+        <div className="state-box file-filter-empty">
+          No files match <span className="mono">{fileQuery}</span>.
+        </div>
+      )}
+
+      {!loading && !error && visibleFiles.length > 0 && (
         <div className="file-tree-container" data-testid="file-tree-container">
           {treeNodes.map((node) => (
             <TreeItemView

@@ -17,6 +17,7 @@ from sourcetrace.core.security import (
 from sourcetrace.generation.service import GroundedAnswerService
 from sourcetrace.ingestion.service import IngestionService
 from sourcetrace.models.domain import AnonymousSession
+from sourcetrace.retrieval.planned import PlannedRetrievalService
 from sourcetrace.retrieval.service import SemanticRetrievalService
 
 if TYPE_CHECKING:
@@ -401,6 +402,8 @@ def build_generation_adapter(settings: Settings):
 
 def get_grounded_answer_service(
     retrieval_service: Annotated[SemanticRetrievalService, Depends(get_semantic_retrieval_service)],
+    code_chunk_repo: Annotated[CodeChunkRepository, Depends(get_code_chunk_repository)],
+    repository_repo: Annotated[RepositoryRepository, Depends(get_repository_repository)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> GroundedAnswerService:
     """Dependency provider for GroundedAnswerService."""
@@ -414,6 +417,11 @@ def get_grounded_answer_service(
     return GroundedAnswerService(
         retrieval_service=retrieval_service,
         generation_provider=gen_adapter,
+        planned_retrieval_service=PlannedRetrievalService(
+            retrieval_service,
+            code_chunk_repo=code_chunk_repo,
+            repository_repo=repository_repo,
+        ),
     )
 
 

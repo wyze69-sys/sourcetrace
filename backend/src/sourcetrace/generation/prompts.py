@@ -5,6 +5,12 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from sourcetrace.generation.client import GenerationMessage
+from sourcetrace.generation.planning import (
+    MAX_HISTORY_CHARS,
+    MAX_HISTORY_MESSAGES,
+    MAX_PROMPT_CHARS,
+    EvidenceBundle,
+)
 from sourcetrace.models.domain import RetrievedEvidence
 
 SYSTEM_INSTRUCTIONS = """You are SourceTrace AI, an expert codebase intelligence assistant.
@@ -45,7 +51,8 @@ CRITICAL INSTRUCTIONS FOR REPOSITORY ORIENTATION:
 6. Do NOT fabricate files or claims not present in the evidence. Do NOT invent markers."""
 
 
-GENERAL_CHAT_SYSTEM_INSTRUCTIONS = """You are SourceTrace AI, a helpful assistant in a codebase exploration workspace.
+GENERAL_CHAT_SYSTEM_INSTRUCTIONS = """You are SourceTrace AI, a helpful assistant in a
+codebase exploration workspace.
 The user is currently exploring a repository, but they may also ask general questions
 unrelated to that repository.
 
@@ -78,10 +85,15 @@ def build_general_chat_prompt(
     if conversation_context:
         # Carry limited recent history for natural follow-ups, capped to
         # avoid unbounded prompt growth.
-        for msg in conversation_context[-6:]:
+        history_chars = 0
+        for msg in conversation_context[-MAX_HISTORY_MESSAGES:]:
             text = msg.content.strip()
-            if text and len(text) <= 2000:
-                messages.append(GenerationMessage(role=msg.role, content=text))
+            if not text or len(text) > 2_000:
+                continue
+            if history_chars + len(text) > MAX_HISTORY_CHARS:
+                break
+            messages.append(GenerationMessage(role=msg.role, content=text))
+            history_chars += len(text)
     messages.append(GenerationMessage(role="user", content=question.strip()))
     return messages
 
@@ -124,14 +136,17 @@ def build_grounded_prompt(
     evidence_items: Sequence[RetrievedEvidence],
     conversation_context: Sequence[GenerationMessage] | None = None,
     *,
-    max_prompt_chars: int = 16000,
+    max_prompt_chars: int = MAX_PROMPT_CHARS,
+    intent: str | None = None,
+    sub_questions: Sequence[str] = (),
+    evidence_bundle: EvidenceBundle | None = None,
 ) -> tuple[GenerationMessage, ...]:
     """Construct deterministic provider-neutral prompt messages with bounded evidence markers."""
     clean_question = question.strip()
 
     sys_inst = (
         ORIENTATION_SYSTEM_INSTRUCTIONS
-        if _is_orientation_prompt_question(clean_question)
+        if intent == "repository_overview" or _is_orientation_prompt_question(clean_question)
         else SYSTEM_INSTRUCTIONS
     )
 
@@ -145,12 +160,18 @@ def build_grounded_prompt(
         lines = f"{item.citation.start_line}-{item.citation.end_line}"
         symbol = f"{item.citation.symbol_name} ({item.citation.symbol_type})"
         content_text = item.snippet.snippet
+        provenance = (
+            f"retrieval: {item.retrieval_method}; hop: {item.hop}; source: {item.source_category}"
+        )
+        if item.relationship:
+            provenance += f"; verified relationship: {item.relationship}"
 
         block = (
             f"{marker}\n"
             f"path: {path}\n"
             f"lines: {lines}\n"
             f"symbol: {symbol}\n"
+            f"{provenance}\n"
             f"content:\n```\n{content_text}\n```"
         )
         evidence_blocks.append(block)
@@ -158,19 +179,79 @@ def build_grounded_prompt(
     evidence_text = "\n\n".join(evidence_blocks)
 
     # Budget Check and Truncation if needed
+    plan_text = ""
+    if intent:
+        shape = {
+            "repository_overview": (
+                "Summary, prioritized reading path, why each location matters, "
+                "next action, Sources."
+            ),
+            "architecture": (
+                "System summary, major boundaries, verified request/data flow, "
+                "important files, unknowns, Sources."
+            ),
+            "behavior_or_data_flow": (
+                "Flow summary with numbered verified stages, what was verified, Sources."
+            ),
+            "impact_and_change": (
+                "Change target, direct dependents, indirect/boundary effects, "
+                "risks or unknowns, Sources."
+            ),
+            "testing_and_quality": (
+                "Testing setup summary, test runner and commands, test discovery "
+                "paths, coverage configuration, important test locations, and "
+                "clearly stated unknowns, Sources."
+            ),
+            "configuration_and_setup": (
+                "Configuration summary, setup commands, relevant manifests and "
+                "environment/config files, clearly stated unknowns, Sources."
+            ),
+        }.get(intent, "Direct answer, clearly stated limits, Sources.")
+        subquestion_text = ""
+        if sub_questions:
+            subquestion_text = "\nSub-questions to cover:\n" + "\n".join(
+                f"- {sub_question[:240]}" for sub_question in sub_questions[:4]
+            )
+        bundle_summary = ""
+        if evidence_bundle is not None:
+            methods = ", ".join(method.value for method in evidence_bundle.retrieval_methods)
+            categories = ", ".join(
+                category.value for category in evidence_bundle.source_categories
+            )
+            bundle_summary = (
+                f"\nVerified bundle metadata: methods={methods or 'none'}; "
+                f"hops={evidence_bundle.expansion_hops}; "
+                f"source categories={categories or 'none'}."
+            )
+        plan_text = (
+            f"\n--- EVIDENCE PLAN ---\n"
+            f"Intent: {intent}\n"
+            f"Response shape: {shape}{subquestion_text}{bundle_summary}\n"
+            f"Use only the supplied evidence and say when a requested part is not verified.\n"
+            f"--- END EVIDENCE PLAN ---\n"
+        )
+
     full_user_content = (
         f"--- REPOSITORY EVIDENCE ---\n"
         f"{evidence_text if evidence_text else 'No evidence retrieved.'}\n"
         f"--- END REPOSITORY EVIDENCE ---\n\n"
         f"Question: {clean_question}"
+        f"{plan_text}"
     )
 
     # Add Bounded Conversation Context if provided
     if conversation_context:
-        for ctx_msg in conversation_context:
+        history_chars = 0
+        for ctx_msg in conversation_context[-MAX_HISTORY_MESSAGES:]:
             if isinstance(ctx_msg, GenerationMessage) and ctx_msg.role in ("user", "assistant"):
                 msg_content = ctx_msg.content.strip()
-                messages.append(GenerationMessage(role=ctx_msg.role, content=msg_content))
+                if (
+                    msg_content
+                    and len(msg_content) <= 2_000
+                    and history_chars + len(msg_content) <= MAX_HISTORY_CHARS
+                ):
+                    messages.append(GenerationMessage(role=ctx_msg.role, content=msg_content))
+                    history_chars += len(msg_content)
 
     messages.append(GenerationMessage(role="user", content=full_user_content))
 
@@ -179,7 +260,7 @@ def build_grounded_prompt(
     if total_chars > max_prompt_chars and evidence_blocks:
         # Re-build evidence with truncated snippets if overall budget exceeded
         truncated_blocks: list[str] = []
-        non_evidence_chars = len(SYSTEM_INSTRUCTIONS) + len(clean_question) + 300
+        non_evidence_chars = len(sys_inst) + len(clean_question) + len(plan_text) + 300
         for ctx_m in messages[1:-1]:
             non_evidence_chars += len(ctx_m.content)
 
@@ -214,6 +295,7 @@ def build_grounded_prompt(
             f"{evidence_text}\n"
             f"--- END REPOSITORY EVIDENCE ---\n\n"
             f"Question: {clean_question}"
+            f"{plan_text}"
         )
         # Update last message content
         messages[-1] = GenerationMessage(role="user", content=full_user_content)

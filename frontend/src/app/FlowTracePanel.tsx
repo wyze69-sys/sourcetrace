@@ -15,6 +15,7 @@ export interface FlowTracePanelProps {
   explainAvailable?: boolean
   isStale?: boolean | null
   sourceType?: string
+  onOpenSource?: (filePath: string, startLine: number, endLine: number) => void
 }
 
 const SAFE_TRACE_ERROR_MESSAGE = 'Flow trace failed safely. Try again.'
@@ -82,8 +83,10 @@ export function FlowTracePanel({
   explainAvailable = false,
   isStale,
   sourceType,
+  onOpenSource,
 }: FlowTracePanelProps) {
   const [entry, setEntry] = useState('')
+  const [maxDepth, setMaxDepth] = useState('auto')
   const [loading, setLoading] = useState(false)
   const [explaining, setExplaining] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -111,7 +114,10 @@ export function FlowTracePanel({
     setLoading(true)
     setError(null)
     try {
-      const res = await client.traceFlow(repositoryId, entry.trim())
+      const trimmedEntry = entry.trim()
+      const res = maxDepth === 'auto'
+        ? await client.traceFlow(repositoryId, trimmedEntry)
+        : await client.traceFlow(repositoryId, trimmedEntry, Number(maxDepth))
       setResult(res)
       setOpenSnippets({})
     } catch (err) {
@@ -202,15 +208,33 @@ export function FlowTracePanel({
         className="trace-form"
         style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}
       >
-        <input
-          type="text"
-          className="input-text chat-input"
-          placeholder="Entry symbol to trace (e.g. Dashboard, create_repository)..."
-          value={entry}
-          onChange={(e) => setEntry(e.target.value)}
-          disabled={loading}
-          aria-label="Trace entry symbol"
-        />
+        <div className="trace-query-field">
+          <input
+            type="text"
+            className="input-text chat-input"
+            placeholder="Entry symbol to trace (e.g. Dashboard, create_repository)..."
+            value={entry}
+            onChange={(e) => setEntry(e.target.value)}
+            disabled={loading}
+            aria-label="Trace entry symbol"
+          />
+          <label className="trace-depth-control">
+            <span>Depth</span>
+            <select
+              className="trace-depth-select"
+              value={maxDepth}
+              onChange={(e) => setMaxDepth(e.target.value)}
+              disabled={loading}
+              aria-label="Trace depth"
+            >
+              <option value="auto">Auto</option>
+              <option value="2">2 hops</option>
+              <option value="4">4 hops</option>
+              <option value="6">6 hops</option>
+              <option value="8">8 hops</option>
+            </select>
+          </label>
+        </div>
         <button type="submit" disabled={loading || !entry.trim()} className="btn-action">
           {loading ? 'Tracing...' : 'Trace Flow'}
         </button>
@@ -257,15 +281,15 @@ export function FlowTracePanel({
                       fontSize: '0.85rem',
                     }}
                   >
-                    <span style={{ color: '#64748b' }} className="mono">
+                    <span style={{ color: '#64748b' }} className="mono trace-step-index">
                       {index + 1}.
                     </span>
-                    <span style={{ color: '#94a3b8' }}>{node.symbol_type}</span>
+                    <span style={{ color: '#94a3b8' }} className="trace-step-type">{node.symbol_type}</span>
                     <strong>{node.symbol_name}</strong>
                     {incomingEdge && (
                       <>
                         <span
-                          className="mono"
+                          className="mono trace-edge-chip"
                           style={{
                             background: '#111827',
                             border: '1px solid #374151',
@@ -280,6 +304,7 @@ export function FlowTracePanel({
                         </span>
                         {colors && (
                           <span
+                            className={`trace-confidence-chip ${incomingEdge.confidence}`}
                             style={{
                               background: colors.bg,
                               color: colors.fg,
@@ -293,7 +318,7 @@ export function FlowTracePanel({
                           </span>
                         )}
                         {incomingEdge.alternatives.length > 0 && (
-                          <span style={{ color: '#f59e0b', fontSize: '0.72rem' }}>
+                          <span className="trace-alternative-note" style={{ color: '#f59e0b', fontSize: '0.72rem' }}>
                             {incomingEdge.alternatives.length} alternative candidate(s)
                           </span>
                         )}
@@ -301,9 +326,10 @@ export function FlowTracePanel({
                     )}
                   </div>
                   <div style={{ marginTop: '6px' }}>
-                    <button
+                    <div className="trace-source-actions">
+                      <button
                       type="button"
-                      className="mono"
+                      className="mono trace-source-toggle"
                       onClick={() => toggleSnippet(node.node_id)}
                       style={{
                         background: 'none',
@@ -315,9 +341,19 @@ export function FlowTracePanel({
                         textDecoration: 'underline',
                       }}
                       aria-expanded={!!openSnippets[node.node_id]}
-                    >
-                      {node.relative_path}:{node.start_line}-{node.end_line}
-                    </button>
+                      >
+                        {node.relative_path}:{node.start_line}-{node.end_line}
+                      </button>
+                      {onOpenSource && (
+                        <button
+                          type="button"
+                          className="source-open-link"
+                          onClick={() => onOpenSource(node.relative_path, node.start_line, node.end_line)}
+                        >
+                          Open source
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {openSnippets[node.node_id] && (
                     <pre
@@ -341,7 +377,7 @@ export function FlowTracePanel({
 
           {extras.length > 0 && (
             <div style={{ marginTop: '8px' }}>
-              <h4 style={{ fontSize: '0.82rem', color: '#9ca3af', marginBottom: '6px' }}>
+              <h4 className="trace-extra-heading" style={{ fontSize: '0.82rem', color: '#9ca3af', marginBottom: '6px' }}>
                 Additional connections:
               </h4>
               <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: '#94a3b8' }}>
@@ -397,7 +433,7 @@ export function FlowTracePanel({
           }}
         >
           <h3 style={{ fontSize: '0.9rem', color: '#fbbf24', margin: '0 0 8px 0' }}>
-            Gaps ({result.gaps.length}) — what this trace could not prove:
+            Gaps ({result.gaps.length}) - what this trace could not prove:
           </h3>
           <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: '#d6d3d1' }}>
             {result.gaps.map((gap, i) => (
@@ -414,7 +450,7 @@ export function FlowTracePanel({
 
       {result !== null && result.gaps.length === 0 && rows.length > 0 && (
         <p className="panel-text" style={{ marginTop: '12px', fontSize: '0.82rem' }}>
-          No gaps — every examined step resolved to indexed evidence.
+          No gaps - every examined step resolved to indexed evidence.
         </p>
       )}
     </section>

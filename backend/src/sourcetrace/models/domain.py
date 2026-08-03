@@ -215,6 +215,11 @@ class MessageRecord:
     evidence: tuple[EvidenceSnippetRecord, ...] = field(default_factory=tuple)
     insufficient_evidence: bool = False
     answer_mode: str = "normal"
+    intent: str = "unknown_repository_question"
+    confidence_bucket: str = "low"
+    evidence_count: int = 0
+    hop_count: int = 0
+    source_categories: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +238,13 @@ class RetrievedEvidence:
     score: float
     citation: CitationRecord
     snippet: EvidenceSnippetRecord
+    # Query-time provenance is additive and safe to expose.  It never contains
+    # provider payloads, prompts, vectors, or source outside the cited snippet.
+    retrieval_method: str = "semantic"
+    hop: int = 0
+    source_category: str = "code"
+    relationship: str | None = None
+    query_variant: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,3 +266,8 @@ class GroundedAnswerResult:
     insufficient_evidence: bool = False
     chunks_retrieved: int = 0
     answer_mode: str = "normal"
+    intent: str = "unknown_repository_question"
+    confidence_bucket: str = "low"
+    evidence_count: int = 0
+    hop_count: int = 0
+    source_categories: tuple[str, ...] = field(default_factory=tuple)

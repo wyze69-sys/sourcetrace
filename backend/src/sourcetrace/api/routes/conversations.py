@@ -217,6 +217,11 @@ def create_conversation(
         evidence=result.evidence,
         insufficient_evidence=result.insufficient_evidence,
         answer_mode=getattr(result, "answer_mode", "normal"),
+        intent=getattr(result, "intent", "unknown_repository_question"),
+        confidence_bucket=getattr(result, "confidence_bucket", "low"),
+        evidence_count=getattr(result, "evidence_count", len(result.evidence)),
+        hop_count=getattr(result, "hop_count", 0),
+        source_categories=tuple(getattr(result, "source_categories", ())),
     )
 
     # Persist exchange atomically / via scoped compensation
@@ -407,6 +412,11 @@ def send_message(
         evidence=result.evidence,
         insufficient_evidence=result.insufficient_evidence,
         answer_mode=getattr(result, "answer_mode", "normal"),
+        intent=getattr(result, "intent", "unknown_repository_question"),
+        confidence_bucket=getattr(result, "confidence_bucket", "low"),
+        evidence_count=getattr(result, "evidence_count", len(result.evidence)),
+        hop_count=getattr(result, "hop_count", 0),
+        source_categories=tuple(getattr(result, "source_categories", ())),
     )
 
     updated_conv = ConversationRecord(

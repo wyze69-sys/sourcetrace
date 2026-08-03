@@ -49,11 +49,6 @@ SourceTrace/
 │   ├── tests/                # Unit & integration test suites
 │   ├── pyproject.toml
 │   └── uv.lock
-├── evals/                       # Reproducible RAG quality evaluation
-│   ├── dataset.v1.json          # Benchmark query dataset
-│   ├── fixtures/                # Evaluation test repositories
-│   ├── run_eval.py              # Offline evaluation runner
-│   └── eval_registry.yaml
 ├── .github/workflows/ci.yml     # GitHub Actions CI pipeline
 └── render.yaml                  # Render Blueprint deployment configuration
 ```
@@ -99,12 +94,6 @@ npm run build
 
 # Start Vite dev server
 npm run dev
-```
-
-### RAG Evaluation Harness
-
-```bash
-uv run python evals/run_eval.py
 ```
 
 ---

@@ -17,6 +17,7 @@ export interface ImpactPanelProps {
   explainAvailable?: boolean
   isStale?: boolean | null
   sourceType?: string
+  onOpenSource?: (filePath: string, startLine: number, endLine: number) => void
 }
 
 const SAFE_IMPACT_ERROR_MESSAGE = 'Impact preview failed safely. Try again.'
@@ -48,6 +49,7 @@ function ImpactItemList({
   symbolByNodeId,
   openCitations,
   onToggleCitation,
+  onOpenSource,
 }: {
   title: string
   hint: string
@@ -55,6 +57,7 @@ function ImpactItemList({
   symbolByNodeId: Map<string, string>
   openCitations: Record<string, boolean>
   onToggleCitation: (key: string) => void
+  onOpenSource?: (filePath: string, startLine: number, endLine: number) => void
 }) {
   if (items.length === 0) return null
   return (
@@ -70,6 +73,7 @@ function ImpactItemList({
           return (
             <li
               key={item.node_id}
+              className="impact-item"
               style={{
                 marginBottom: '10px',
                 marginLeft: `${Math.min(item.distance - 1, 6) * 20}px`,
@@ -89,7 +93,7 @@ function ImpactItemList({
                 }}
               >
                 <span
-                  className="mono"
+                  className="mono impact-distance"
                   style={{
                     background: '#111827',
                     border: '1px solid #374151',
@@ -101,9 +105,10 @@ function ImpactItemList({
                 >
                   distance {item.distance}
                 </span>
-                <span style={{ color: '#94a3b8' }}>{item.symbol_type}</span>
-                <strong>{item.symbol_name}</strong>
+                <span className="impact-type" style={{ color: '#94a3b8' }}>{item.symbol_type}</span>
+                <strong className="impact-symbol">{item.symbol_name}</strong>
                 <span
+                  className={`impact-confidence ${item.confidence}`}
                   style={{
                     background: colors.bg,
                     color: colors.fg,
@@ -115,28 +120,28 @@ function ImpactItemList({
                 >
                   {item.confidence} confidence
                 </span>
-                <span style={{ color: '#64748b', fontSize: '0.72rem' }}>
+                <span className="impact-via" style={{ color: '#64748b', fontSize: '0.72rem' }}>
                   via {item.edge_kind === 'http' ? 'HTTP' : 'call'}
                 </span>
               </div>
-              <div style={{ marginTop: '6px' }}>
+              <div className="impact-source-actions" style={{ marginTop: '6px' }}>
                 <button
                   type="button"
-                  className="mono"
+                  className="mono impact-source-toggle"
                   onClick={() => onToggleCitation(citationKey)}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#38bdf8',
-                    cursor: 'pointer',
-                    padding: 0,
-                    fontSize: '0.82rem',
-                    textDecoration: 'underline',
-                  }}
                   aria-expanded={!!openCitations[citationKey]}
                 >
                   {item.relative_path}:{item.start_line}-{item.end_line}
                 </button>
+                {onOpenSource && (
+                  <button
+                    type="button"
+                    className="source-open-link"
+                    onClick={() => onOpenSource(item.relative_path, item.start_line, item.end_line)}
+                  >
+                    Open source
+                  </button>
+                )}
               </div>
               {openCitations[citationKey] && (
                 <div
@@ -159,7 +164,7 @@ function ImpactItemList({
                   <span className="mono">
                     {symbolByNodeId.get(item.evidence_node_id) ?? item.evidence_node_id}
                   </span>
-                  {' — '}connected through{' '}
+                  {' - '}connected through{' '}
                   <span className="mono">
                     {symbolByNodeId.get(item.via_node_id) ?? item.via_node_id}
                   </span>
@@ -184,8 +189,10 @@ export function ImpactPanel({
   explainAvailable = false,
   isStale,
   sourceType,
+  onOpenSource,
 }: ImpactPanelProps) {
   const [mode, setMode] = useState<'symbol' | 'diff'>('symbol')
+  const [maxDepth, setMaxDepth] = useState('auto')
   const [symbol, setSymbol] = useState('')
   const [diffText, setDiffText] = useState('')
   const [loading, setLoading] = useState(false)
@@ -248,7 +255,9 @@ export function ImpactPanel({
     const input = symbol.trim()
     await runPreview(async () => ({
       kind: 'symbol',
-      data: await client.previewImpact(repositoryId, input),
+      data: maxDepth === 'auto'
+        ? await client.previewImpact(repositoryId, input)
+        : await client.previewImpact(repositoryId, input, Number(maxDepth)),
     }))
     setLastInput(input)
   }
@@ -259,7 +268,9 @@ export function ImpactPanel({
     const input = diffText
     await runPreview(async () => ({
       kind: 'diff',
-      data: await client.previewDiffImpact(repositoryId, input),
+      data: maxDepth === 'auto'
+        ? await client.previewDiffImpact(repositoryId, input)
+        : await client.previewDiffImpact(repositoryId, input, Number(maxDepth)),
     }))
     setLastInput(input)
   }
@@ -314,16 +325,6 @@ export function ImpactPanel({
     resolved && (result.upstream.length > 0 || result.downstream.length > 0)
   const riskColors = result ? RISK_COLORS[result.risk_level] : null
 
-  const modeButtonStyle = (active: boolean): React.CSSProperties => ({
-    background: active ? '#1e293b' : 'transparent',
-    color: active ? '#e2e8f0' : '#64748b',
-    border: '1px solid #334155',
-    borderRadius: '6px',
-    padding: '4px 12px',
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-  })
-
   return (
     <section className="card-panel impact-panel">
       <h2 className="panel-header">
@@ -370,10 +371,10 @@ export function ImpactPanel({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }} role="group" aria-label="Impact input mode">
+      <div className="impact-mode-switcher" role="group" aria-label="Impact input mode">
         <button
           type="button"
-          style={modeButtonStyle(mode === 'symbol')}
+          className={`impact-mode-btn ${mode === 'symbol' ? 'active' : ''}`}
           aria-pressed={mode === 'symbol'}
           onClick={() => switchMode('symbol')}
         >
@@ -381,7 +382,7 @@ export function ImpactPanel({
         </button>
         <button
           type="button"
-          style={modeButtonStyle(mode === 'diff')}
+          className={`impact-mode-btn ${mode === 'diff' ? 'active' : ''}`}
           aria-pressed={mode === 'diff'}
           onClick={() => switchMode('diff')}
         >
@@ -407,6 +408,21 @@ export function ImpactPanel({
           <button type="submit" disabled={loading || !symbol.trim()} className="btn-action">
             {loading ? 'Previewing...' : 'Preview Impact'}
           </button>
+          <label className="impact-depth-control">
+            <span>Depth</span>
+            <select
+              className="impact-depth-select"
+              value={maxDepth}
+              onChange={(e) => setMaxDepth(e.target.value)}
+              disabled={loading}
+              aria-label="Impact depth"
+            >
+              <option value="auto">Auto</option>
+              <option value="2">2 hops</option>
+              <option value="4">4 hops</option>
+              <option value="6">6 hops</option>
+            </select>
+          </label>
         </form>
       )}
 
@@ -448,7 +464,7 @@ export function ImpactPanel({
 
       {view !== null && view.kind === 'diff' && view.data.targets.length === 0 && (
         <p className="panel-text" style={{ fontStyle: 'italic' }}>
-          No changed line in this diff mapped to an indexed symbol. Nothing was analyzed —
+          No changed line in this diff mapped to an indexed symbol. Nothing was analyzed -
           see gaps below for why.
         </p>
       )}
@@ -545,19 +561,21 @@ export function ImpactPanel({
         <>
           <ImpactItemList
             title="Upstream dependents"
-            hint="Code that references this symbol — it may break if the symbol's contract changes."
+            hint="Code that references this symbol. It may break if the symbol's contract changes."
             items={result.upstream}
             symbolByNodeId={symbolByNodeId}
             openCitations={openCitations}
             onToggleCitation={toggleCitation}
+            onOpenSource={onOpenSource}
           />
           <ImpactItemList
             title="Downstream dependencies"
-            hint="Code this symbol relies on — changes here shape what the symbol can safely assume."
+            hint="Code this symbol relies on. Changes here shape what the symbol can safely assume."
             items={result.downstream}
             symbolByNodeId={symbolByNodeId}
             openCitations={openCitations}
             onToggleCitation={toggleCitation}
+            onOpenSource={onOpenSource}
           />
         </>
       )}
@@ -590,7 +608,7 @@ export function ImpactPanel({
 
       {resolved && result.affected_tests.length > 0 && (
         <p className="panel-text" style={{ fontSize: '0.82rem', marginBottom: '12px' }}>
-          {result.affected_tests.length} indexed test file symbol(s) reference this target —
+          {result.affected_tests.length} indexed test file symbol(s) reference this target -
           run them after changing it.
         </p>
       )}
@@ -614,7 +632,7 @@ export function ImpactPanel({
           }}
         >
           <h3 style={{ fontSize: '0.9rem', color: '#fbbf24', margin: '0 0 8px 0' }}>
-            Gaps ({result.gaps.length}) — what this preview could not prove:
+            Gaps ({result.gaps.length}) - what this preview could not prove:
           </h3>
           <ul style={{ margin: 0, paddingLeft: '18px', fontSize: '0.82rem', color: '#d6d3d1' }}>
             {result.gaps.map((gap, i) => (
@@ -631,7 +649,7 @@ export function ImpactPanel({
 
       {resolved && result.gaps.length === 0 && hasImpact && (
         <p className="panel-text" style={{ marginTop: '12px', fontSize: '0.82rem' }}>
-          No gaps — every examined connection resolved to indexed evidence.
+          No gaps - every examined connection resolved to indexed evidence.
         </p>
       )}
     </section>

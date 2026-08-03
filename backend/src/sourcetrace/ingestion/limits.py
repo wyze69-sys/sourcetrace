@@ -1,13 +1,4 @@
-"""Immutable ingestion security limits.
-
-All values are integers in bytes (or raw counts / seconds) to avoid
-floating-point comparison surprises.  The constants are sourced from the
-approved MVP decisions recorded in ``docs/AGENT_TASKS.yaml`` and
-``docs/decisions/0002-source-retention-and-cleanup.md``.
-
-These limits govern ZIP upload extraction, public GitHub archive downloads,
-and general ingestion safety checks.  They must never be overridden at runtime.
-"""
+"""Immutable ingestion security limits."""
 
 # ---------------------------------------------------------------------------
 # ZIP upload limits

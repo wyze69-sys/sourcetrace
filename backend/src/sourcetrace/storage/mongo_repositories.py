@@ -1966,6 +1966,25 @@ def _doc_to_message(doc: dict[str, Any]) -> MessageRecord:
         if not isinstance(insufficient_evidence, bool):
             raise StorageDataError("Malformed insufficient_evidence flag.")
 
+        answer_mode = doc.get("answer_mode", "normal")
+        if not isinstance(answer_mode, str) or not answer_mode.strip():
+            raise StorageDataError("Malformed answer_mode.")
+        intent = doc.get("intent", "unknown_repository_question")
+        confidence_bucket = doc.get("confidence_bucket", "low")
+        evidence_count = doc.get("evidence_count", 0)
+        hop_count = doc.get("hop_count", 0)
+        source_categories = doc.get("source_categories", [])
+        if not isinstance(intent, str) or not isinstance(confidence_bucket, str):
+            raise StorageDataError("Malformed planning metadata.")
+        if type(evidence_count) is not int or evidence_count < 0:
+            raise StorageDataError("Malformed evidence_count.")
+        if type(hop_count) is not int or hop_count < 0:
+            raise StorageDataError("Malformed hop_count.")
+        if not isinstance(source_categories, (list, tuple)) or not all(
+            isinstance(value, str) for value in source_categories
+        ):
+            raise StorageDataError("Malformed source_categories.")
+
         return MessageRecord(
             message_id=_validate_non_empty_string(doc.get("message_id")),
             conversation_id=_validate_non_empty_string(doc.get("conversation_id")),
@@ -1977,6 +1996,12 @@ def _doc_to_message(doc: dict[str, Any]) -> MessageRecord:
             citations=citations,
             evidence=evidence,
             insufficient_evidence=insufficient_evidence,
+            answer_mode=answer_mode,
+            intent=intent,
+            confidence_bucket=confidence_bucket,
+            evidence_count=evidence_count,
+            hop_count=hop_count,
+            source_categories=tuple(source_categories),
         )
     except StorageDataError:
         raise
@@ -2187,6 +2212,12 @@ class MongoMessageRepository:
             "citations": [_citation_to_doc(c) for c in message.citations],
             "evidence": [_evidence_to_doc(e) for e in message.evidence],
             "insufficient_evidence": message.insufficient_evidence,
+            "answer_mode": message.answer_mode,
+            "intent": message.intent,
+            "confidence_bucket": message.confidence_bucket,
+            "evidence_count": message.evidence_count,
+            "hop_count": message.hop_count,
+            "source_categories": list(message.source_categories),
         }
 
         try:

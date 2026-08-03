@@ -24,9 +24,12 @@ const SAFE_NETWORK_ERROR_MESSAGE =
   'Unable to reach the SourceTrace API. Check that the local service is running and try again.'
 
 const STARTER_QUESTIONS = [
+  'Give me a full overview of this repository.',
+  'Explain the main architecture and data flow.',
   'Where does the application start?',
   'How does authentication work?',
-  'Where is data stored?',
+  'What would be affected if I change this symbol?',
+  'How is testing configured?',
   'What should I read first?',
 ]
 
@@ -164,7 +167,8 @@ function getSafeErrorCategory(errorMessage?: string | null, currentStep?: string
 export function App({ client = defaultApiClient }: AppProps) {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {
-      return localStorage.getItem('sourcetrace-theme') === 'dark' ? 'dark' : 'light'
+      const storedTheme = localStorage.getItem('sourcetrace-theme')
+      return storedTheme === 'light' ? 'light' : 'dark'
     } catch {
       return 'light'
     }
@@ -206,6 +210,7 @@ export function App({ client = defaultApiClient }: AppProps) {
   const [chatSubmitting, setChatSubmitting] = useState(false)
   const [chatError, setChatError] = useState<string | null>(null)
   const chatHistoryRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLInputElement>(null)
 
   // Focused Citation / Navigation State
   const [focusedCitation, setFocusedCitation] = useState<{
@@ -223,13 +228,22 @@ export function App({ client = defaultApiClient }: AppProps) {
   // Toast notifications
   type Toast = { id: number; kind: 'success' | 'error' | 'info'; message: string }
   const [toasts, setToasts] = useState<Toast[]>([])
+  const toastTimersRef = useRef<number[]>([])
+
+  useEffect(() => {
+    return () => {
+      toastTimersRef.current.forEach((timerId) => window.clearTimeout(timerId))
+      toastTimersRef.current = []
+    }
+  }, [])
 
   const pushToast = (kind: Toast['kind'], message: string) => {
     const id = Date.now() + Math.random()
     setToasts((prev) => [...prev.slice(-3), { id, kind, message }])
-    window.setTimeout(() => {
+    const timerId = window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 5200)
+    toastTimersRef.current.push(timerId)
   }
 
 
@@ -644,13 +658,19 @@ export function App({ client = defaultApiClient }: AppProps) {
     history.scrollTop = history.scrollHeight
   }, [selectedRepoId, currentConversation?.messages.length, chatSubmitting])
 
-  // Command palette items: repositories + workspace sections + starter questions
+  const openSourceCitation = (filePath: string, startLine: number, endLine: number) => {
+    setFocusedCitation({ filePath, startLine, endLine })
+    setActiveSection('files')
+    setShowImportTray(false)
+  }
+
+  // Command palette items: repositories + workspace sections + actions + starter questions
   const cmdkItems = (() => {
     const items: Array<{
       id: string
       label: string
       hint: string
-      type: 'repo' | 'section' | 'question'
+      type: 'repo' | 'section' | 'command' | 'question'
       action: () => void
     }> = []
 
@@ -665,6 +685,41 @@ export function App({ client = defaultApiClient }: AppProps) {
           setCmdkOpen(false)
         },
       })
+    })
+
+    items.push({
+      id: 'ask-question',
+      label: 'Ask a question',
+      hint: 'Focus the grounded composer',
+      type: 'command',
+      action: () => {
+        setActiveSection('understand')
+        setShowImportTray(false)
+        setCmdkOpen(false)
+        window.setTimeout(() => chatInputRef.current?.focus(), 0)
+      },
+    })
+
+    items.push({
+      id: 'toggle-theme',
+      label: 'Toggle theme',
+      hint: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+      type: 'command',
+      action: () => {
+        toggleTheme()
+        setCmdkOpen(false)
+      },
+    })
+
+    items.push({
+      id: 'keyboard-shortcuts',
+      label: 'Keyboard shortcuts',
+      hint: 'Ctrl/Cmd K opens this palette · Esc closes it',
+      type: 'command',
+      action: () => {
+        pushToast('info', 'Ctrl/Cmd K opens the command palette. Esc closes it.')
+        setCmdkOpen(false)
+      },
     })
 
     if (selectedRepo) {
@@ -686,6 +741,17 @@ export function App({ client = defaultApiClient }: AppProps) {
             setCmdkOpen(false)
           },
         })
+      })
+
+      items.push({
+        id: 'refresh-repository',
+        label: `Refresh ${selectedRepo.name}`,
+        hint: 'Re-index the current repository',
+        type: 'command',
+        action: () => {
+          setCmdkOpen(false)
+          void handleRefreshRepo(selectedRepo)
+        },
       })
 
       STARTER_QUESTIONS.forEach((q) => {
@@ -716,6 +782,7 @@ export function App({ client = defaultApiClient }: AppProps) {
     <form onSubmit={handleChatSubmit} className="chat-form understand-form chat-composer">
       <div className="composer-shell">
         <input
+          ref={chatInputRef}
           type="text"
           className="input-text chat-input hero-input"
           placeholder="Ask about this repository..."
@@ -748,10 +815,13 @@ export function App({ client = defaultApiClient }: AppProps) {
 
       <header className="app-header">
         <div className="brand-section">
-          <h1>SourceTrace</h1>
-          <p className="subtitle">Understand a codebase before you change it.</p>
+          <span className="brand-index mono" aria-hidden="true">ST / 01</span>
+          <div>
+            <h1>SourceTrace</h1>
+            <p className="subtitle">Understand a codebase before you change it.</p>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="header-instruments">
           {repositories.length > 0 && (
             <button
               type="button"
@@ -761,6 +831,20 @@ export function App({ client = defaultApiClient }: AppProps) {
               {showImportTray ? 'Close Import' : 'Import repository'}
             </button>
           )}
+          <button
+            type="button"
+            className="command-launcher"
+            onClick={() => {
+              setCmdkOpen(true)
+              setCmdkQuery('')
+              setCmdkSelectedIdx(0)
+            }}
+            aria-label="Open command palette"
+            title="Open command palette"
+          >
+            <span className="command-launcher-label">Quick open</span>
+            <kbd className="kbd">Ctrl K</kbd>
+          </button>
           <button
             type="button"
             className="theme-toggle"
@@ -945,50 +1029,37 @@ export function App({ client = defaultApiClient }: AppProps) {
           {state === 'ready' && (
             <>
               {repositories.length === 0 && (
-                <section className="hero-first-run" aria-labelledby="hero-title">
-                  <div className="hero-eyebrow">Evidence-grounded code Q&amp;A on Vite, React, and MongoDB</div>
-                  <h2 id="hero-title">Understand a codebase before you change it</h2>
-                  <p className="hero-lede">
-                    Import a repository and SourceTrace reads the code, indexes it with static
-                    analysis, then answers questions with citations from real source lines, not
-                    vague guesses.
-                  </p>
-                  <div className="hero-feature-grid">
-                    <div className="hero-feature-card">
-                      <span className="hero-feature-icon text-glyph" aria-hidden>Ask</span>
-                      <h3>Ask, get cited answers</h3>
-                      <p>Question the codebase; answers point to exact files and line ranges.</p>
+                <section className="first-run-workbench" aria-labelledby="hero-title">
+                  <header className="workbench-page-header">
+                    <div>
+                      <span className="section-kicker">Workspace</span>
+                      <h2 id="hero-title">Open a repository</h2>
+                      <p className="panel-text">Import source once. Then ask questions, open files, and trace changes from the same workspace.</p>
                     </div>
-                    <div className="hero-feature-card">
-                      <span className="hero-feature-icon text-glyph" aria-hidden>Cite</span>
-                      <h3>Open citations to the line</h3>
-                      <p>Click a citation to jump straight to the source with lines highlighted.</p>
+                    <span className="workspace-empty-status mono">NO SOURCE LOADED</span>
+                  </header>
+                  <div className="first-run-grid">
+                    <div className="first-run-import-slot">
+                      <span className="slot-label">Repository source</span>
+                      <p className="slot-copy">Use a public GitHub URL or a local ZIP archive.</p>
+                      <div className="first-run-rule" />
+                      <span className="slot-label">After import</span>
+                      <ul className="first-run-list">
+                        <li><strong>Understand</strong><span>Ask grounded questions with citations.</span></li>
+                        <li><strong>Files</strong><span>Browse source and open exact lines.</span></li>
+                        <li><strong>Trace</strong><span>Follow calls and inspect change impact.</span></li>
+                      </ul>
                     </div>
-                    <div className="hero-feature-card">
-                      <span className="hero-feature-icon text-glyph" aria-hidden>Tree</span>
-                      <h3>Trace impact &amp; flow</h3>
-                      <p>See what changes break, and how data and calls flow through code.</p>
-                    </div>
-                    <div className="hero-feature-card">
-                      <span className="hero-feature-icon text-glyph" aria-hidden>Fast</span>
-                      <h3>Freshness-aware</h3>
-                      <p>Know when a repository has drifted from what was indexed.</p>
+                    <div className="first-run-note">
+                      <span className="slot-label">How SourceTrace knows the repo</span>
+                      <p>It downloads the source, builds an index of files and symbols, then retrieves matching code when you ask a question.</p>
+                      <p className="first-run-note-muted">Answers are not based on the repository name alone. They are tied to indexed source evidence.</p>
                     </div>
                   </div>
                 </section>
               )}
               {deleteSuccess && (
-                <div
-                  className="form-success"
-                  style={{
-                    marginBottom: '16px',
-                    color: '#065f46',
-                    background: '#d1fae5',
-                    border: '1px solid #a7f3d0',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                  }}
-                >
+                <div className="form-success workspace-notice">
                   {deleteSuccess}
                 </div>
               )}
@@ -1000,15 +1071,8 @@ export function App({ client = defaultApiClient }: AppProps) {
 
               {(showImportTray || repositories.length === 0) && (
                 <section className="card-panel import-tray-panel" aria-label="Repository Import">
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginBottom: '12px',
-                    }}
-                  >
-                    <h2 className="panel-header" style={{ margin: 0 }}>
+                  <div className="panel-heading-row">
+                    <h2 className="panel-header">
                       {repositories.length === 0
                         ? 'Import a Repository to Begin'
                         : 'Import Repository'}
@@ -1017,7 +1081,6 @@ export function App({ client = defaultApiClient }: AppProps) {
                       <button
                         type="button"
                         className="btn-action"
-                        style={{ fontSize: '0.8rem', padding: '4px 10px' }}
                         onClick={() => setShowImportTray(false)}
                       >
                         [x] Close
@@ -1271,7 +1334,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                         <div className="starter-questions-section">
                           <div className="starter-questions-heading">
                             <span className="starter-questions-label">Try a starter question:</span>
-                            <span className="starter-questions-note">Start with a lens · Fast paths into the repository</span>
+                            <span className="starter-questions-note">Start with a lens. Fast paths into the repository</span>
                           </div>
                           <div className="starter-questions-grid">
                             {STARTER_QUESTIONS.map((q) => (
@@ -1321,12 +1384,22 @@ export function App({ client = defaultApiClient }: AppProps) {
                                   <span>
                                     {msg.role === 'user'
                                       ? 'Question'
+                                      : msg.answer_mode === 'general_chat'
+                                      ? 'Conversation'
+                                      : msg.answer_mode === 'conversation'
+                                      ? 'SourceTrace'
                                       : msg.answer_mode === 'static_guidance'
                                       ? 'Start Here Reading Guide'
                                       : msg.answer_mode === 'insufficient_orientation'
                                       ? 'Orientation Status'
                                       : msg.answer_mode === 'reindex_required'
                                       ? 'Re-index Required'
+                                      : msg.answer_mode === 'architecture'
+                                      ? 'Architecture Explanation'
+                                      : msg.answer_mode === 'flow'
+                                      ? 'Flow Trace'
+                                      : msg.answer_mode === 'impact'
+                                      ? 'Change Impact'
                                       : 'Investigation Result'}
                                   </span>
                                   <span className="message-timestamp mono">{formatRelativeTime(msg.created_at)}</span>
@@ -1376,14 +1449,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                                           key={idx}
                                           type="button"
                                           className="citation-item citation-btn"
-                                          onClick={() => {
-                                            setFocusedCitation({
-                                              filePath: c.relative_path,
-                                              startLine: c.start_line,
-                                              endLine: c.end_line,
-                                            })
-                                            setActiveSection('files')
-                                          }}
+                                          onClick={() => openSourceCitation(c.relative_path, c.start_line, c.end_line)}
                                           title={`View ${c.relative_path}`}
                                         >
                                           <span className="citation-number">[{idx + 1}]</span>
@@ -1562,6 +1628,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                                 }}
                               >
                                 <div
+                                  className="search-result-header"
                                   style={{
                                     display: 'flex',
                                     justifyContent: 'space-between',
@@ -1575,6 +1642,14 @@ export function App({ client = defaultApiClient }: AppProps) {
                                   <span style={{ color: 'var(--color-muted)' }}>
                                     {item.symbol_type} <strong>{item.symbol_name}</strong>
                                   </span>
+                                  <button
+                                    type="button"
+                                    className="btn-action btn-compact btn-quiet search-open-source"
+                                    onClick={() => openSourceCitation(item.relative_path, item.start_line, item.end_line)}
+                                    aria-label={`Open source ${item.relative_path}:${item.start_line}-${item.end_line}`}
+                                  >
+                                    Open source
+                                  </button>
                                 </div>
                                 <pre
                                   className="evidence-block"
@@ -1605,6 +1680,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                       explainAvailable={capabilities?.generation_available ?? false}
                       isStale={selectedRepo.is_stale}
                       sourceType={selectedRepo.source_type}
+                      onOpenSource={openSourceCitation}
                     />
                   )}
 
@@ -1616,6 +1692,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                       explainAvailable={capabilities?.generation_available ?? false}
                       isStale={selectedRepo.is_stale}
                       sourceType={selectedRepo.source_type}
+                      onOpenSource={openSourceCitation}
                     />
                   )}
                 </div>
@@ -1703,7 +1780,7 @@ export function App({ client = defaultApiClient }: AppProps) {
                     onClick={item.action}
                   >
                     <span>
-                      {item.type === 'repo' ? 'Repo' : item.type === 'section' ? 'Nav' : 'Qry'}
+                      {item.type === 'repo' ? 'Repo' : item.type === 'section' ? 'Nav' : item.type === 'command' ? 'Cmd' : 'Qry'}
                     </span>
                     <span>{item.label}</span>
                     <span className="cmdk-item-type">{item.hint}</span>
